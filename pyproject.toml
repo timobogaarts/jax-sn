@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "jax-sn"
 version = "0.1.0"
-description = "A JAX-based Python project"
+description = "JAX-based Discrete Ordinates"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
-keywords = ["jax", "machine-learning", "deep-learning"]
+
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -19,20 +19,17 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering",
 ]
 dependencies = [
     "jax>=0.4.0",
     "jaxlib>=0.4.0",
+    "numpy",          
+    "h5py",          
+    "scipy",
+    "fenics-basix>=0.7.0"    
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "pytest-cov>=4.0",
-    "ruff>=0.1.0",
-    "mypy>=1.0",
-]
 
 [project.urls]
 "Homepage" = "https://github.com/timobogaarts/jax-sn"
@@ -41,19 +38,3 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.ruff]
-line-length = 88
-target-version = "py39"
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
-
-[tool.mypy]
-python_version = "3.9"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-v --cov=src/jax_sn --cov-report=term-missing"
