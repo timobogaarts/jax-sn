@@ -30,7 +30,7 @@ def compute_domain_setup_from_mesh(mesh, face_template):
 class GeometricDomain:
     vertices     : jnp.ndarray
     connectivity : jnp.ndarray
-    normals      : jnp.ndarray    
+    face_normals : jnp.ndarray    
     etoe         : jnp.ndarray
     etof         : jnp.ndarray
     face_template: jnp.ndarray

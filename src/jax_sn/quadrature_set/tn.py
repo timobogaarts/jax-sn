@@ -1,7 +1,7 @@
 import jax 
 import jax.numpy as jnp
 from functools import partial
-
+from .quadrature_set_base import QuadratureSet
 @partial(jax.jit, static_argnums= 0)
 def _create_tn_octants( N : int):
     N = N + 1
@@ -120,5 +120,5 @@ def create_tn_quadrature_set(N : int):
     weight_fractions = jnp.stack(jnp.meshgrid(jnp.array([-1,1]), jnp.array([-1,1]), jnp.array([-1,1]), indexing='ij'), axis=-1).reshape(-1,3)            
     total_angles     = (angles[:, jnp.newaxis, :] * weight_fractions[jnp.newaxis, :, :]).reshape(-1,3)        
     total_weights    = jnp.repeat(areas, 8) / jnp.sum(areas) / 8
-    return total_angles, total_weights
+    return QuadratureSet(total_angles, total_weights)
     
