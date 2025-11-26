@@ -13,7 +13,7 @@ def _face_template(n_nodes_per_element: int) -> jnp.ndarray:
         Number of nodes per element
     Returns
     -------
-    face_template : jnp.ndarray [n_faces_per_element, n_nodes_per_face]
+    face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
         The face template for the given element type    
     
     '''
@@ -38,10 +38,11 @@ def _compute_adjacency(mesh_connectivity : jnp.ndarray, face_template : jnp.ndar
     '''
     Compute the adjacency list for a mesh.count
 
-    See [1], pp. 428 for algorithm description. Generalised to arbitrary element types.
+    See [1], pp. 428 for algorithm description. Generalised to arbitrary element types. Removed hashing in favour of lexographic sorting to avoid collisions.
+    Lexographic sorting can be somewhat slow to compile though.
 
     Use 64-bit enabled jax to ensure you have sufficient range for face hashing. 
-    For n_nodes_per_face, the maximum number of vertices is (2^63 -1)^(1/(n_nodes_per_face-1)) before face collisions will occur.
+    For n_vertices_per_face, the maximum number of vertices is (2^63 -1)^(1/(n_vertices_per_face)) before face collisions will occur.
 
     [1] Hesthaven, J. S., & Warburton, T. (2008). Nodal discontinuous Galerkin methods: algorithms, analysis, and applications. New York, NY: Springer New York.
 
@@ -59,49 +60,50 @@ def _compute_adjacency(mesh_connectivity : jnp.ndarray, face_template : jnp.ndar
     '''
 
 
-    n_elements          = mesh_connectivity.shape[0]
-    n_nodes_per_element = mesh_connectivity.shape[1]    
-    n_nodes_per_face    = face_template.shape[1]
-
-    n_vertices = jnp.max(mesh_connectivity) + 1 # is not static
-
-
-    # assert n_vertices < (2**63 -1)**(1/(n_nodes_per_face-1)), f"Number of vertices {n_vertices} too large for face hashing with {n_nodes_per_face} nodes per face"
+    n_elements          = mesh_connectivity.shape[0]    
+    n_vertices_per_face = face_template.shape[1]
 
     n_faces_per_element = face_template.shape[0]
     n_total_faces       = n_elements * n_faces_per_element    
     
-    faces               = mesh_connectivity[:, face_template]                                # [n_elements, n_faces_per_element, n_nodes_per_face]
-    faces               = jnp.take_along_axis(faces , jnp.argsort(faces, axis=-1), axis=-1)  # [n_elements, n_faces_per_element, n_nodes_per_face]
-
-
-    # Create a unique index for each face based on its vertices [hashing works until (2^63 -1)^(1/(n_nodes_per_face-1) > n_vertices]
-    powers         = jnp.arange(n_nodes_per_face - 1, -1, -1, dtype=jnp.int64)   # [n_nodes_per_face]    
-    bases          = n_vertices ** powers                                        # [n_nodes_per_face]
-    face_keys      = jnp.sum(faces * bases, axis=-1).flatten()                   # [n_elements * n_faces_per_element]    
-    sorted_idx     = jnp.argsort(face_keys)
-
-    # Adjacency 
-    elem_ids        = jnp.repeat(jnp.arange(n_elements), n_faces_per_element)   # [n_total_faces]
-    ids_sorted      = face_keys[sorted_idx]                                     # [n_total_faces]    
-    elem_ids_sorted = elem_ids[sorted_idx]                                      # [n_total_faces]    
+    # for some reason, sorting using argsort and take_along_axis is faster than jnp.sort (sort takes >1s for only 100k elements, this in <<1ms)
+    faces               = mesh_connectivity[:, face_template]                                # [n_elements, n_faces_per_element, n_vertices_per_face]
+    faces               = jnp.take_along_axis(faces , jnp.argsort(faces, axis=-1), axis=-1)  # [n_elements, n_faces_per_element, n_vertices_per_face]
     
-    same = jnp.where(ids_sorted[:-1] == ids_sorted[1:], True, False)            # [n_total_faces -1] 
-    same_idx = jnp.where(same, jnp.arange(same.shape[0]), -1)                   # [n_total_faces -1]   
+    faces_flat          = faces.reshape(-1, n_vertices_per_face)                              #[n_total_faces, n_vertices_per_face]
+     
+
+    # Two faces are the same if their sorted vertex indices are the same. 
+    # Lexicographically sort all faces. Then the same faces will be adjacent.
+    sorted_idx          = jnp.lexsort(faces_flat.T)
+
+    # Element ids for all faces (just repeated element indices)
+    elem_ids          = jnp.repeat(jnp.arange(n_elements), n_faces_per_element)   # [n_total_faces]
+
+    # Index faces and elem_ids according to lexographic sort
+    faces_flat_sorted = faces_flat[sorted_idx, :]                                 # [n_total_faces, n_vertices_per_face]
+    elem_ids_sorted   = elem_ids[sorted_idx]                                      # [n_total_faces]    
     
-    # Adjacency matrix:    
+    # Adjacent faces will be the same. Use first a mask, then convert that mask to indices. The mask will be used later as well
+    
+    # use -1 as the placeholder since this will always be valid (no out of bounds access later)
+    same              = jnp.where(jnp.all(faces_flat_sorted[:-1,:] == faces_flat_sorted[1:, :], axis=-1), True, False)            # [n_total_faces -1] 
+    same_idx          = jnp.where(same, jnp.arange(same.shape[0]), -1)                   # [n_total_faces -1]   
+    
+    # Left and right element of each face pair ()
     left_element     = jnp.where(same, elem_ids_sorted[:-1][same_idx], -1) # -1 placeholder
     right_element    = jnp.where(same, elem_ids_sorted[1:][same_idx] , -1) # -1 placeholder
 
-    face_indices = jnp.tile(jnp.arange(n_faces_per_element), n_elements)   # [n_total_faces]
- 
+    # Face indices within each element
+    # same procedure: left and right face of each face pair (indexed within their parent element, *NOT* global face index)
+    face_indices        = jnp.tile(jnp.arange(n_faces_per_element), n_elements)   # [n_total_faces]
     face_indices_sorted = face_indices[sorted_idx]
 
-    face1 = jnp.where(same, face_indices_sorted[:-1][same_idx], -1)        # -1 placeholder 
-    face2 = jnp.where(same, face_indices_sorted[1:][same_idx], -1)         # -1 placeholder    
-
+    face1 = jnp.where(same, face_indices_sorted[:-1][same_idx], -1)         # -1 placeholder 
+    face2 = jnp.where(same, face_indices_sorted[1:][same_idx],  -1)         # -1 placeholder    
 
     # Pad to account for -1 placeholders
+    # this ensures all non-connected faces can be treated in the same way as connected faces. They just set the [-1,-1] index to some meaningless value, which we will cut off at the end.
     element_to_element = jnp.full((n_elements + 1, n_faces_per_element + 1), -1)  # initialize to -1
     
     element_to_element = element_to_element.at[left_element, face1].set(right_element)
@@ -125,7 +127,7 @@ def _create_face_centroids_from_simplex_internal(simplex : jnp.ndarray, face_tem
     ----------
     simplex : jnp.ndarray [n_nodes_per_element, n_dim]
         Array representing the vertices of the simplex.
-    face_template : jnp.ndarray [n_faces_per_element, n_nodes_per_face]
+    face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
         Array defining which nodes belong to each face of the simplex.
     Returns
     -------
@@ -136,7 +138,7 @@ def _create_face_centroids_from_simplex_internal(simplex : jnp.ndarray, face_tem
 
     assert simplex.ndim == 2, "Simplex must be of shape [n_nodes_per_element, n_dim]"
     
-    total_faces = simplex[face_template]  # [n_faces, n_nodes_per_face, n_dim]
+    total_faces = simplex[face_template]  # [n_faces, n_vertices_per_face, n_dim]
     
     centroids = jnp.mean(total_faces, axis=-2)
     
@@ -155,7 +157,7 @@ def create_face_centroids_from_simplices(simplices : jnp.ndarray, face_template 
     ----------
     simplices : jnp.ndarray [..., n_nodes_per_element, n_dim]
         Array representing the vertices of the simplices.
-    face_template : jnp.ndarray [n_faces_per_element, n_nodes_per_face]
+    face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
         Array defining which nodes belong to each face of the simplex.
     Returns
     -------
@@ -177,7 +179,7 @@ def _create_normals_from_simplex(total_faces : jnp.ndarray, centroid : jnp.ndarr
 
     Parameters
     ----------
-    total_faces : jnp.ndarray [n_faces, n_nodes_per_face, 3]
+    total_faces : jnp.ndarray [n_faces, n_vertices_per_face, 3]
         Array representing the vertices of each face.
 
     Returns
@@ -210,7 +212,7 @@ def _create_face_normal_vectors_from_3d_simplex_internal(simplex : jnp.ndarray, 
     ----------
     simplex : jnp.ndarray [n_nodes_per_element, 3]
         Array representing the vertices of the simplex.
-    face_template : jnp.ndarray [n_faces_per_element, n_nodes_per_face]
+    face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
         Array defining which nodes belong to each face of the simplex.
     Returns:
     -------
@@ -221,7 +223,7 @@ def _create_face_normal_vectors_from_3d_simplex_internal(simplex : jnp.ndarray, 
     
 
     centroid                  = jnp.mean(simplex, axis=0)
-    total_faces               = simplex[face_template]  # [n_faces, n_nodes_per_face, 3 (cartesian)]
+    total_faces               = simplex[face_template]  # [n_faces, n_vertices_per_face, 3 (cartesian)]
 
     assert total_faces.ndim == 3, "total_faces must be a 3D array"
     assert total_faces.shape[2] == 3, "total_faces must have 3 coordinates per vertex"
@@ -243,7 +245,7 @@ def create_face_normal_vectors_from_3d_simplices(simplices : jnp.ndarray, face_t
     ----------
     simplices : jnp.ndarray [..., n_nodes_per_element, 3]
         Array representing the vertices of the simplices
-    face_template : jnp.ndarray [n_faces_per_element, n_nodes_per_face]
+    face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
         Array defining which nodes belong to each face of the simplex.
     Returns:
     -------
@@ -288,7 +290,7 @@ def extract_boundaries_from_mesh(mesh, boundary_index, face_template):
         The input mesh as (vertices, connectivity)
     boundary_index : int or jnp.ndarray [n_elements]
         If int, the index of the boundary face to extract. If array, an array with one entry per element indicating which boundary face to extract for each element.
-    face_template : jnp.ndarray [n_faces_per_element, n_nodes_per_face]
+    face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
         The face template for the element type
     '''
     vertices, connectivity = onp.array(mesh[0]), onp.array(mesh[1])

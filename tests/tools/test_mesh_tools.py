@@ -25,10 +25,10 @@ def test_mesh_graph(elem):
     
     etoe, etof = jax_sn.tools.mesh_tools._compute_adjacency(connectivity, face_template)    
 
-    connectivity_i = connectivity[:, face_template] # [n_elements, n_faces_per_element, n_nodes_per_face]
+    connectivity_i = connectivity[:, face_template] # [n_elements, n_faces_per_element, n_vertices_per_face]
     connectivity_i_sort = onp.sort(connectivity_i, axis=-1)
 
-    connectivity_j = onp.take_along_axis(connectivity[etoe],  face_template[etof], axis=-1) # [n_elements, n_faces_per_element, n_nodes_per_face]
+    connectivity_j = onp.take_along_axis(connectivity[etoe],  face_template[etof], axis=-1) # [n_elements, n_faces_per_element, n_vertices_per_face]
     connectivity_j_sort = onp.sort(connectivity_j, axis=-1)
 
     onp.where(etoe != -1,
