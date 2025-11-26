@@ -19,33 +19,27 @@ def compute_domain_setup_from_mesh(mesh, face_template):
         A 2D array representing the face template.
     '''
     assert face_template.ndim == 2, "Face template must be a 2D array."
+    vertices, connectivity = mesh
+
+    return vertices, connectivity, create_face_normal_vectors_from_3d_simplices(vertices[connectivity], face_template), *_compute_adjacency(connectivity, face_template)
 
 
 
-@jax.pytree.util.register_dataclass
+@jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class GeometricDomain:
     vertices     : jnp.ndarray
     connectivity : jnp.ndarray
-    normals      : jnp.ndarray
-    face_template: jnp.ndarray
+    normals      : jnp.ndarray    
     etoe         : jnp.ndarray
     etof         : jnp.ndarray
+    face_template: jnp.ndarray
 
     @classmethod 
     def from_mesh(cls, mesh, face_template):
-        
-
-        vertices, connectivity = mesh
-        normals = create_face_normal_vectors_from_3d_simplices(connectivity, face_template)
-        etoe, etof = _compute_adjacency(connectivity, face_template)
         return cls(
-            vertices=vertices,
-            connectivity=connectivity,
-            normals=normals,
-            face_template=face_template,
-            etoe=etoe,
-            etof=etof
+            *compute_domain_setup_from_mesh(mesh, face_template),
+            face_template=face_template
         )
     @property
     def n_elements(self):
