@@ -2,21 +2,79 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 
+def _increment_levels_including_dummy(levels_elements : jnp.ndarray, dependency_matrix : jnp.ndarray) -> jnp.ndarray:
+    '''
+    *internal*
+    Increment levels of elements in a graph defined by dependency_matrix.   
+    Each element's level is determined by the maximum level of its upstream elements plus one (zero upstream elements -> 0 level).
+    ''' 
+    return jnp.concatenate([jnp.max(levels_elements[dependency_matrix], axis=-1) + 1, jnp.array([0])])
+
+@partial(jax.jit, static_argnums = (2))
+def _scan_loop_levels_including_dummy(levels_elements : jnp.ndarray, dependency_matrix : jnp.ndarray, n_iterations : int) -> jnp.ndarray:
+    '''
+    *internal*
+    Compute levels of elements in a graph defined by dependency_matrix using a scan loop.
+    Each element's level is determined by the maximum level of its upstream elements plus one (zero upstream elements -> 0 level).
+    This wraps a scan operation for a fixed number of iterations.
+    '''
+    def body(state, i):
+        return _increment_levels_including_dummy(state, dependency_matrix), None
+    levels_final, _ = jax.lax.scan(body, levels_elements, jnp.arange(n_iterations))
+    return levels_final
+
+@partial(jax.jit, static_argnums = (2))
+def _while_loop_levels_including_dummy(levels_elements : jnp.ndarray, dependency_matrix : jnp.ndarray, n_max_iterations : int) -> jnp.ndarray:
+    '''
+    *internal*
+    Compute levels of elements in a graph defined by dependency_matrix using a while loop.
+    Each element's level is determined by the maximum level of its upstream elements plus one (zero upstream elements -> 0 level).
+    This wraps a while loop that continues until all levels are computed or n_max_iterations is reached.
+    Possibly significantly slower than the scan version; use with care. Does not check for cycles in the graph.    
+    '''
+    def cond(state):
+        return jnp.any(state[0][:-1] >= dependency_matrix.shape[0]) & (state[-1] < n_max_iterations)    
+    def body(state):        
+        return _increment_levels_including_dummy(state[0], dependency_matrix), state[1] + 1    
+    levels_final, _ = jax.lax.while_loop(cond, body, (levels_elements, 0))
+    return levels_final
+
+@partial(jax.jit)
+def _setup_levels_including_dummy(dependency_matrix : jnp.ndarray) -> jnp.ndarray:
+    '''
+    *internal* 
+    Setup initial levels of elements in a graph defined by dependency_matrix.   
+    Initial levels of all elements is set to n_elements (one larger than would be actually possible!).
+    A dummy element is added at the end that is always computable (i.e. no connection -> level 0 available).
+    '''
+    n_elements = dependency_matrix.shape[0]
+    levels_elements  = jnp.full(n_elements + 1, n_elements, dtype = dependency_matrix.dtype)
+    levels_elements  = levels_elements.at[-1].set(0) # dummy element that is always computable (i.e. no connection -> level 0 available)    
+    return levels_elements
+
+@partial(jax.jit)
+def _levels_including_dummy_to_levels(levels_including_dummy : jnp.ndarray) -> jnp.ndarray:
+    '''
+    *internal* 
+    Converts the levels including dummy element to levels without dummy element.
+    Simply slices to last element and decreases all levels by one.
+    '''
+    return levels_including_dummy[:-1] - 1
 
 @partial(jax.jit, static_argnums = (1))
-def _compute_levels_parallel_scan(outflow_face_to_element_matrix : jnp.ndarray, n_max_iterations : int = 1500) -> jnp.ndarray:
+def _compute_levels_parallel_scan(dependency_matrix : jnp.ndarray, n_iterations : int) -> jnp.ndarray:
     '''
-    Compute levels of elements in a graph defined by outflow_face_to_element_matrix using a parallel scan.
-    Each element's level is determined by the maximum level of its downstream elements plus one (zero upstream elements -> 0 level).
+    Compute levels of elements in a graph defined by dependency_matrix using a parallel scan.
+    Each element's level is determined by the maximum level of its upstream elements plus one (zero upstream elements -> 0 level).
 
     Due to JAX's compilation requiring static shapes, all elements compute for all faces every iteration. Therefore, this is not 
     an optimized algorithm in any way; but it is sufficiently fast for n_elements < 1e6. [<200 ms per angle for 1e6 elements]
 
     Parameters:
     -----------
-    outflow_face_to_element_matrix : jnp.ndarray
-        A (n_elements, n_faces_per_element) array where each row contains the indices of downstream elements for each element.
-        Use n_elements as a dummy index for faces that do not connect to any downstream element.
+    dependency_matrix : jnp.ndarray
+        A (n_elements, n_faces_per_element) array where each row contains the indices of upstream elements for each element.
+        Use n_elements as a dummy index for faces that do not connect to any upstream element.
     n_elements : int
         The total number of elements in the graph.
     n_max_iterations : int, optional
@@ -28,20 +86,13 @@ def _compute_levels_parallel_scan(outflow_face_to_element_matrix : jnp.ndarray, 
 
     '''
     # initial levels of all elements is set to n_elements (one larger than would be actually possible!).    
-    n_elements = outflow_face_to_element_matrix.shape[0]
-    levels_elements  = jnp.full(n_elements + 1, n_elements, dtype = outflow_face_to_element_matrix.dtype)
-    levels_elements  = levels_elements.at[-1].set(0) # dummy element that is always computable (i.e. no connection -> level 0 available)    
-    def level_body(state, i):
-        return jnp.concatenate([jnp.max(state[outflow_face_to_element_matrix], axis=-1) + 1, jnp.array([0])]), None                        
-    levels_final, _ = jax.lax.scan(level_body, levels_elements, jnp.arange(n_max_iterations))
-    return levels_final[:-1] - 1
-
+    return _levels_including_dummy_to_levels(_scan_loop_levels_including_dummy(_setup_levels_including_dummy(dependency_matrix), dependency_matrix, n_iterations))
 
 @partial(jax.jit, static_argnums = (1))
-def _compute_levels_parallel_while(outflow_face_to_element_matrix : jnp.ndarray, n_max_iterations : int = 1500) -> jnp.ndarray:
+def _compute_levels_parallel_while(dependency_matrix : jnp.ndarray, n_max_iterations : int) -> jnp.ndarray:
     '''
-    Compute levels of elements in a graph defined by outflow_face_to_element_matrix using a parallel while loop.
-    Each element's level is determined by the maximum level of its downstream elements plus one (zero upstream elements -> 0 level).
+    Compute levels of elements in a graph defined by dependency_matrix using a parallel while loop.
+    Each element's level is determined by the maximum level of its upstream elements plus one (zero upstream elements -> 0 level).
 
     Computes levels until all levels are computed or n_max_iterations is reached.
 
@@ -50,9 +101,9 @@ def _compute_levels_parallel_while(outflow_face_to_element_matrix : jnp.ndarray,
 
     Parameters:
     -----------
-    outflow_face_to_element_matrix : jnp.ndarray
-        A (n_elements, n_faces_per_element) array where each row contains the indices of downstream elements for each element.
-        Use n_elements as a dummy index for faces that do not connect to any downstream element.
+    dependency_matrix : jnp.ndarray
+        A (n_elements, n_faces_per_element) array where each row contains the indices of upstream elements for each element.
+        Use n_elements as a dummy index for faces that do not connect to any upstream element.
     n_elements : int
         The total number of elements in the graph.
     n_max_iterations : int, optional
@@ -61,18 +112,51 @@ def _compute_levels_parallel_while(outflow_face_to_element_matrix : jnp.ndarray,
     --------
     jnp.ndarray
         An array of shape (n_elements,) containing the computed levels for each element.
-
     '''
-    n_elements = outflow_face_to_element_matrix.shape[0]
-    # initial levels of all elements is set to n_elements (one larger than would be actually possible!).    
-    levels_elements  = jnp.full(n_elements + 1, n_elements, dtype = outflow_face_to_element_matrix.dtype)
-    levels_elements  = levels_elements.at[-1].set(0) # dummy element that is always computable (i.e. no connection -> level 0 available)    
-    def cond(state):
-        return jnp.any(state[0][:-1] >= n_elements) & (state[-1] < n_max_iterations)
+    return _levels_including_dummy_to_levels(_while_loop_levels_including_dummy(_setup_levels_including_dummy(dependency_matrix), dependency_matrix, n_max_iterations))
+
+def compute_levels_iterative(dependency_matrix : jnp.ndarray, n_iterations_per_loop : int) -> jnp.ndarray:
+    '''
+    Compute levels of elements in a graph defined by dependency_matrix using a safe while loop.
+    Each element's level is determined by the maximum level of its upstream elements plus one (zero upstream elements -> 0 level).
+
+    This function uses a Python loop to iteratively compute levels until all levels are computed or no new levels can be computed.
+    This uses static number of iterations for each JAX-compiled step to avoid recompilation and to be able to use jax.lax.scan. 
+    This checks for cycles in the graph and raises an error if a cycle is detected.
+
+    For large enough graphs and n_iterations_per_loop, the Python overhead is insignificant compared to the JAX computation time.
+    Since this function is safer than the other two level computation functions, it is recommended to use this function when possible.
     
-    def body(state):
-        levels_elements, loop_i = state
-        return jnp.concatenate([jnp.max(levels_elements[outflow_face_to_element_matrix], axis=-1) + 1, jnp.array([0])]), loop_i + 1
+    Parameters:
+    -----------
+    dependency_matrix : jnp.ndarray
+        A (n_elements, n_faces_per_element) array where each row contains the indices of upstream elements for each element.
+        Use n_elements as a dummy index for faces that do not connect to any upstream element.
+    n_iterations_per_loop : int
+        The number of iterations to perform in each JAX-compiled step.  
+    Returns:
+    --------
+    jnp.ndarray
+        An array of shape (n_elements,) containing the computed levels for each element.    
+    '''
+    levels = _setup_levels_including_dummy(dependency_matrix)
+    n_elements = dependency_matrix.shape[0]
     
-    levels_final, _ = jax.lax.while_loop(cond, body, (levels_elements, 0))
-    return levels_final[:-1] - 1
+    absolute_maximum_loops = (n_elements + 1) // n_iterations_per_loop + 1
+    n_elements_computed    = 0 
+    for _ in range(absolute_maximum_loops):                                
+        levels = _scan_loop_levels_including_dummy(levels, dependency_matrix, n_iterations_per_loop)
+        n_elements_computed_new = jnp.sum(levels < n_elements)        
+        if n_elements_computed_new >= n_elements:
+            break
+        if n_elements_computed_new == n_elements_computed:
+            raise RuntimeError("No new elements are in the next level while not all elements can be computed. Graph cannot be computed: there are cycles present in the graph.")
+        n_elements_computed = n_elements_computed_new
+    return _levels_including_dummy_to_levels(levels)
+        
+    
+
+
+    
+    
+

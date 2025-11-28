@@ -44,5 +44,9 @@ class GeometricDomain:
     @property
     def n_elements(self):
         return self.connectivity.shape[0]
+    
+    @property
+    def n_faces_per_element(self):
+        return self.face_template.shape[0]
 
 

@@ -107,9 +107,9 @@ def create_TN(N: int):
 
 @pytest.mark.parametrize("N", [2,3,4,5,6])
 def test_tn(N : int):
-    angles, weights = jax_sn.quadrature_set.tn.create_tn_quadrature_set(N)
+    qset = jax_sn.quadrature_set.tn.create_tn_quadrature_set(N)
 
     angles_ref, weights_ref = create_TN(N)
-    onp.testing.assert_allclose(angles, angles_ref)
-    onp.testing.assert_allclose(weights, weights_ref)
+    onp.testing.assert_allclose(qset.angles, angles_ref)
+    onp.testing.assert_allclose(qset.weights, weights_ref)
 
