@@ -954,7 +954,15 @@ def get_factor_difference(element):
     else:
         raise ValueError("Element type " + str(element) + " not recognized")
     
-
+def get_area_difference(element):
+    if element == "interval":
+        return 1.0
+    elif element == "triangle":
+        return 1/2.0
+    elif element == "tetrahedron":
+        return 1.0
+    else:
+        raise ValueError("Element type " + str(element) + " not recognized")
 
 def get_jacobian_difference(element):
     if element == "interval":
@@ -965,3 +973,5 @@ def get_jacobian_difference(element):
         return 1.0
     else:
         raise ValueError("Element type " + str(element) + " not recognized")
+    
+

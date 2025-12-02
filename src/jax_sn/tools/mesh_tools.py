@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 import numpy as onp
-
+from .permutation_tools import _indices_to_permutation_number
 def _face_template(n_nodes_per_element: int) -> jnp.ndarray:
     '''
     Get the face template for a given element type. This defines which nodes belong to each face of the element.
@@ -202,11 +202,11 @@ def _create_normals_from_simplex(total_faces : jnp.ndarray, centroid : jnp.ndarr
         normals = jnp.array([-direction, direction])   # we just use the difference between the two faces
     return normals
 
-def _create_face_normal_vectors_from_3d_simplex_internal(simplex : jnp.ndarray, face_template : jnp.ndarray):
+def _compute_face_normal_vectors_from_3d_simplex_internal(simplex : jnp.ndarray, face_template : jnp.ndarray):
     '''
     Create outward pointing normal vectors for each face of a 3D simplex.
 
-    Use the vectorized version create_face_normal_vectors_3d if you want to compute normals for multiple simplices at once.
+    Use the vectorized version compute_face_normal_vectors_3d if you want to compute normals for multiple simplices at once.
 
     Parameters:
     ----------
@@ -233,10 +233,10 @@ def _create_face_normal_vectors_from_3d_simplex_internal(simplex : jnp.ndarray, 
     normals_pointing_outwards = jnp.sign( jnp.sum( (total_faces[:,0,:] - centroid)* normals_norm, axis=-1))
     return normals_norm * normals_pointing_outwards[:, jnp.newaxis]
 
-_create_face_normal_vectors_from_3d_simplices_vec = jax.jit(jnp.vectorize(_create_face_normal_vectors_from_3d_simplex_internal, excluded =(1,), signature='(n_nodes_per_elem,3)->(n_faces_per_element,3)'))
+_compute_face_normal_vectors_from_3d_simplices_vec = jax.jit(jnp.vectorize(_compute_face_normal_vectors_from_3d_simplex_internal, excluded =(1,), signature='(n_nodes_per_elem,3)->(n_faces_per_element,3)'))
 
 @jax.jit
-def create_face_normal_vectors_from_3d_simplices(simplices : jnp.ndarray, face_template : jnp.ndarray) -> jnp.ndarray:
+def compute_face_normal_vectors_from_3d_simplices(simplices : jnp.ndarray, face_template : jnp.ndarray) -> jnp.ndarray:
     '''
     Create outward pointing normal vectors for each face of a 3D simplex.
 
@@ -253,7 +253,36 @@ def create_face_normal_vectors_from_3d_simplices(simplices : jnp.ndarray, face_t
         Array of outward pointing normal vectors for each face of the simplex.
 
     '''
-    return _create_face_normal_vectors_from_3d_simplices_vec(simplices, face_template)
+    return _compute_face_normal_vectors_from_3d_simplices_vec(simplices, face_template)
+
+@jax.jit
+def _compute_face_permutations(connectivity : jnp.ndarray, etoe : jnp.ndarray, etof : jnp.ndarray, face_template : jnp.ndarray) -> jnp.ndarray:
+    '''
+    Compute the face permutations for each face in the mesh.
+    Parameters
+    ----------
+    connectivity : jnp.ndarray [n_elements, n_nodes_per_element]
+        The connectivity array of the mesh
+    etoe : jnp.ndarray [n_elements, n_faces_per_element]
+        The element-to-element adjacency array  
+    etof : jnp.ndarray [n_elements, n_faces_per_element]
+        The element-to-face adjacency array
+    face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
+        The face template for the element type
+    Returns
+    -------
+    jnp.ndarray [n_elements, n_faces_per_element]
+        The face permutation index for each face in the mesh. -1 if not connected.
+    '''
+    def single_element(element_idx : int, face_idx : int):
+        face_vertices_self   = connectivity[element_idx][face_template[face_idx]]
+        neighbor_element_idx = etoe[element_idx, face_idx]
+        neighbor_face_idx    = etof[element_idx, face_idx]
+        return jnp.where(neighbor_element_idx < 0, -1, _indices_to_permutation_number(face_vertices_self, connectivity[neighbor_element_idx][face_template[neighbor_face_idx]]))
+    
+    single_element_all_faces = jax.vmap(single_element, in_axes=(None, 0), out_axes=0)
+    all_elements_all_faces   = jax.vmap(single_element_all_faces, in_axes=(0, None), out_axes=0)    
+    return all_elements_all_faces(jnp.arange(0,connectivity.shape[0]), jnp.arange(0, face_template.shape[0]))
 
 
 #======================================================================================================================================================================

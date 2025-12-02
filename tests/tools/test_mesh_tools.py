@@ -76,7 +76,7 @@ def get_normal_case(plot = False):
 
         connectivity_check = mesh[1][i_checks, :]
         positions_simplices = mesh[0][connectivity_check]
-        normal_vecs = jsn.tools.mesh_tools.create_face_normal_vectors_from_3d_simplices(positions_simplices, jsn.tools.mesh_tools._face_template(mesh[1].shape[1]))
+        normal_vecs = jsn.tools.mesh_tools.compute_face_normal_vectors_from_3d_simplices(positions_simplices, jsn.tools.mesh_tools._face_template(mesh[1].shape[1]))
         centroids   = jsn.tools.mesh_tools.create_face_centroids_from_simplices(positions_simplices, jsn.tools.mesh_tools._face_template(mesh[1].shape[1]))
         if plot:
             import pyvista as pv
