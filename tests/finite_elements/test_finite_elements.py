@@ -49,7 +49,9 @@ def _get_volume_matrix_from_old_generate_basis(element, degree):
            iiold,\
            bijold[:, permutation][..., permutation] * get_factor_difference(element) * get_jacobian_difference(element)
 
-
+def create_permutation_dimension(dimension, degree):
+    element = [None, "interval", "triangle", "tetrahedron"][dimension]
+    return create_permutation(element, _get_element_old(element, degree=degree), _get_element_jsn(element, degree=degree))
 
 def _get_face_permutation(element):
     import basix

@@ -278,6 +278,8 @@ def _compute_face_permutations(connectivity : jnp.ndarray, etoe : jnp.ndarray, e
         face_vertices_self   = connectivity[element_idx][face_template[face_idx]]
         neighbor_element_idx = etoe[element_idx, face_idx]
         neighbor_face_idx    = etof[element_idx, face_idx]
+        # We require the 'inverse' permutation: such that if i reorder the original face vertices by this permutation, I obtain the neighbor face vertices.
+        # This is what is used as well in the assembly of the quadrature matrices: there, the original face vertices are permuted.
         return jnp.where(neighbor_element_idx < 0, -1, _indices_to_permutation_number(face_vertices_self, connectivity[neighbor_element_idx][face_template[neighbor_face_idx]]))
     
     single_element_all_faces = jax.vmap(single_element, in_axes=(None, 0), out_axes=0)

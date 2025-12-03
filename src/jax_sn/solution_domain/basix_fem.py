@@ -192,9 +192,9 @@ class BasixLagrangianSimplex(Element):
         if not (geometric_domain.connectivity.shape[-1] == self.dimension + 1):
             return False 
         
-        face_template_here = onp.sort(onp.array(self.face_template), axis=-1)
+        face_template_here = onp.array(self.face_template)
         
-        face_template_geom = onp.sort(geometric_domain.face_template, axis= -1)
+        face_template_geom = onp.array(geometric_domain.face_template)
         if not onp.array_equal(face_template_here, face_template_geom):
             return False
         return True
