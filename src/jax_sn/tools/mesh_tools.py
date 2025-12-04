@@ -187,7 +187,7 @@ def _create_normals_from_simplex(total_faces : jnp.ndarray, centroid : jnp.ndarr
     jnp.ndarray [n_faces, 3]
         Array of normal vectors for each face.
     '''
-    assert total_faces.ndim == 3, "total_faces must be a 3D array"
+    assert total_faces.ndim == 3, "total_faces must be a 3D array of n_faces, n_vertices_per_face, 3"
     assert total_faces.shape[2] == 3, "total_faces must have 3 coordinates per vertex"
 
     if total_faces.shape[1] == 3:
@@ -243,8 +243,8 @@ def compute_face_normal_vectors_from_3d_simplices(simplices : jnp.ndarray, face_
 
     Parameters:
     ----------
-    simplices : jnp.ndarray [..., n_nodes_per_element, 3]
-        Array representing the vertices of the simplices
+    simplices : jnp.ndarray [..., n_nodes_per_element, n_dim]
+        Array representing the vertices of the simplices. Is zero-padded to 3D if n_dim < 3.
     face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
         Array defining which nodes belong to each face of the simplex.
     Returns:
@@ -253,6 +253,8 @@ def compute_face_normal_vectors_from_3d_simplices(simplices : jnp.ndarray, face_
         Array of outward pointing normal vectors for each face of the simplex.
 
     '''
+    if simplices.shape[-1] < 3:
+        simplices = jnp.pad(simplices, [(0,0)]*(simplices.ndim -1) + [(0, 3 - simplices.shape[-1])], mode='constant')        
     return _compute_face_normal_vectors_from_3d_simplices_vec(simplices, face_template)
 
 @jax.jit

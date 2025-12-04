@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from dataclasses import dataclass
 from jax_sn.tools.mesh_tools import compute_face_normal_vectors_from_3d_simplices, _compute_adjacency, _compute_face_permutations
 
-@jax.jit
+#@jax.jit
 def compute_domain_setup_from_mesh(mesh, face_template):
     '''
     Computes the setup for a geometric domain from a mesh and a face template (see `jax_sn.tools.mesh_tools._face_template` for an example template).

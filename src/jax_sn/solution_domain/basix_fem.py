@@ -11,6 +11,8 @@ def _map_simplex_point_to_different_permutation(permutation, coordinates):
     '''
     Map a point in the reference simplex to a different permutation of the simplex.
 
+    If the permutation is a single point (i.e. the simplex has dimension 0), the coordinates are returned unchanged.
+
     Parameters
     ----------  
     permutation : onp.ndarray [n_vertices = n_dim + 1]
@@ -18,6 +20,10 @@ def _map_simplex_point_to_different_permutation(permutation, coordinates):
     coordinates : onp.ndarray [n_points, dim]
         The coordinates in the reference simplex.
     '''
+
+    if permutation.shape[0] == 1:
+        return coordinates
+
     assert coordinates.shape[-1] + 1 == permutation.shape[0], "The permutation must have n_dim + 1 vertices."
     
     barycentric_coordinates = onp.concatenate([1.0 - onp.sum(coordinates, axis=-1, keepdims=True), coordinates], axis=-1)    
@@ -122,6 +128,7 @@ def create_all_combined_face_quadratures(element : basix.finite_element.FiniteEl
     n_vertices_per_face = len(basix.cell.topology(element.cell_type)[-2][0])
     all_permutations = _get_all_permutations(n_vertices_per_face)
     all_face_quadratures = []
+    
     for face_idx in range(n_face):
         points, weights = _create_face_quadrature_on_face(element, face_idx)
         points_own      = _map_face_points_to_reference_cell(element, face_idx, points)

@@ -13,10 +13,9 @@ def check_transport_inverse_sweep_complete_vmap(element, degree,
                                                 _source_function, 
                                                 _cross_section_function):
     
-    vertices, connectivity = _vertices_conn_function(element, degree)
-    angle                  = _angle_function()
-    lagrangian_element     = jax_sn.solution_domain.basix_fem.BasixLagrangianSimplex(degree=degree, dimension=element)    
-    domain           = jax_sn.domain.GeometricDomain.from_mesh((jnp.array(vertices), jnp.array(connectivity)), jnp.array(lagrangian_element.face_template))
+    
+    lagrangian_element, domain = _setup_domain(element, degree, _vertices_conn_function)
+    angle                      = _angle_function()    
     toposort         = jax_sn.domain.geometric_domain.TopologicalSortedAngle.from_domain_angle(domain, angle)    
     femmatrices      = jax_sn.solution_domain.FEMMatrices.from_element(lagrangian_element)    
     precomputed_data = lagrangian_element.precompute_geometric_data(domain)    
@@ -39,10 +38,16 @@ def check_transport_inverse_sweep_complete_vmap(element, degree,
     onp.testing.assert_allclose(sweep_array, expected_values, atol=1e-12)
 
     
+def _setup_domain(element, degree, _vertices_conn_function):
+    vertices, connectivity = _vertices_conn_function(element, degree)
+    lagrangian_element     = jax_sn.solution_domain.basix_fem.BasixLagrangianSimplex(degree=degree, dimension=element)    
+    domain           = jax_sn.domain.GeometricDomain.from_mesh((jnp.array(vertices)[..., :element], jnp.array(connectivity)), jnp.array(lagrangian_element.face_template))
+    return lagrangian_element, domain
 
 
-
-#============================ TESTS FOR TRANSPORT OPERATOR VIA COMPARISON WITH OLD CODE  ==============================#
+#===========================================================================================================================
+#                                      StellBlanket comparison functions
+#===========================================================================================================================
 def _switch_element_type(dimension):
     import StellBlanket as SB
     if dimension == 1:
@@ -124,8 +129,8 @@ def _expected_values_from_sb(dimension, degree):
     
     return values[:, permutation]
     
-#@pytest.mark.slow
-@pytest.mark.parametrize("dimension", [3])
+@pytest.mark.slow
+@pytest.mark.parametrize("dimension", [1,2,3])
 def test_sweep_complete_vmap(dimension):
     degree = _n_degree_old_code(dimension)
     for i in range(degree + 1):

@@ -112,7 +112,8 @@ def gij_kernel(
     vol_jacobian     = precomputed_geometric_data.vol_jacobians_det[elem_idx]            
     outflow_matrices = jnp.where(inflow[elem_idx][:, None, None], 0.0, fem_matrices.outflow_matrices)        
     Aij = vol_jacobian * cross_sections.total[elem_idx] * fem_matrices.mass_matrix 
-    Bij = vol_jacobian * jnp.einsum("b, ab, aij-> ij", angle, precomputed_geometric_data.vol_jacobians_inv[elem_idx], fem_matrices.derivative_matrix) 
+    # We restrict the angle to the number of spatial dimensions.
+    Bij = vol_jacobian * jnp.einsum("b, ab, aij-> ij", angle[:precomputed_geometric_data.vol_jacobians.shape[-1]], precomputed_geometric_data.vol_jacobians_inv[elem_idx], fem_matrices.derivative_matrix) 
     Cij = jnp.einsum("f, fij-> ij", abs_omega_dot_n_Je[elem_idx], outflow_matrices)    
     Gij_matrix       = Aij + Bij + Cij    
     return Gij_matrix
