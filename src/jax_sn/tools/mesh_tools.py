@@ -3,9 +3,13 @@ import jax.numpy as jnp
 from functools import partial
 import numpy as onp
 from .permutation_tools import _indices_to_permutation_number
+def _pad_last_dimension(vertices):
+    return jnp.pad(vertices, [(0,0)]*(vertices.ndim -1) + [(0, 3 - vertices.shape[-1])], mode='constant')        
 def _face_template(n_nodes_per_element: int) -> jnp.ndarray:
     '''
     Get the face template for a given element type. This defines which nodes belong to each face of the element.
+    This is a hardcodedfunction for simplicial elements (line, triangle, tetrahedron) that is equal to the definition in StellBlanket.
+    However, this is not equal to the definition in Basix, which uses a different ordering for faces [they are sorted in Basix, while permuted here]
 
     Parameters
     ----------
@@ -254,7 +258,7 @@ def compute_face_normal_vectors_from_3d_simplices(simplices : jnp.ndarray, face_
 
     '''
     if simplices.shape[-1] < 3:
-        simplices = jnp.pad(simplices, [(0,0)]*(simplices.ndim -1) + [(0, 3 - simplices.shape[-1])], mode='constant')        
+        simplices = _pad_last_dimension(simplices)
     return _compute_face_normal_vectors_from_3d_simplices_vec(simplices, face_template)
 
 @jax.jit

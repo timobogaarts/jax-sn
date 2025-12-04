@@ -137,3 +137,5 @@ def test_sweep_complete_vmap(dimension):
     for i in range(degree + 1):
         check_transport_inverse_sweep_complete_vmap(dimension, degree, _verts_conn_from_sb, _angle_function_tn, _expected_values_from_sb, _source_from_sb, _cross_sections_from_sb)
 
+def setup_all_sb(element, degree):
+    return _setup_all(element, degree, _verts_conn_from_sb, _angle_function_tn, _expected_values_from_sb, _source_from_sb, _cross_sections_from_sb)
