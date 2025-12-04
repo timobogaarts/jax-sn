@@ -338,3 +338,55 @@ def extract_boundaries_from_mesh(mesh, boundary_index, face_template):
     elif onp.array(boundary_index).ndim == 1:
         assert boundary_index.shape[0] == mesh[1].shape[0], "If boundary_index is an array, it must have one entry per element"                
         return vertices, onp.take_along_axis(connectivity, face_template[boundary_index])
+#======================================================================================================================================================================
+#                                                       BVH tools for post processing
+#======================================================================================================================================================================
+def create_bvh(vertices: jnp.ndarray, connectivity: jnp.ndarray):
+    '''
+    Create a linear bounding volume hierarchy (LBVH) for the given mesh.
+
+    Parameters
+    ----------
+    vertices : jnp.ndarray [n_vertices, 3]
+        The vertices of the mesh
+    connectivity : jnp.ndarray [n_elements, n_nodes_per_element]
+        The connectivity of the mesh
+
+    Returns
+    -------
+    bvh : jax_sbgeom.jax_utils.raytracing.BVH
+        The constructed LBVH for the mesh
+    '''
+    try:
+        import jax_sbgeom
+    except ImportError:
+        raise ImportError("jax_sbgeom is required for BVH creation. Please install it to use this function")
+    bvh = jax_sbgeom.jax_utils.raytracing.build_lbvh(_pad_last_dimension(vertices), connectivity)
+    return bvh
+
+def probe_bvh(bvh, points: jnp.ndarray):
+    '''
+    Probe a BVH with given points.  
+
+    Parameters
+    ----------
+    bvh : jax_sbgeom.jax_utils.raytracing.BVH
+        The BVH to probe    
+    points : jnp.ndarray [n_points, 3]
+        The points to probe the BVH with
+    Returns
+    ------- 
+        possible_hits : jnp.ndarray[n_points, n_max_hits]
+            The possible hits for each point. Each entry contains the indices of the elements that may contain the point.
+            -1 if no hit.
+    
+
+
+    '''
+    try:
+        import jax_sbgeom
+    except ImportError:
+        raise ImportError("jax_sbgeom is required for BVH probing. Please install it to use this function")
+    hits = jax_sbgeom.jax_utils.raytracing.probe_bvh(bvh, _pad_last_dimension(points))
+    return hits
+    

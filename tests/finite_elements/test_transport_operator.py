@@ -66,8 +66,8 @@ def _test_domain_from_sb(dimension, degree):
     material_1 = SB.Generic_Elements.Material(SB.Generic_Elements.Constant_Cross_Section(2.5))
     region_sizes=  [0.8, 0.2]
     resolutions  = [4,3]
-    size_other_dim = 0.754
-    resolutions_other_dim = 2
+    size_other_dim = 7.54
+    resolutions_other_dim = 3
     element = _switch_element_type(dimension)
     cartesian_domain = SB.Generic_Elements.Create_Slab(element, region_sizes, resolutions, [material_0, material_1], size_other_dim, resolutions_other_dim)    
     return cartesian_domain
@@ -139,3 +139,27 @@ def test_sweep_complete_vmap(dimension):
 
 def setup_all_sb(element, degree):
     return _setup_all(element, degree, _verts_conn_from_sb, _angle_function_tn, _expected_values_from_sb, _source_from_sb, _cross_sections_from_sb)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("dimension", [1,2,3])
+def test_local_real_inversion(dimension):
+    # Tests BVH containing & local/real coordinate conversion for simplexes
+    lagrangian_element, domain = _setup_domain(dimension, 1, _verts_conn_from_sb)
+    aabb_min = jnp.min(domain.vertices, axis=0)
+    aabb_max = jnp.max(domain.vertices, axis=0)
+    points = jnp.linspace(aabb_min, aabb_max, 37)
+    element_indices = domain.containing_cell(points)
+    precomputed_data= lagrangian_element.precompute_geometric_data(domain)
+    local_coords = lagrangian_element.local_coordinates(points, element_indices, domain, precomputed_data)
+    
+    atol = 1e-12
+    onp.testing.assert_array_less(0 - atol, local_coords)
+    onp.testing.assert_array_less(local_coords.sum(axis=-1), 1.0 + atol)
+    
+    real_coords  = lagrangian_element.real_coordinates(local_coords, element_indices, domain, precomputed_data)
+    onp.testing.assert_allclose(points, real_coords, atol=1e-12)
+
+
+
+

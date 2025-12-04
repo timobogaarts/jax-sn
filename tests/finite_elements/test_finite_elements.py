@@ -108,5 +108,3 @@ def test_area_matrix(element, get_other_function  = _get_face_matrices_from_old_
         onp.testing.assert_allclose(cij_old, cij_new, atol =1e-12, rtol=1e-12)
 
 
-
-    

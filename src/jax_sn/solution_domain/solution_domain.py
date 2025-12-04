@@ -27,3 +27,5 @@ def remove_zeros(array):
     a = onp.array(array)
     a[onp.abs(a) < 1e-14] = 0.0
     return a
+
+#class SolutionDomain(eqx.Module):

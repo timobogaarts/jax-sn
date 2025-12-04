@@ -49,25 +49,6 @@ class Element(ABC):
         '''
         ...
     
-    @abstractmethod    
-    def tabulate_basis_functions_first_derivative(self, points : jnp.ndarray) -> jnp.ndarray:
-        '''
-        Returns the basis functions and their first derivatives at the given points.
-
-        Parameters
-        ----------
-        points : jnp.ndarray [n_points, n_dim]
-            The points at which to evaluate the basis functions and their derivatives.
-        
-        Returns
-        -------
-        jnp.ndarray [n_values, n_points, n_basis]
-            The basis functions and their first derivatives at the given points.
-            The n_values depends on the number of dimensions of the element.
-            For example, for a triangle in 2D, n_derivatives = 3 (1 for the function value and 2 for the derivatives in x and y).
-
-        '''
-        ...
 
     @property
     @abstractmethod    
@@ -101,6 +82,26 @@ class Element(ABC):
     def n_vertices_per_face(self, face_idx : int) -> int:
         '''
         Returns the number of vertices per face of the element.
+        '''
+        ...
+
+    @abstractmethod    
+    def tabulate_basis_functions_first_derivative(self, points : jnp.ndarray) -> jnp.ndarray:
+        '''
+        Returns the basis functions and their first derivatives at the given points.
+
+        Parameters
+        ----------
+        points : jnp.ndarray [n_points, n_dim]
+            The points at which to evaluate the basis functions and their derivatives.
+        
+        Returns
+        -------
+        jnp.ndarray [n_values, n_points, n_basis]
+            The basis functions and their first derivatives at the given points.
+            The n_values depends on the number of dimensions of the element.
+            For example, for a triangle in 2D, n_derivatives = 3 (1 for the function value and 2 for the derivatives in x and y).
+
         '''
         ...
 
@@ -143,6 +144,47 @@ class Element(ABC):
         '''
         ...
 
+    @abstractmethod
+    def local_coordinates(self, real_coordinates : jnp.ndarray, element_indices : jnp.ndarray, geometric_domain : GeometricDomain, precomputed_geometric_data : PrecomputedGeometricData) -> jnp.ndarray:
+        '''
+        Computes the local coordinates of the given points in the given elements.
+
+        Parameters
+        ----------
+        points : jnp.ndarray [n_points, n_dim]
+            The global coordinates of the points to compute local coordinates for.
+        element_indices : jnp.ndarray [n_points]
+            The indices of the elements containing the points.
+        geometric_domain : GeometricDomain
+            The geometric domain containing the mesh and adjacency information.
+        Returns
+        -------
+        jnp.ndarray [n_points, n_dim]
+            The local coordinates of the points in the given elements.
+        '''
+        ...
+
+    @abstractmethod
+    def real_coordinates(self, local_coordinates : jnp.ndarray, element_indices : jnp.ndarray, geometric_domain : GeometricDomain, precomputed_geometric_data : PrecomputedGeometricData):
+        '''
+        Computes the real coordinates of the given local coordinates in the given elements.
+
+        Parameters
+        ----------
+        local_coordinates : jnp.ndarray [n_points, n_dim]
+            The local coordinates of the points to compute real coordinates for.
+        element_indices : jnp.ndarray [n_points]
+            The indices of the elements containing the points.
+        geometric_domain : GeometricDomain
+            The geometric domain containing the mesh and adjacency information.
+        Returns
+        -------
+        jnp.ndarray [n_points, n_dim]
+            The real coordinates of the points in the given elements.            
+        '''
+        ...
+
+
     def assert_compatible(self, geometric_domain : GeometricDomain):
         '''
         Asserts that the element is compatible with the given geometric domain.
@@ -152,8 +194,59 @@ class Element(ABC):
         geometric_domain : GeometricDomain
             The geometric domain to check compatibility with.
         '''
-        assert self.compatible(geometric_domain), "Element is not compatible with the given geometric domain."  
+        assert self.compatible(geometric_domain), "Element is not compatible with the given geometric domain." 
 
+
+    def interpolate_from_local_coordinate(self, local_coordinates : jnp.ndarray, element_indices : jnp.ndarray, values_array : jnp.ndarray) :
+        '''
+        Interpolates the given values at the given local coordinates in the given elements.
+
+        Parameters
+        ----------
+        local_coordinates : jnp.ndarray [n_points, n_dim]
+            The local coordinates of the points to interpolate.
+        element_indices : jnp.ndarray [n_points]
+            The indices of the elements containing the points.
+        values_array : jnp.ndarray [n_elements, n_basis]
+            The values of each basis function for each element.
+
+        Returns
+        -------
+        jnp.ndarray [n_points]
+            The interpolated values at the given local coordinates in the given elements.
+        '''
+        hi = self.tabulate_basis_functions_first_derivative(local_coordinates)[0,:,:]  # [n_points, n_basis]
+        element_values = values_array[element_indices]                                 # [n_points, n_basis]
+        return jnp.einsum("pi,pi->p", hi, element_values)                             # [n_points]
+    
+    def interpolate_from_real_coordinate(self, real_coordinates : jnp.ndarray, element_indices : jnp.ndarray, geometric_domain : GeometricDomain, precomputed_geometric_data : PrecomputedGeometricData, values_array : jnp.ndarray) :
+        '''
+        Interpolates the given values at the given real coordinates in the given elements.
+
+        Parameters
+        ----------
+        real_coordinates : jnp.ndarray [n_points, n_dim]
+            The real coordinates of the points to interpolate.
+        element_indices : jnp.ndarray [n_points]
+            The indices of the elements containing the points.
+        geometric_domain : GeometricDomain
+            The geometric domain containing the mesh and adjacency information.
+        precomputed_geometric_data : PrecomputedGeometricData
+            The precomputed geometric data for the elements.
+        values_array : jnp.ndarray [n_elements, n_basis]
+            The values of each basis functions for each element.
+
+        Returns
+        -------
+        jnp.ndarray [n_points]
+            The interpolated values at the given real coordinates in the given elements.
+        '''
+        local_coordinates = self.local_coordinates(real_coordinates, element_indices, geometric_domain, precomputed_geometric_data)  # [n_points, n_dim]
+        return self.interpolate_from_local_coordinate(local_coordinates, element_indices, values_array)                             # [n_points]
+
+#======================================================================================================================================================================
+#                                                               Finite Element Matrix Computations
+#=======================================================================================================================================================================
 def compute_volume_matrices_linear_jacobian(element : Element):
     '''
     Computes the mass matrix, integration coefficient vector, and derivative matrix for an element with a linear Jacobian.

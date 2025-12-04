@@ -6,6 +6,7 @@ import math
 from jax_sn.tools.permutation_tools import _get_all_permutations
 from jax_sn.domain.geometric_domain import GeometricDomain, PrecomputedGeometricData
 import jax.numpy as jnp
+import jax
 
 def _map_simplex_point_to_different_permutation(permutation, coordinates):
     '''
@@ -210,6 +211,93 @@ class BasixLagrangianSimplex(Element):
     def precompute_geometric_data(self, geometric_domain):
         self.assert_compatible(geometric_domain)
         return _precompute_jacobians_simplex(geometric_domain)
+    
+    def local_coordinates(self, real_coordinates : jnp.ndarray, element_indices : jnp.ndarray, geometric_domain : GeometricDomain, precomputed_geometric_data : PrecomputedGeometricData):
+        assert real_coordinates.shape[-1] == self.dimension, f"Real coordinates should be of shape (..., {self.dimension}) but is {real_coordinates.shape}"
+        assert element_indices.shape == real_coordinates.shape[:-1], f"Element indices should be of shape {real_coordinates.shape[:-1]} but is {element_indices.shape}"
+        return _local_coordinate_simplex_vec(real_coordinates, element_indices, geometric_domain, precomputed_geometric_data)
+
+    def real_coordinates(self, local_coordinates : jnp.ndarray, element_indices : jnp.ndarray, geometric_domain : GeometricDomain, precomputed_geometric_data : PrecomputedGeometricData):
+        assert local_coordinates.shape[-1] == self.dimension, f"Real coordinates should be of shape (..., {self.dimension}) but is {local_coordinates.shape}"
+        assert element_indices.shape == local_coordinates.shape[:-1], f"Element indices should be of shape {local_coordinates.shape[:-1]} but is {element_indices.shape}"
+        return _real_coordinate_simplex_vec(local_coordinates, element_indices, geometric_domain, precomputed_geometric_data)
+        
+
+
+def _local_coordinate_simplex(real_coordinate : jnp.ndarray, element_index : jnp.ndarray, geometric_domain : GeometricDomain, precomputed_geometric_data : PrecomputedGeometricData):
+    '''
+    Compute the local coordinate of a point in a simplex element.
+
+    Uses the standard affine mapping from reference simplex to physical coordinates:
+            x = v0 + J * xi = v0 + sum_{i=1}^{d} (vi - v0) * xi
+    where J is the Jacobian matrix with columns (vi - v0) for i=1..d
+    Thus, the local coordinate is given by:
+            xi = J_inv * (x - v0)
+    This inverse  jacobian is part of the precomputed geometric data.
+
+    For a vectorized version, use _local_coordinate_simplex_vec.
+
+    Parameters:
+    -----------
+    real_coordinate : jnp.ndarray [n_dim]
+        The real coordinate of the point.
+    element_index : int
+        The index of the element containing the point.
+    geometric_domain : GeometricDomain
+        The geometric domain.
+    precomputed_geometric_data : PrecomputedGeometricData
+        The precomputed geometric data.
+    Returns:
+    --------
+    jnp.ndarray [n_dim]
+        The local coordinate of the point in the reference simplex.
+    '''
+    connectivity_indices = geometric_domain.connectivity[element_index]
+    element_vertices     = geometric_domain.vertices[connectivity_indices]        # [n_vertices, n_dim]
+    J_inv = precomputed_geometric_data.vol_jacobians_inv[element_index]           # [n_dim, n_dim]
+    l0 = (real_coordinate - element_vertices[0, :])                               # [n_dim]
+    return J_inv @ l0
+
+_local_coordinate_simplex_vec = jax.jit(jnp.vectorize(_local_coordinate_simplex, excluded=(2,3), signature=('(d),()->(d)')))
+        
+def _real_coordinate_simplex(local_coordinate : jnp.ndarray, element_index : jnp.ndarray, geometric_domain : GeometricDomain, precomputed_geometric_data : PrecomputedGeometricData):
+    '''
+    Compute the real coordinate of a point in a simplex element.
+
+    Uses the standard affine mapping from reference simplex to physical coordinates:
+            x = v0 + J * xi = v0 + sum_{i=1}^{d} (vi - v0) * xi
+    where J is the Jacobian matrix with columns (vi - v0) for i=1..d
+    Thus, the real coordinate is given by:
+            x = v0 + J * xi
+    This jacobian is part of the precomputed geometric data.    
+
+    For a vectorized version, use _real_coordinate_simplex_vec.
+
+    Parameters:
+    ----------- 
+    local_coordinate : jnp.ndarray [n_dim]
+        The local coordinate of the point in the reference simplex.
+    element_index : int
+        The index of the element containing the point.
+    geometric_domain : GeometricDomain
+        The geometric domain.
+    precomputed_geometric_data : PrecomputedGeometricData
+        The precomputed geometric data.
+    Returns:
+    --------
+    jnp.ndarray [n_dim]
+        The real coordinate of the point.
+    '''
+
+    connectivity_indices = geometric_domain.connectivity[element_index]
+    element_vertices     = geometric_domain.vertices[connectivity_indices]  # [n_vertices, n_dim]
+    J                    = precomputed_geometric_data.vol_jacobians[element_index] # [n_dim, n_dim]
+    return element_vertices[0, :] + J @ local_coordinate
+
+_real_coordinate_simplex_vec = jax.jit(jnp.vectorize(_real_coordinate_simplex, excluded=(2,3), signature=('(d),()->(d)')))
+
+        
+        
     
     
     
