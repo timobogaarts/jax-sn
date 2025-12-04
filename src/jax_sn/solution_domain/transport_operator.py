@@ -36,10 +36,9 @@ def _compute_omega_dot_n_Je_inflow(geometric_domain : GeometricDomain, angle : j
     inflow = omega_dot_n < 0.0
     return abs_omega_dot_n_Je, inflow
 
-
-def transport_inverse_sweep_complete_vmap(fem_matrices : FEMMatrices, geometric_domain : GeometricDomain, topological_sorted_angle : TopologicalSortedAngle, cross_sections : CrossSectionData, precomputed_geometric_data : PrecomputedGeometricData, precomputed_source : Source, sweep_result : jnp.ndarray) -> jnp.ndarray:    
+@jax.jit
+def transport_inverse_sweep_complete_vmap_fori(fem_matrices : FEMMatrices, geometric_domain : GeometricDomain, topological_sorted_angle : TopologicalSortedAngle, cross_sections : CrossSectionData, precomputed_geometric_data : PrecomputedGeometricData, precomputed_source : Source, sweep_result : jnp.ndarray) -> jnp.ndarray:    
     abs_omega_dot_n_Je, inflow = _compute_omega_dot_n_Je_inflow(geometric_domain, topological_sorted_angle.angle, precomputed_geometric_data)
-
     gij_inv_all    = gij_inv_kernel_vmap(
                                 topological_sorted_angle.levels_argsort,
                                 fem_matrices,
@@ -59,15 +58,15 @@ def transport_inverse_sweep_complete_vmap(fem_matrices : FEMMatrices, geometric_
                                 inflow,
                                 geometric_domain.etof,
                                 geometric_domain.face_perm_idx)
-        
-    for i in range(geometric_domain.n_elements):        
+    
+    def collapse_i(i,sweep_result):        
         elem_idx     = topological_sorted_angle.levels_argsort[i]       
         s_dj         = _collapse_dij(elem_idx, dij_f_p_fm_all[i], sweep_result, geometric_domain.etoe, abs_omega_dot_n_Je)
         result       = gij_inv_all[i] @ (qm_i_all[i] + s_dj)
         sweep_result = sweep_result.at[elem_idx].set(result)        
-    return sweep_result
-
-
+        return sweep_result
+    
+    return jax.lax.fori_loop(0, geometric_domain.n_elements, collapse_i, sweep_result)
 
 
 def gij_kernel(

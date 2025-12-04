@@ -1,6 +1,6 @@
 import jax 
 import jax.numpy as jnp
-from jax_sn.solution_domain.transport_operator import transport_inverse_sweep_complete_vmap
+from jax_sn.solution_domain.transport_operator import transport_inverse_sweep_complete_vmap_fori
 import jax_sn
 
 import numpy as onp
@@ -14,17 +14,9 @@ def check_transport_inverse_sweep_complete_vmap(element, degree,
                                                 _cross_section_function):
     
     
-    lagrangian_element, domain = _setup_domain(element, degree, _vertices_conn_function)
-    angle                      = _angle_function()    
-    toposort         = jax_sn.domain.geometric_domain.TopologicalSortedAngle.from_domain_angle(domain, angle)    
-    femmatrices      = jax_sn.solution_domain.FEMMatrices.from_element(lagrangian_element)    
-    precomputed_data = lagrangian_element.precompute_geometric_data(domain)    
-    sweep_array      = jnp.zeros((domain.n_elements, lagrangian_element.n_basis))
-    cross_sections   = _cross_section_function(element, degree)
-    source           = _source_function(element, degree)
-    
+    lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values = _setup_all(element, degree, _vertices_conn_function, _angle_function, _expected_values_function, _source_function, _cross_section_function)
 
-    sweep_array = transport_inverse_sweep_complete_vmap(
+    sweep_array = transport_inverse_sweep_complete_vmap_fori(
         femmatrices,
         domain,
         toposort,
@@ -33,8 +25,6 @@ def check_transport_inverse_sweep_complete_vmap(element, degree,
         source,
         sweep_array)
     
-    expected_values = _expected_values_function(element, degree)
-
     onp.testing.assert_allclose(sweep_array, expected_values, atol=1e-12)
 
     
@@ -44,6 +34,17 @@ def _setup_domain(element, degree, _vertices_conn_function):
     domain           = jax_sn.domain.GeometricDomain.from_mesh((jnp.array(vertices)[..., :element], jnp.array(connectivity)), jnp.array(lagrangian_element.face_template))
     return lagrangian_element, domain
 
+def _setup_all(element, degree, _vertices_conn_function, _angle_function, _expected_values_function, _source_function, _cross_section_function):
+    lagrangian_element, domain = _setup_domain(element, degree, _vertices_conn_function)
+    angle                      = _angle_function()    
+    toposort         = jax_sn.domain.geometric_domain.TopologicalSortedAngle.from_domain_angle(domain, angle)    
+    femmatrices      = jax_sn.solution_domain.FEMMatrices.from_element(lagrangian_element)    
+    precomputed_data = lagrangian_element.precompute_geometric_data(domain)    
+    sweep_array      = jnp.zeros((domain.n_elements, lagrangian_element.n_basis))
+    cross_sections   = _cross_section_function(element, degree)
+    source           = _source_function(element, degree)
+    expected_values  = _expected_values_function(element, degree)
+    return lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values
 
 #===========================================================================================================================
 #                                      StellBlanket comparison functions
