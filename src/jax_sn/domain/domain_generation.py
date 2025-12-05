@@ -1,9 +1,10 @@
 import jax.numpy as jnp
 import jax 
 from typing import List, Tuple  
+from .cross_sections import CrossSectionData
+from .geometric_domain import CrossSectionIndexed
 
-
-def create_cartesian_setup(dimension : int, region_size_res : List[List[Tuple]], cross_sections_regions : List[float], source_regions : List[float], inhomogeneity_direction : int):
+def create_cartesian_setup(dimension : int, region_size_res : List[List[Tuple]], cross_sections_regions : List[CrossSectionData], source_regions : List[float], inhomogeneity_direction : int):
     import jax_sbgeom
     '''
     Convenience function to create a Cartesian mesh with layered cross sections and sources. This is not necessarily a differentiable function and is therefore not intended to be used 
@@ -55,8 +56,15 @@ def create_cartesian_setup(dimension : int, region_size_res : List[List[Tuple]],
 
         n_per_block = [None, 1, 2, 6][dimension]
         return jnp.repeat(scalar_mg, repeats=n_per_block, axis=-1).reshape(scalar_mg.shape + (n_per_block,))
+    
+    cross_section_data = CrossSectionData.from_list(cross_sections_regions)
 
-    layered_cross_section = make_element_array(cross_sections_regions, region_size_res, inhomogeneity_direction)
+    cross_section_indices = jnp.arange(len(cross_sections_regions)) # [0,1,2,...]
+
+    layered_indices       = make_element_array(cross_section_indices, region_size_res, inhomogeneity_direction)
+
+    layered_cross_section = CrossSectionIndexed(layered_indices.flatten(), cross_section_data)
+    
     layered_source        = make_element_array(source_regions, region_size_res, inhomogeneity_direction)
 
     if dimension == 1:
@@ -70,5 +78,5 @@ def create_cartesian_setup(dimension : int, region_size_res : List[List[Tuple]],
         connectivity = jax_sbgeom.flux_surfaces.flux_surface_meshing._tetrahedral_open_cube(nodes[0].shape[0], nodes[1].shape[0], nodes[2].shape[0])
     else:
         raise NotImplementedError(f"Dimension {dimension} not supported. Only 1, 2, and 3 are supported.")
-    return vertices, connectivity, layered_cross_section.flatten(), layered_source.flatten()
+    return vertices, connectivity, layered_cross_section, layered_source.flatten()
             

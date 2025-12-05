@@ -38,6 +38,7 @@ def _compute_omega_dot_n_Je_inflow(geometric_domain : GeometricDomain, angle : j
 
 @jax.jit
 def transport_inverse_sweep_complete_vmap_fori(fem_matrices : FEMMatrices, geometric_domain : GeometricDomain, topological_sorted_angle : TopologicalSortedAngle, cross_sections : CrossSectionDataSingleGroup, precomputed_geometric_data : PrecomputedGeometricData, precomputed_source : Source, sweep_result : jnp.ndarray) -> jnp.ndarray:    
+
     abs_omega_dot_n_Je, inflow = _compute_omega_dot_n_Je_inflow(geometric_domain, topological_sorted_angle.angle, precomputed_geometric_data)    
     gij_inv_all    = gij_inv_kernel_vmap(
                                 topological_sorted_angle.levels_argsort,
@@ -85,6 +86,8 @@ def gij_kernel(
     Gij = σ J ∫H_i H_j dV +  J ∑_{a,b} Ω_{b} (J)⁻¹_{ab} ∫ - ∂H_i/∂q_a H_j dV + ∑_{f outflow} |Ω·n_f| J_f ∫H_i H_j dA
 
     vmap version is gij_kernel_vmap
+
+    The cross sections are assumed to be mapped to all elements. Either use a full array or use the map_to_full_array method of CrossSectionIndexed.
 
     Parameters
     ----------
@@ -238,7 +241,29 @@ def dij_f_p_fm_kernel(
     return dij_f_p_fo 
 
 @jax.jit
-def _collapse_dij(elem_idx : int, dij_f_p_fm : jnp.ndarray,  sweep_result : jnp.ndarray, etoe : jnp.ndarray, abs_omega_dot_n_Je : jnp.ndarray):    
+def _collapse_dij(elem_idx : int, dij_f_p_fm : jnp.ndarray,  sweep_result : jnp.ndarray, etoe : jnp.ndarray, abs_omega_dot_n_Je : jnp.ndarray):  
+    '''
+    Compute the face source from neighbouring elements by collapsing the Dij_f_p_fm matrices with the sweep result.
+        s_i = ∑_{f,p, fm} |Ω·n_f| J_f Dij_f_p_fm ψ_fm = ∑_{f} |Ω·n_f| J_f ∫H_i Hᴼ_j dA ψ_j
+
+    Parameters
+    ----------
+    elem_idx : int
+        The element index to compute the collapsed Dij for.
+    dij_f_p_fm : jnp.ndarray
+        The Dij_f_p_fm matrices for the specified element.
+    sweep_result : jnp.ndarray
+        The current sweep result array.
+    etoe : jnp.ndarray
+        The element-to-element connectivity array.
+    abs_omega_dot_n_Je : jnp.ndarray
+        The absolute value of the dot product of omega and face normals multiplied by face Jacobian determinants
+        for all elements and faces.
+    Returns
+    -------
+    collapsed_dij : jnp.ndarray
+        The collapsed Dij vector for the specified element.
+    '''  
     values = sweep_result[etoe[elem_idx], :]        
     return jnp.einsum("f, fij, fj->i",abs_omega_dot_n_Je[elem_idx], dij_f_p_fm, values) 
     
