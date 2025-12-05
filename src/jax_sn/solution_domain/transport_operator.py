@@ -1,6 +1,7 @@
 import jax 
 import jax.numpy as jnp 
-from jax_sn.domain.geometric_domain import GeometricDomain, TopologicalSortedAngle, PrecomputedGeometricData, CrossSectionDataSingleGroup
+from jax_sn.domain.geometric_domain import GeometricDomain, TopologicalSortedAngle, CrossSectionDataSingleGroup, Domain
+from .base_fem import PrecomputedGeometricData, FEMMatrices
 from .solution_domain import FEMMatrices
 from jax_sn.source import Source
 
@@ -69,6 +70,58 @@ def transport_inverse_sweep_complete_vmap_fori(fem_matrices : FEMMatrices, geome
     
     return jax.lax.fori_loop(0, geometric_domain.n_elements, collapse_i, sweep_result)
 
+@jax.jit
+def transport_inverse_sweep_complete_vmap_fori2(fem_matrices : FEMMatrices, geometric_domain : GeometricDomain, topological_sorted_angle : TopologicalSortedAngle, cross_sections : CrossSectionDataSingleGroup, precomputed_geometric_data : PrecomputedGeometricData, precomputed_source : Source, sweep_result : jnp.ndarray) -> jnp.ndarray:    
+    # Just a dummy function to test which part of the sweep takes the most time: 
+    # (always is the scan to collapse, so there is something to be gained there...)
+    # ATM i am thinking about:
+    #  - vmapping sweep for different angles 
+    #     (compute gij_inv for a batch per angle, then collapse in parallel)
+    # - batching over different levels [requires significant level parallelism, but I guess this is somewhat satisfied?]
+    #     batching gij_inv up to the level size (cache compilation to a set number or pad the level array?)
+    #     then batching the collapse over the different sizes
+    abs_omega_dot_n_Je, inflow = _compute_omega_dot_n_Je_inflow(geometric_domain, topological_sorted_angle.angle, precomputed_geometric_data)    
+    gij_inv_all    = gij_inv_kernel_vmap(
+                                topological_sorted_angle.levels_argsort,
+                                fem_matrices,
+                                topological_sorted_angle.angle,
+                                cross_sections,
+                                precomputed_geometric_data,
+                                inflow,
+                                abs_omega_dot_n_Je)    
+    qm_i_all       = qm_i_kernel_vmap(
+                                topological_sorted_angle.levels_argsort,
+                                fem_matrices,
+                                precomputed_geometric_data,
+                                precomputed_source)
+    dij_f_p_fm_all = dij_f_p_fm_kernel_vmap(
+                                topological_sorted_angle.levels_argsort,
+                                fem_matrices,
+                                inflow,
+                                geometric_domain.etof,
+                                geometric_domain.face_perm_idx)
+    
+    return gij_inv_all, qm_i_all, dij_f_p_fm_all
+
+@jax.jit
+def _transport_inverse_sweep_complete_vmap_fori_domain(fem_matrices : FEMMatrices, 
+                                                       domain : Domain, 
+                                                       toposort_angle         : TopologicalSortedAngle,    
+                                                       precomputed_data : PrecomputedGeometricData,                                                                    
+                                                       source        : Source,
+                                                       sweep_buffer : jnp.ndarray,
+                                                       energy_group : int) -> jnp.ndarray:  
+    assert sweep_buffer.shape == (domain.n_elements, fem_matrices.mass_matrix.shape[0]),\
+        f"Expected sweep_result shape {(domain.n_elements, fem_matrices.mass_matrix.shape[0])}, got {sweep_buffer.shape}"
+
+    mapped_xs = domain.cross_sections_indexed.map_to_full_array(energy_group)
+    return transport_inverse_sweep_complete_vmap_fori(
+        fem_matrices,
+        domain,
+        toposort_angle, 
+        mapped_xs,
+        precomputed_data,
+        source, sweep_buffer)
 
 def gij_kernel(
     elem_idx                   : int,

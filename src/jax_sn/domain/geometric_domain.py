@@ -83,30 +83,48 @@ class CrossSectionIndexed:
     def map_to_full_array(self, energy_group : int) -> CrossSectionDataSingleGroup:
         return _map_cross_sections_to_full_array(self, energy_group)
 
-
 @jax.jit
-def _map_cross_sections_to_full_array(cross_sections : CrossSectionIndexed, energy_group : int):
-    single_group_non_batched = cross_sections.cross_section_data[energy_group]
-    return CrossSectionDataSingleGroup(single_group_non_batched.total[cross_sections.indices], single_group_non_batched.scattering[cross_sections.indices])
+def _map_cross_sections_to_full_array(cross_sections : CrossSectionIndexed, energy_group : int) -> CrossSectionDataSingleGroup:
+    return CrossSectionDataSingleGroup(cross_sections.cross_section_data.total[cross_sections.indices,energy_group], cross_sections.cross_section_data.scattering[cross_sections.indices, : , energy_group, energy_group])
     
-
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True, eq=False)
 class Domain(GeometricDomain):
+    '''
+    Geometric domain with indexed cross sections.
+    This is seperated from GeometricDomain because many algorithms do not depend on cross sections and therefore we want to keep the cross sections distinct.
+    '''
     cross_sections_indexed : CrossSectionIndexed
     
     @classmethod
-    def from_mesh_and_cross_sections(cls, mesh : Tuple[jnp.ndarray, jnp.ndarray], face_template : jnp.ndarray, cross_sections_indices : jnp.ndarray, cross_section_data : CrossSectionData):
-        # Checking that the cross sections are properly batched and sized
-        assert cross_sections_indices.ndim == 1, f"Cross sections indices must be a 1D array [ n_elements ]. Provided shape: {cross_sections_indices.shape}"
-        assert cross_sections_indices.shape[0] == mesh[1].shape[0], f"Cross sections indices must have length equal to number of elements in mesh. Number of elements in mesh: {mesh[1].shape[0]}, provided length: {cross_sections_indices.shape[0]}"
-        cross_section_data.assert_valid_batched()
-
+    def from_mesh_and_cross_sections(cls, mesh : Tuple[jnp.ndarray, jnp.ndarray], face_template : jnp.ndarray, cross_sections_indexed : CrossSectionIndexed):
+        
+        _check_cross_section_compatibility(mesh[1].shape[0], cross_sections_indexed)
         return cls(
             *compute_domain_setup_from_mesh(mesh, face_template),
-            face_template       = face_template,
-            CrossSectionIndexed = CrossSectionIndexed(cross_sections_indices, cross_section_data)
-        )
+            face_template         = face_template,
+            cross_sections_indexed = cross_sections_indexed
+        )    
+    @classmethod 
+    def from_domain_and_cross_sections(cls, geometric_domain : GeometricDomain, cross_sections_indexed : CrossSectionIndexed):        
+        return cls(geometric_domain.vertices, 
+                   geometric_domain.connectivity, 
+                   geometric_domain.face_normals, 
+                   geometric_domain.etoe, 
+                   geometric_domain.etof, 
+                   geometric_domain.face_perm_idx, 
+                   geometric_domain.face_template,
+                   cross_sections_indexed=cross_sections_indexed
+                  )    
+    
+def _check_cross_section_compatibility(n_elements : int, cross_sections : CrossSectionIndexed):
+    '''
+    Checks whether the cross sections are compatible with the geometric domain.
+    Only is static array shape checking, not values.
+    '''
+    assert cross_sections.indices.ndim == 1, f"Cross section indices must be a 1D array [ n_elements ]. Provided shape: {cross_sections.indices.shape}"
+    assert cross_sections.indices.shape[0] == n_elements, f"Cross section indices must have length equal to number of elements in geometric domain. Number of elements in geometric domain: {n_elements}, provided length: {cross_sections.indices.shape[0]}"
+    cross_sections.cross_section_data.assert_valid_batched()
 
 
 @jax.tree_util.register_dataclass
@@ -123,15 +141,6 @@ class TopologicalSortedAngle:
         levels_argsort = jnp.argsort(levels)
         return cls(levels=levels, angle=angle, levels_argsort=levels_argsort)
     
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class PrecomputedGeometricData:
-    vol_jacobians         : jnp.ndarray
-    vol_jacobians_inv     : jnp.ndarray
-    vol_jacobians_det     : jnp.ndarray
-    face_jacobians_det    : jnp.ndarray
-
-
 
 @lru_cache(maxsize=16)
 def _build_bvh(geometric_domain : GeometricDomain):    

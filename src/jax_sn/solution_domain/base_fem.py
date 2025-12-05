@@ -3,14 +3,58 @@ import jax.numpy as jnp
 import numpy as onp
 from abc import ABC, abstractmethod
 from typing import Tuple, List
-from jax_sn.domain.geometric_domain import GeometricDomain, PrecomputedGeometricData
+from jax_sn.domain.geometric_domain import GeometricDomain
+import jax 
+from dataclasses import dataclass
+
+
+#======================================================================================================================================================================
+#                                                               Precomputed Data Classes
+#=======================================================================================================================================================================    
+
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class FEMMatrices:
+    '''
+    Convenience class to bundle all FEM matrices required for the solution of the transport equation on a domain
+    This is static wrt the domain geometry (i.e. assumes linear Jacobians)
+    Therefore, it is separate from the 
+    '''
+    mass_matrix       : jnp.ndarray  #[n_basis, n_basis]
+    integration_coeff : jnp.ndarray  #[n_basis]
+    derivative_matrix : jnp.ndarray  #[n_dim, n_basis, n_basis]
+    outflow_matrices  : jnp.ndarray  #[n_faces_per_element, n_basis, n_basis]
+    inflow_matrices   : jnp.ndarray  #[n_faces_per_element, n_permutations, n_faces_per_element, n_basis, n_basis]
+
+    @classmethod 
+    def from_element(cls, element : "Element"):
+        return cls(*compute_volume_matrices_linear_jacobian(element), *compute_face_matrices_linear_jacobian(element))
+    
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class PrecomputedGeometricData:
+    '''
+    Convenience class to bundle all precomputed geometric data required for the solution of the transport equation on a domain
+    This is specific to a given domain geometry. Therefore, it is separate from FEMMatrices.
+    '''
+    vol_jacobians         : jnp.ndarray #[n_elements, n_dim, n_dim]
+    vol_jacobians_inv     : jnp.ndarray #[n_elements, n_dim, n_dim]
+    vol_jacobians_det     : jnp.ndarray #[n_elements]
+    face_jacobians_det    : jnp.ndarray #[n_elements, n_faces_per_element]
+
+
+#======================================================================================================================================================================
+#                                                               Base Element Class
+#=======================================================================================================================================================================    
+
 class Element(ABC):    
     
     @property
     @abstractmethod        
     def volume_quadrature(self) -> Tuple[jnp.ndarray, jnp.ndarray]:
         '''
-        Returns the quadrature points and weights for the element.
+        Returns the quadrature points and weights for the element that are sufficiently accurate for the volume integrals
+        (in other words, 2 times the maximum polynomial degree of the basis functions)
         '''
         ...
     @property
@@ -184,6 +228,26 @@ class Element(ABC):
         '''
         ...
 
+    @abstractmethod        
+    def volume_quadrature_order(self, n_deg : int) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        '''
+        Returns the quadrature points and weights for the element that are sufficiently accurate for the volume integrals
+        of polynomials up to degree n_deg.
+
+        Parameters
+        ----------
+        n_deg : int
+            The maximum polynomial degree to integrate exactly.
+        
+        Returns
+        -------
+        points : jnp.ndarray [n_quadrature_points, n_dim]
+            The quadrature points.
+        weights : jnp.ndarray [n_quadrature_points]
+            The quadrature weights.
+        '''
+        ...
+
 
     def assert_compatible(self, geometric_domain : GeometricDomain):
         '''
@@ -243,6 +307,7 @@ class Element(ABC):
         '''
         local_coordinates = self.local_coordinates(real_coordinates, element_indices, geometric_domain, precomputed_geometric_data)  # [n_points, n_dim]
         return self.interpolate_from_local_coordinate(local_coordinates, element_indices, values_array)                             # [n_points]
+
 
 #======================================================================================================================================================================
 #                                                               Finite Element Matrix Computations

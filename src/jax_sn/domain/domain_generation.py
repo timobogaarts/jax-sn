@@ -3,6 +3,7 @@ import jax
 from typing import List, Tuple  
 from .cross_sections import CrossSectionData
 from .geometric_domain import CrossSectionIndexed
+from .geometric_domain import Domain
 
 def create_cartesian_setup(dimension : int, region_size_res : List[List[Tuple]], cross_sections_regions : List[CrossSectionData], source_regions : List[float], inhomogeneity_direction : int):
     import jax_sbgeom
@@ -78,5 +79,6 @@ def create_cartesian_setup(dimension : int, region_size_res : List[List[Tuple]],
         connectivity = jax_sbgeom.flux_surfaces.flux_surface_meshing._tetrahedral_open_cube(nodes[0].shape[0], nodes[1].shape[0], nodes[2].shape[0])
     else:
         raise NotImplementedError(f"Dimension {dimension} not supported. Only 1, 2, and 3 are supported.")
+        
     return vertices, connectivity, layered_cross_section, layered_source.flatten()
             

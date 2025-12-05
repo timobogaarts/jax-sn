@@ -4,7 +4,8 @@ from .base_fem import Element
 from typing import Tuple, List
 import math
 from jax_sn.tools.permutation_tools import _get_all_permutations
-from jax_sn.domain.geometric_domain import GeometricDomain, PrecomputedGeometricData
+from .base_fem import PrecomputedGeometricData
+from jax_sn.domain.geometric_domain import GeometricDomain
 import jax.numpy as jnp
 import jax
 
@@ -221,6 +222,10 @@ class BasixLagrangianSimplex(Element):
         assert local_coordinates.shape[-1] == self.dimension, f"Real coordinates should be of shape (..., {self.dimension}) but is {local_coordinates.shape}"
         assert element_indices.shape == local_coordinates.shape[:-1], f"Element indices should be of shape {local_coordinates.shape[:-1]} but is {element_indices.shape}"
         return _real_coordinate_simplex_vec(local_coordinates, element_indices, geometric_domain, precomputed_geometric_data)
+    
+    
+    def volume_quadrature_order(self, n_deg : int) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        return basix.make_quadrature(self.element.cell_type, n_deg)
         
 
 
