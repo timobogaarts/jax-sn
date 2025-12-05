@@ -3,7 +3,10 @@ import jax.numpy as jnp
 from dataclasses import dataclass
 from jax_sn.tools.mesh_tools import compute_face_normal_vectors_from_3d_simplices, _compute_adjacency, _compute_face_permutations, _pad_last_dimension
 from functools import lru_cache
-#@jax.jit
+from typing import Tuple
+from .cross_sections import CrossSectionDataSingleGroup
+
+@jax.jit
 def compute_domain_setup_from_mesh(mesh, face_template):
     '''
     Computes the setup for a geometric domain from a mesh and a face template (see `jax_sn.tools.mesh_tools._face_template` for an example template).
@@ -54,7 +57,57 @@ class GeometricDomain:
         return self.face_template.shape[0]
     
     def containing_cell(self, points : jnp.ndarray):
+        '''
+        Containing cell for each point in points.
+        Uses a cached BVH, so cannot be used in a jitted function
+
+        Parameters
+        ----------
+        points : jnp.ndarray [n_points, n_dim]
+            The points for which to find the containing cell.
+        Returns
+        -------
+        element_indices : jnp.ndarray [n_points]
+            The indices of the containing cell for each point. -1 if no containing cell is found
+        '''
         return _containing_cell(self, points)
+
+from .cross_sections import CrossSectionData
+
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class CrossSectionIndexed:
+    indices            : jnp.ndarray      #[n_elements]
+    cross_section_data : CrossSectionData #[batched over n_cross_sections (where it should hold that n_cross_sections >= max(indices)+1])]
+
+    def map_to_full_array(self, energy_group : int) -> CrossSectionDataSingleGroup:
+        return _map_cross_sections_to_full_array(self, energy_group)
+
+
+@jax.jit
+def _map_cross_sections_to_full_array(cross_sections : CrossSectionIndexed, energy_group : int):
+    single_group_non_batched = cross_sections.cross_section_data[energy_group]
+    return CrossSectionDataSingleGroup(single_group_non_batched.total[cross_sections.indices], single_group_non_batched.scattering[cross_sections.indices])
+    
+
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True, eq=False)
+class Domain(GeometricDomain):
+    cross_sections_indexed : CrossSectionIndexed
+    
+    @classmethod
+    def from_mesh_and_cross_sections(cls, mesh : Tuple[jnp.ndarray, jnp.ndarray], face_template : jnp.ndarray, cross_sections_indices : jnp.ndarray, cross_section_data : CrossSectionData):
+        # Checking that the cross sections are properly batched and sized
+        assert cross_sections_indices.ndim == 1, f"Cross sections indices must be a 1D array [ n_elements ]. Provided shape: {cross_sections_indices.shape}"
+        assert cross_sections_indices.shape[0] == mesh[1].shape[0], f"Cross sections indices must have length equal to number of elements in mesh. Number of elements in mesh: {mesh[1].shape[0]}, provided length: {cross_sections_indices.shape[0]}"
+        cross_section_data.assert_valid_batched()
+
+        return cls(
+            *compute_domain_setup_from_mesh(mesh, face_template),
+            face_template       = face_template,
+            CrossSectionIndexed = CrossSectionIndexed(cross_sections_indices, cross_section_data)
+        )
+
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -78,10 +131,6 @@ class PrecomputedGeometricData:
     vol_jacobians_det     : jnp.ndarray
     face_jacobians_det    : jnp.ndarray
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class CrossSectionData:
-    total           : jnp.ndarray    
 
 
 @lru_cache(maxsize=16)

@@ -184,7 +184,7 @@ class BasixLagrangianSimplex(Element):
     
     @property    
     def face_template(self) -> List[Tuple]:
-        return basix.cell.topology(self.element.cell_type)[-2]
+        return jnp.array(basix.cell.topology(self.element.cell_type)[-2])
         
     def n_vertices_per_face(self, face_idx) -> int:
         return self.dimension

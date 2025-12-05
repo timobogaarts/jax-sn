@@ -1,6 +1,6 @@
 import jax 
 import jax.numpy as jnp 
-from jax_sn.domain.geometric_domain import GeometricDomain, TopologicalSortedAngle, PrecomputedGeometricData, CrossSectionData
+from jax_sn.domain.geometric_domain import GeometricDomain, TopologicalSortedAngle, PrecomputedGeometricData, CrossSectionDataSingleGroup
 from .solution_domain import FEMMatrices
 from jax_sn.source import Source
 
@@ -37,8 +37,8 @@ def _compute_omega_dot_n_Je_inflow(geometric_domain : GeometricDomain, angle : j
     return abs_omega_dot_n_Je, inflow
 
 @jax.jit
-def transport_inverse_sweep_complete_vmap_fori(fem_matrices : FEMMatrices, geometric_domain : GeometricDomain, topological_sorted_angle : TopologicalSortedAngle, cross_sections : CrossSectionData, precomputed_geometric_data : PrecomputedGeometricData, precomputed_source : Source, sweep_result : jnp.ndarray) -> jnp.ndarray:    
-    abs_omega_dot_n_Je, inflow = _compute_omega_dot_n_Je_inflow(geometric_domain, topological_sorted_angle.angle, precomputed_geometric_data)
+def transport_inverse_sweep_complete_vmap_fori(fem_matrices : FEMMatrices, geometric_domain : GeometricDomain, topological_sorted_angle : TopologicalSortedAngle, cross_sections : CrossSectionDataSingleGroup, precomputed_geometric_data : PrecomputedGeometricData, precomputed_source : Source, sweep_result : jnp.ndarray) -> jnp.ndarray:    
+    abs_omega_dot_n_Je, inflow = _compute_omega_dot_n_Je_inflow(geometric_domain, topological_sorted_angle.angle, precomputed_geometric_data)    
     gij_inv_all    = gij_inv_kernel_vmap(
                                 topological_sorted_angle.levels_argsort,
                                 fem_matrices,
@@ -73,7 +73,7 @@ def gij_kernel(
     elem_idx                   : int,
     fem_matrices                : FEMMatrices,    
     angle                      : jnp.ndarray ,
-    cross_sections             : CrossSectionData,
+    cross_sections             : CrossSectionDataSingleGroup,
     precomputed_geometric_data : PrecomputedGeometricData,    
     inflow                     : jnp.ndarray,
     abs_omega_dot_n_Je         : jnp.ndarray
@@ -94,7 +94,7 @@ def gij_kernel(
         The finite element method matrices.
     angle : jnp.ndarray
         The direction vector.
-    cross_sections : CrossSectionData
+    cross_sections : CrossSectionDataSingleGroup
         The cross section data.
     precomputed_geometric_data : PrecomputedGeometricData
         The precomputed geometric data (Jacobian determinants and inverses).
@@ -121,7 +121,7 @@ def gij_inv_kernel(
     elem_idx                   : int,
     fem_matrices                : FEMMatrices,    
     angle                      : jnp.ndarray ,
-    cross_sections             : CrossSectionData,
+    cross_sections             : CrossSectionDataSingleGroup,
     precomputed_geometric_data : PrecomputedGeometricData,    
     inflow                     : jnp.ndarray,
     abs_omega_dot_n_Je         : jnp.ndarray
@@ -139,7 +139,7 @@ def gij_inv_kernel(
         The finite element method matrices.
     angle : jnp.ndarray
         The direction vector.
-    cross_sections : CrossSectionData
+    cross_sections : CrossSectionDataSingleGroup
         The cross section data.
     precomputed_geometric_data : PrecomputedGeometricData
         The precomputed geometric data (Jacobian determinants and inverses).

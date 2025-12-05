@@ -16,11 +16,18 @@ def check_transport_inverse_sweep_complete_vmap(element, degree,
     
     lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values = _setup_all(element, degree, _vertices_conn_function, _angle_function, _expected_values_function, _source_function, _cross_section_function)
 
+
+    mapped_array = cross_sections.map_to_full_array(0)
+
+    
+
+#    precomputed_cross_sections = cross_sections.total[]
+
     sweep_array = transport_inverse_sweep_complete_vmap_fori(
         femmatrices,
         domain,
         toposort,
-        cross_sections, 
+        mapped_array, 
         precomputed_data,
         source,
         sweep_array)
@@ -109,8 +116,19 @@ def _source_from_sb(dimension, degree):
 
 def _cross_sections_from_sb(dimension, degree):
     nte, total_source = _matfree_nte_from_sb(dimension, degree, *tn_order_index()) # angle doesn't matter for this
+    n_elements = nte.geometric_domain.connectivity.shape[0]
     cross_sections = jnp.array([nte.geometric_domain[i].Material().Cross_Section().Value_Total(nte.energy_set[0]) for i in range(nte.geometric_domain.connectivity.shape[0])])
-    return jax_sn.domain.geometric_domain.CrossSectionData(cross_sections)
+
+    cross_sections = cross_sections.reshape((n_elements, 1)) # [n_elements, n_energy_groups]
+    
+    vals, inverse = jnp.unique(cross_sections[:,0], return_inverse=True)
+    
+    scattering = jnp.zeros((vals.shape[0], 1, 1,1)) # Scattering is irrelevant for transport operator test [n_elements, n_L, n_energy_groups, n_energy_groups]
+    total      = jnp.array(vals).reshape((vals.shape[0], 1))
+    xsdata =  jax_sn.domain.cross_sections.CrossSectionData(total, scattering)
+    xsdata.assert_valid_batched()
+    
+    return jax_sn.domain.geometric_domain.CrossSectionIndexed(inverse, xsdata)
 
 def _angle_function_tn():
     return _angle_function_indexed(*tn_order_index())[0]
