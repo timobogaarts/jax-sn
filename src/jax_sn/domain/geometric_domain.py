@@ -106,7 +106,7 @@ class Domain(GeometricDomain):
             cross_sections_indexed = cross_sections_indexed
         )    
     @classmethod 
-    def from_domain_and_cross_sections(cls, geometric_domain : GeometricDomain, cross_sections_indexed : CrossSectionIndexed):        
+    def from_geometric_domain_and_cross_sections(cls, geometric_domain : GeometricDomain, cross_sections_indexed : CrossSectionIndexed):        
         return cls(geometric_domain.vertices, 
                    geometric_domain.connectivity, 
                    geometric_domain.face_normals, 
@@ -167,7 +167,7 @@ def _containing_cell(geometric_domain : GeometricDomain, points : jnp.ndarray):
         
     bvh = _build_bvh(geometric_domain)
     from jax_sn.tools.mesh_tools import probe_bvh 
-    possible_hits =  probe_bvh(bvh, points)    
+    possible_hits =  probe_bvh(bvh, points)        
     elements_containing_point = _check_point_in_element_vec(points[..., None, :], possible_hits, geometric_domain)    
     element_indices           = jnp.where(elements_containing_point, possible_hits, -1)    
     first_elements             = jax.vmap(lambda x : x[jnp.where(x>=0, size=1)[0]], in_axes=0)(element_indices)
