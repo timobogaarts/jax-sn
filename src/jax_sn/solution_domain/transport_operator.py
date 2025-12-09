@@ -397,6 +397,17 @@ def _sweep_elements(elements_topological_sorting, sweep_result, gij_inv_all, qm_
                           = Gij_inv ( QM_i + ∑_{f < 0,j} |Ω·n_f| J_f ∫H_i Hᴼ_j dA ψ_j )
     Since this requires ψ_j from neighbouring elements, the elements must be processed in topological order.
 
+    This is by far the most time-consuming part of the transport operator.
+    The inversion only takes a small part of the time compared to the data movement and the face source computation.
+    Example: 60k tetrahedrons with 3rd order elements:
+
+        gij_inv & qm_i & dij_f_p_fm_all computation:  ~32.8 ms
+        Sweep over all elements:                      ~730 ms
+    Batching the sweep over angles at least parallelises this part, but further optimizations would be very beneficial.
+
+    TODO: Implement custom kernels for this part to reduce memory movement and increase performance.
+
+
     Parameters
     ----------
     elements_topological_sorting : jnp.ndarray [n_elements_subset]

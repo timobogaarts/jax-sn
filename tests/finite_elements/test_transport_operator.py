@@ -198,6 +198,15 @@ def test_different_sweeps(dimension):
     onp.testing.assert_allclose(complete_vmap_sweep, complete_vmap_sweep_sd, atol=1e-12)
     onp.testing.assert_allclose(batched_sweep, batched_sweep_sd, atol=1e-12)
 
+    topolevel = jax_sn.solution_domain.transport_operator_levels.TopologicalSortedAnglePrecomputedLevels.from_topological_sorted_angle(toposort)
+    max_level = int(jnp.max(topolevel.level_log2_size))
+
+
+    base_parameters_levels = (domain, femmatrices, precomputed_data, mapped_xs, topolevel, source, jnp.zeros((domain.n_elements + 1, femmatrices.mass_matrix.shape[-1])))
+    sweep_levels = jax_sn.solution_domain.transport_operator_levels.transport_inverse_sweep_complete_vmap_levels_max(*base_parameters_levels, max_level)
+
+    onp.testing.assert_allclose(complete_vmap_sweep, sweep_levels[:-1], atol=1e-12)
+
 
 
 @pytest.mark.slow
