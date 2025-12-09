@@ -5,6 +5,10 @@ from .base_fem import PrecomputedGeometricData, FEMMatrices
 from .solution_domain import FEMMatrices
 from jax_sn.source import Source
 from functools import partial
+from typing import Tuple
+
+import numpy as onp
+from dataclasses import dataclass
 
 #==============================================================================================================================================================================
 #  Full Transport operator functions
@@ -104,12 +108,12 @@ def transport_inverse_sweep_complete_vmap_fori(geometric_domain           : Geom
     '''    
     _assert_shape_base(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, precomputed_source, sweep_result)
 
-
     gij_inv_all, qm_i_all, dij_f_p_fm_all, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(topological_sorted_angle.levels_argsort, geometric_domain, fem_matrices,
                                                             precomputed_geometric_data, cross_sections, topological_sorted_angle.angle,
                                                             precomputed_source)    
                                                             
     return _sweep_elements(topological_sorted_angle.levels_argsort, sweep_result, gij_inv_all, qm_i_all, dij_f_p_fm_all, geometric_domain, abs_omega_dot_n_Je)
+
 
 #=============================================================================================================================================================================
 # Internal per-element kernels and vmap versions
@@ -380,6 +384,8 @@ def _collapse_dij(elem_idx : int, dij_f_p_fm : jnp.ndarray,  sweep_result : jnp.
     '''  
     values = sweep_result[etoe[elem_idx], :]        
     return jnp.einsum("f, fij, fj->i",abs_omega_dot_n_Je, dij_f_p_fm, values) 
+
+_collapse_dij_vmap = jax.vmap(_collapse_dij, in_axes=(0,0,None, None, 0))
     
 
 def _sweep_elements(elements_topological_sorting, sweep_result, gij_inv_all, qm_i_all, dij_f_p_fm_all, geometric_domain, abs_omega_dot_n_Je):

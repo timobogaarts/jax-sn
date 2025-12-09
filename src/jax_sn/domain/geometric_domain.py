@@ -130,9 +130,9 @@ def _check_cross_section_compatibility(n_elements : int, cross_sections : CrossS
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class TopologicalSortedAngle:
-    levels         : jnp.ndarray
-    angle          : jnp.ndarray
-    levels_argsort : jnp.ndarray
+    levels         : jnp.ndarray #[n_elements]
+    angle          : jnp.ndarray #[n_dim]
+    levels_argsort : jnp.ndarray #[n_elements]
     
     @classmethod 
     def from_domain_angle(cls, geometric_domain : GeometricDomain, angle : jnp.ndarray, n_iterations_per_loop : int = 100):

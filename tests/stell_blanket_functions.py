@@ -1,3 +1,4 @@
+import numpy as onp
 def _switch_element_type(dimension):
     import StellBlanket as SB
     if dimension == 1:
@@ -15,7 +16,7 @@ def _test_domain_from_sb(dimension, degree):
     material_0 = SB.Generic_Elements.Material(SB.Generic_Elements.Constant_Cross_Section(0.673))
     material_1 = SB.Generic_Elements.Material(SB.Generic_Elements.Constant_Cross_Section(2.5))
     region_sizes=  [0.8, 0.2]
-    resolutions  = [5,5]
+    resolutions  = [50,50]
     size_other_dim = 7.54
     resolutions_other_dim = 10
     element = _switch_element_type(dimension)
@@ -29,6 +30,7 @@ def _arbitrary_source_values(n_elements):
 def _matfree_nte_from_sb(dimension, degree, tn_order, angle_index):
     import StellBlanket as SB
     domain   = _test_domain_from_sb(dimension, degree)
+    quad_set = SB.Generic_Elements.TN_Quadrature_Set(tn_order)
 
     energy_set = SB.Generic_Elements.Energy_Set([0,1])
     matfreente = SB.Generic_Elements.Create_RAM_Simulation(quad_set, energy_set, domain, degree, 0)
