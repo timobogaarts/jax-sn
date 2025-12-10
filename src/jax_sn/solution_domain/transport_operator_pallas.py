@@ -147,6 +147,34 @@ def transport_inverse_sweep_batched_pallas(geometric_domain           : Geometri
                                     precomputed_source         : Source,                  
                                     buffer_sweep               : jnp.ndarray,                   
                                     batch_size                 : int):
+    '''
+    Perform a complete transport inverse sweep over all elements in the geometric domain using batched vmap and fori_loop in Pallas.
+
+    See transport_inverse_sweep_batched for more details. This is essentially the same functions but with padding to power-of-two sizes and using a Pallas kernel for the sweep update.
+
+    Parameters  
+    ----------
+    geometric_domain           : GeometricDomain
+        The geometric domain containing the mesh and element connectivity.
+    fem_matrices               : FEMMatrices
+        The finite element method matrices for the element type used in the domain.
+    precomputed_geometric_data : PrecomputedGeometricData
+        Precomputed geometric data for the domain and element type.
+    cross_sections             : CrossSectionDataSingleGroup
+        The cross section data for the domain.
+    topological_sorted_angle   : TopologicalSortedAngle
+        The topologically sorted angle for the sweep.
+    precomputed_source         : Source
+        The precomputed source term for the domain. This does not need to be padded since it is used during parallel setup; not the sweep.
+    buffer_sweep               : jnp.ndarray
+        The buffer array to store the sweep results. Shape (n_elements, n_basis_padded).
+    batch_size                 : int
+        The batch size for the batched sweep.
+    Returns
+    -------
+    jnp.ndarray 
+        The updated sweep result after performing the transport inverse sweep. Shape (n_elements, n_basis).
+    '''
     
     _assert_shape_pallas(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, precomputed_source, buffer_sweep)
 
@@ -180,7 +208,35 @@ def transport_inverse_sweep_complete_vmap_pallas(geometric_domain           : Ge
                                                  precomputed_source         : Source,        
                                                  buffer_sweep               : jnp.ndarray                             
                                                  ):   
-    
+    '''
+    Perform a complete transport inverse sweep over all elements in the geometric domain using batched vmap and fori_loop in Pallas.
+
+    See transport_inverse_sweep_complete_vmap for more details. This is essentially the same functions but with padding to power-of-two sizes and using a Pallas kernel for the sweep update.
+
+    Parameters  
+    ----------
+    geometric_domain           : GeometricDomain
+        The geometric domain containing the mesh and element connectivity.
+    fem_matrices               : FEMMatrices
+        The finite element method matrices for the element type used in the domain.
+    precomputed_geometric_data : PrecomputedGeometricData
+        Precomputed geometric data for the domain and element type.
+    cross_sections             : CrossSectionDataSingleGroup
+        The cross section data for the domain.
+    topological_sorted_angle   : TopologicalSortedAngle
+        The topologically sorted angle for the sweep.
+    precomputed_source         : Source
+        The precomputed source term for the domain. This does not need to be padded since it is used during parallel setup; not the sweep.
+    buffer_sweep               : jnp.ndarray
+        The buffer array to store the sweep results. Shape (n_elements, n_basis_padded).
+    batch_size                 : int
+        The batch size for the batched sweep.
+    Returns
+    -------
+    jnp.ndarray 
+        The updated sweep result after performing the transport inverse sweep. Shape (n_elements, n_basis).
+    '''
+       
     _assert_shape_pallas(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, precomputed_source, buffer_sweep)
 
     etoe_pad = _pad_etoe_pow2(geometric_domain.etoe)
@@ -202,6 +258,31 @@ def _setup_elements_idx_in_precomp_with_omega_n_calculation_padded(elements_idx:
                                                          cross_sections             : CrossSectionDataSingleGroup, 
                                                          omega                      : jnp.ndarray,
                                                          precomputed_source         : Source,) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:    
+    '''
+    Setup function to prepare all data needed for the transport sweep, padding arrays to power-of-two sizes for Pallas.
+    This function wraps _setup_elements_idx_in_precomp_with_omega_n_calculation and pads the resulting arrays to power-of-two sizes.
+
+    Parameters
+    ----------
+    elements_idx                : jnp.ndarray
+        The indices of the elements to setup.
+    geometric_domain           : GeometricDomain
+        The geometric domain containing the mesh and element connectivity.
+    fem_matrices               : FEMMatrices
+        The finite element method matrices for the element type used in the domain.
+    precomputed_geometric_data : PrecomputedGeometricData
+        Precomputed geometric data for the domain and element type.
+    cross_sections             : CrossSectionDataSingleGroup
+        The cross section data for the domain.
+    omega                      : jnp.ndarray
+        The direction vector for the sweep.
+    precomputed_source         : Source
+        The precomputed source term for the domain.
+    Returns
+    -------
+    Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]
+        The padded gij_inv, qm_i, dij_f_p_fm, and abs_omega_dot_n_Je arrays needed for the transport sweep.
+    '''
     power_of_two = _next_power_of_two(fem_matrices.n_basis)
     power_two_faces = _next_power_of_two(geometric_domain.n_faces_per_element)
     gij_inv_batch, qm_i_batch, dij_f_p_fm_batch, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(elements_idx, geometric_domain, fem_matrices,
@@ -221,6 +302,9 @@ def _setup_elements_pad_args(geometric_domain           : GeometricDomain,
                                                  topological_sorted_angle   : TopologicalSortedAngle,                                     
                                                  precomputed_source         : Source,        
                                                  buffer_sweep               : jnp.ndarray):
+    '''
+    Convenience function to setup elements using the same arguments as the transport sweep functions, but returning padded arrays for Pallas.
+    '''
     return _setup_elements_idx_in_precomp_with_omega_n_calculation_padded(
         topological_sorted_angle.levels_argsort,
         geometric_domain, 
@@ -231,12 +315,39 @@ def _setup_elements_pad_args(geometric_domain           : GeometricDomain,
         precomputed_source) 
 
 def _pad_etoe_pow2(etoe : jnp.ndarray):
+    '''
+    Pad the element-to-element connectivity array to the next power-of-two number of faces for Pallas.
+    '''
     power_two_faces = _next_power_of_two(etoe.shape[1])
     etoe_pad = jnp.pad(etoe, ((0,0),(0, power_two_faces - etoe.shape[1])), mode='constant', constant_values=-1)
     return etoe_pad
 
 
 def _sweep_pl_update_kernel(elements_toposort, gij_inv_all_ref,  qm_i_all_ref, dij_f_p_fm_all_ref, etoe_ref, abs_omega_dot_n_Je_ref, _,  sweep_result_ref):  
+  '''
+    Pallas kernel to perform the sweep update over a batch of elements. 
+    This kernel is called from sweep_pl_update.
+
+    Uses the buffer sweep_result_ref as input and output, updating it in place.
+    Can be part of a larger fori_loop over batches of elements.
+
+    Parameters
+    ----------
+    elements_toposort        : jnp.ndarray
+        The indices of the elements in topological order for the sweep.
+    gij_inv_all_ref          : jnp.ndarray
+        The padded inverse of the gij matrices for all elements in the batch.
+    qm_i_all_ref             : jnp.ndarray
+        The padded source terms for all elements in the batch.
+    dij_f_p_fm_all_ref       : jnp.ndarray
+        The padded dij_f_p_fm matrices for all elements in the batch.
+    etoe_ref                 : jnp.ndarray
+        The padded element-to-element connectivity array.
+    abs_omega_dot_n_Je_ref   : jnp.ndarray
+        The padded absolute values of the dot products of omega and the element face normals for all elements in the batch.
+    sweep_result_ref         : jnp.ndarray
+        The buffer array to store the sweep results. Updated in place.
+  '''
   n_elem = sweep_result_ref.shape[0]
   n_basis = sweep_result_ref.shape[1]
   n_faces = etoe_ref.shape[1]
@@ -251,6 +362,30 @@ def _sweep_pl_update_kernel(elements_toposort, gij_inv_all_ref,  qm_i_all_ref, d
   jax.lax.fori_loop(0, elements_toposort.shape[0], _body, sweep_result_ref) 
 
 def sweep_pl_update(elements_toposort, gij_inv_all_ref,  qm_i_all_ref, dij_f_p_fm_all_ref, etoe_ref, abs_omega_dot_n_Je_ref, sweep_result):    
+  '''
+    Wrapper function to call the Pallas kernel for the sweep update.
+
+    Parameters
+    ----------
+    elements_toposort        : jnp.ndarray
+        The indices of the elements in topological order for the sweep.
+    gij_inv_all_ref          : jnp.ndarray
+        The padded inverse of the gij matrices for all elements in the batch.
+    qm_i_all_ref             : jnp.ndarray
+        The padded source terms for all elements in the batch.
+    dij_f_p_fm_all_ref       : jnp.ndarray
+        The padded dij_f_p_fm matrices for all elements in the batch.
+    etoe_ref                 : jnp.ndarray
+        The padded element-to-element connectivity array.
+    abs_omega_dot_n_Je_ref   : jnp.ndarray
+        The padded absolute values of the dot products of omega and the element face normals for all elements in the batch.
+    sweep_result             : jnp.ndarray
+        The buffer array to store the sweep results. Updated in place.
+    Returns
+    -------
+    jnp.ndarray
+        The updated sweep result after performing the transport inverse sweep over the batch of elements.
+  '''
   return pl.pallas_call(_sweep_pl_update_kernel,
                         out_shape=jax.ShapeDtypeStruct(sweep_result.shape, sweep_result.dtype),
                         grid=(1,), input_output_aliases={6: 0})(elements_toposort, gij_inv_all_ref,  qm_i_all_ref, dij_f_p_fm_all_ref, etoe_ref, abs_omega_dot_n_Je_ref, sweep_result)

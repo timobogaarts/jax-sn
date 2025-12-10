@@ -141,7 +141,6 @@ def test_multiple_angles():
 
 
 test_multiple_angles()        
-    #
-    #source_total = jax.tree.map(lambda * xs : jnp.stack(xs), *[source_mapped for _ in toposorts])
+    
 
     
