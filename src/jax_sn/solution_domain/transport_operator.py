@@ -424,6 +424,8 @@ def _sweep_elements(elements_topological_sorting, sweep_result, gij_inv_all, qm_
 
     TODO: Implement custom kernels for this part to reduce memory movement and increase performance.
 
+    A first step using pallas is in transport_operator_pallas.py [increases performance up to 10x], but further optimizations might be possible. 
+
 
     Parameters
     ----------

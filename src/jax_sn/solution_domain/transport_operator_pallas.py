@@ -114,6 +114,8 @@ from jax.experimental import pallas as pl
 #  transport_inverse_sweep_multiple_angles_batched:           79.16 ms
 #  transport_inverse_sweep_multiple_angles_batched_pallas:    26.56 ms
 
+# Given these results, it seems there is plenty of performance to be gained: the setup time is extremely low compared to the sweep time.
+# TODO Write better kernels
 #======================================================================================================================================
 
 def _assert_shape_pallas( geometric_domain           : GeometricDomain, 
