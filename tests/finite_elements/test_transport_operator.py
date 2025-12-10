@@ -1,6 +1,6 @@
 import jax 
 import jax.numpy as jnp
-from jax_sn.solution_domain.transport_operator import transport_inverse_sweep_complete_vmap_fori
+from jax_sn.solution_domain.transport_operator import transport_inverse_sweep_complete_vmap
 import jax_sn
 
 import numpy as onp
@@ -18,7 +18,7 @@ def check_transport_inverse_sweep_complete_vmap(element, degree,
 
     mapped_array = cross_sections.map_to_full_array(0)
 
-    sweep_array = transport_inverse_sweep_complete_vmap_fori(
+    sweep_array = transport_inverse_sweep_complete_vmap(
         domain, 
         femmatrices,         
         precomputed_data,
@@ -186,7 +186,7 @@ def test_different_sweeps(dimension):
     
     xs_domain = jax_sn.domain.Domain.from_geometric_domain_and_cross_sections(domain, cross_sections)
 
-    complete_vmap_sweep = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_complete_vmap_fori(*base_parameters)
+    complete_vmap_sweep = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_complete_vmap(*base_parameters)
     batched_sweep = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_batched(*base_parameters, batch_size=11)
 
     solution_domain = jax_sn.solution_domain.SolutionDomain.from_element_and_domain(lagrangian_element, xs_domain)
@@ -228,7 +228,7 @@ def test_multi_angle_batch_vs_loop(dimension):
     for i in range(total_toposorts.angle.shape[0]):
         single_toposort = jax.tree.map(lambda x : x[i], total_toposorts)
         single_source  = jax.tree.map(lambda x : x[i], source_angle)
-        sweep_result = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_complete_vmap_fori(
+        sweep_result = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_complete_vmap(
             domain, 
             femmatrices,         
             precomputed_data,
@@ -244,7 +244,31 @@ def test_multi_angle_batch_vs_loop(dimension):
     sweep_result_multi_angle = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_multiple_angles_batched(domain, femmatrices, precomputed_data, mapped_xs, total_toposorts, source_angle, total_buffer_sweep, batch_size=7)
     onp.testing.assert_allclose(sweep_result_multi_angle, sweep_result, atol=1e-12)
 
+    total_buffer_sweep_pl = jnp.zeros((total_toposorts.angle.shape[0], domain.n_elements, jax_sn.solution_domain.transport_operator_pallas._next_power_of_two(lagrangian_element.n_basis)))
+    from jax_sn.solution_domain.transport_operator_pallas import transport_inverse_sweep_multiple_angles_batched_pallas
+    sweep_result_multi_angle_pl = transport_inverse_sweep_multiple_angles_batched_pallas(domain, femmatrices, precomputed_data, mapped_xs, total_toposorts, source_angle, total_buffer_sweep_pl, batch_size=7)
+    onp.testing.assert_allclose(sweep_result_multi_angle_pl, sweep_result, atol=1e-12)
+
 
     
 
+@pytest.mark.slow
+@pytest.mark.parametrize("dimension", [1,2,3])
+def test_pallas_sweeps(dimension):
+    
+    for degree in range(0, _n_degree_old_code(dimension)):
+        lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values = _setup_all(dimension, degree, _verts_conn_from_sb, _angle_function_tn, _expected_values_from_sb, _source_from_sb, _cross_sections_from_sb)
+        mapped_xs = cross_sections.map_to_full_array(0)
+        base_parameters = (domain, femmatrices, precomputed_data, mapped_xs, toposort, source, sweep_array)
 
+        sweep_array_pallas = jnp.zeros((domain.n_elements, jax_sn.solution_domain.transport_operator_pallas._next_power_of_two(femmatrices.n_basis) ))
+        
+        xs_domain = jax_sn.domain.Domain.from_geometric_domain_and_cross_sections(domain, cross_sections)
+        complete_vmap_sweep = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_complete_vmap(*base_parameters)
+        from jax_sn.solution_domain.transport_operator_pallas import transport_inverse_sweep_complete_vmap_pallas, transport_inverse_sweep_batched_pallas
+
+        pallas_complete_vmap = transport_inverse_sweep_complete_vmap_pallas(*base_parameters[:-1], sweep_array_pallas)
+        onp.testing.assert_allclose(complete_vmap_sweep, pallas_complete_vmap, atol=1e-12)
+
+        pallas_batched = transport_inverse_sweep_batched_pallas(*base_parameters[:-1], sweep_array_pallas, batch_size=13)
+        onp.testing.assert_allclose(complete_vmap_sweep, pallas_batched, atol=1e-12)

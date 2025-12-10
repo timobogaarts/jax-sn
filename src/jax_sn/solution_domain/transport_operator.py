@@ -71,7 +71,7 @@ def transport_inverse_sweep_batched(geometric_domain           : GeometricDomain
     return jax.lax.fori_loop(0, n_batches, single_batch, sweep_result)
 
 @jax.jit
-def transport_inverse_sweep_complete_vmap_fori(geometric_domain           : GeometricDomain, 
+def transport_inverse_sweep_complete_vmap(geometric_domain           : GeometricDomain, 
                                                fem_matrices               : FEMMatrices, 
                                                precomputed_geometric_data : PrecomputedGeometricData, 
                                                cross_sections             : CrossSectionDataSingleGroup,                                                
@@ -322,6 +322,23 @@ def _setup_elements_idx_in_precomp(element_indices : jnp.ndarray, geometric_doma
                                 geometric_domain.face_perm_idx) #[n_elements, n_faces_per_element, n_basis, n_basis]
     return gij_inv_all, qm_i_all, dij_f_p_fm_all
 
+@jax.jit
+def _setup_elements_from_args(geometric_domain           : GeometricDomain, 
+                                               fem_matrices               : FEMMatrices, 
+                                               precomputed_geometric_data : PrecomputedGeometricData, 
+                                               cross_sections             : CrossSectionDataSingleGroup,                                                
+                                               topological_sorted_angle   : TopologicalSortedAngle, 
+                                               precomputed_source         : Source, 
+                                               sweep_result               : jnp.ndarray) -> jnp.ndarray:    
+    '''
+    Convenience function to setup all Gij_inv, QM_i and Dij_f_p_fm matrices for all elements in the geometric domain using the topological sorted angle.
+    (same as _setup_elements_idx_in_precomp_with_omega_n_calculation)
+    '''
+    
+    gij_inv_all, qm_i_all, dij_f_p_fm_all, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(topological_sorted_angle.levels_argsort, geometric_domain, fem_matrices,
+                                                            precomputed_geometric_data, cross_sections, topological_sorted_angle.angle,
+                                                            precomputed_source)    
+    return gij_inv_all, qm_i_all, dij_f_p_fm_all, abs_omega_dot_n_Je
 
 def _setup_elements_idx_in_precomp_with_omega_n_calculation(element_indices : jnp.ndarray, geometric_domain : GeometricDomain, fem_matrices : FEMMatrices, precomputed_geometric_data : PrecomputedGeometricData, cross_sections : CrossSectionDataSingleGroup, angle : jnp.ndarray, precomputed_source : Source):
     '''

@@ -30,6 +30,10 @@ class FEMMatrices:
     def from_element(cls, element : "Element"):
         return cls(*compute_volume_matrices_linear_jacobian(element), *compute_face_matrices_linear_jacobian(element))
     
+    @property
+    def n_basis(self) -> int:
+        return self.mass_matrix.shape[0]
+    
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class PrecomputedGeometricData:

@@ -9,7 +9,7 @@ from jax_sn.source import Source
 import equinox as eqx
 from .base_fem import Element
 from jax_sn.domain import Domain
-from .transport_operator import transport_inverse_sweep_complete_vmap_fori, transport_inverse_sweep_batched
+from .transport_operator import transport_inverse_sweep_complete_vmap, transport_inverse_sweep_batched
 
 def compute_setup_for_solution_domain(element : Element, domain : GeometricDomain) -> Tuple[FEMMatrices, PrecomputedGeometricData]:
     fem_matrices     = FEMMatrices.from_element(element)
@@ -47,7 +47,7 @@ class SolutionDomain(eqx.Module):
     def sweep(self, toposort_angle, source : Source, energy_group : int, sweep_buffer : jnp.ndarray, method : str = "vmap", **kwargs) -> jnp.ndarray:
 
         if method == "vmap":
-            return transport_inverse_sweep_complete_vmap_fori(
+            return transport_inverse_sweep_complete_vmap(
                 *self.solution_domain_data,
                 self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group),
                 toposort_angle,
@@ -75,6 +75,11 @@ class SolutionDomain(eqx.Module):
     @property
     def fem_matrices(self) -> FEMMatrices:
         return self.solution_domain_data.fem_matrices
+    
+    @property 
+    def n_basis(self) -> int:
+        return self.solution_domain_data.fem_matrices.n_basis
+    
     
     def map_cross_sections_to_full_array(self, energy_group : int):
         return self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group)
