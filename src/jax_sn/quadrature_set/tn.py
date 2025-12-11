@@ -119,6 +119,6 @@ def create_tn_quadrature_set(N : int):
     # map to all octants
     weight_fractions = jnp.stack(jnp.meshgrid(jnp.array([-1,1]), jnp.array([-1,1]), jnp.array([-1,1]), indexing='ij'), axis=-1).reshape(-1,3)            
     total_angles     = (angles[:, jnp.newaxis, :] * weight_fractions[jnp.newaxis, :, :]).reshape(-1,3)        
-    total_weights    = jnp.repeat(areas, 8) / jnp.sum(areas) / 8
+    total_weights    = jnp.repeat(areas, 8) / jnp.sum(areas) / 8 * 4 * jnp.pi
     return QuadratureSet(total_angles, total_weights)
     

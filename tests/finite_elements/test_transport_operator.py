@@ -244,14 +244,8 @@ def test_multi_angle_batch_vs_loop(dimension):
     sweep_result_multi_angle = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_multiple_angles_batched(domain, femmatrices, precomputed_data, mapped_xs, total_toposorts, source_angle, total_buffer_sweep, batch_size=7)
     onp.testing.assert_allclose(sweep_result_multi_angle, sweep_result, atol=1e-12)
 
-    total_buffer_sweep_pl = jnp.zeros((total_toposorts.angle.shape[0], domain.n_elements, jax_sn.solution_domain.transport_operator_pallas._next_power_of_two(lagrangian_element.n_basis)))
-    from jax_sn.solution_domain.transport_operator_pallas import transport_inverse_sweep_multiple_angles_batched_pallas
-    sweep_result_multi_angle_pl = transport_inverse_sweep_multiple_angles_batched_pallas(domain, femmatrices, precomputed_data, mapped_xs, total_toposorts, source_angle, total_buffer_sweep_pl, batch_size=7)
-    onp.testing.assert_allclose(sweep_result_multi_angle_pl, sweep_result, atol=1e-12)
-
-
     
-
+@pytest.mark.pallas
 @pytest.mark.slow
 @pytest.mark.parametrize("dimension", [1,2,3])
 def test_pallas_sweeps(dimension):
@@ -272,3 +266,41 @@ def test_pallas_sweeps(dimension):
 
         pallas_batched = transport_inverse_sweep_batched_pallas(*base_parameters[:-1], sweep_array_pallas, batch_size=13)
         onp.testing.assert_allclose(complete_vmap_sweep, pallas_batched, atol=1e-12)
+
+@pytest.mark.pallas
+@pytest.mark.slow
+@pytest.mark.parametrize("dimension", [1,2,3])
+def test_multi_angle_batch_vs_loop_pallas(dimension):    
+    degree    = 2
+    lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values = _setup_all(dimension, degree, _verts_conn_from_sb, _angle_function_tn, _expected_values_from_sb, _source_from_sb, _cross_sections_from_sb)
+    mapped_xs = cross_sections.map_to_full_array(0)
+
+    quad_set = jax_sn.quadrature_set.create_tn_quadrature_set(2)
+    toposorts = [jax_sn.domain.geometric_domain.TopologicalSortedAngle.from_domain_angle(domain, angle, 100) for angle in quad_set.angles]
+    total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
+
+    source_angle = jax.tree.map(lambda ts : jnp.repeat(ts, total_toposorts.angle.shape[0], axis=0).reshape((total_toposorts.angle.shape[0],)+ts.shape), source)
+    total_buffer_sweep = jnp.zeros((total_toposorts.angle.shape[0], domain.n_elements, lagrangian_element.n_basis))
+
+    sweep_results = [] 
+
+    for i in range(total_toposorts.angle.shape[0]):
+        single_toposort = jax.tree.map(lambda x : x[i], total_toposorts)
+        single_source  = jax.tree.map(lambda x : x[i], source_angle)
+        sweep_result = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_complete_vmap(
+            domain, 
+            femmatrices,         
+            precomputed_data,
+            mapped_xs, 
+            single_toposort,                
+            single_source,
+            jnp.zeros((domain.n_elements, lagrangian_element.n_basis))
+        )
+        sweep_results.append(sweep_result)
+
+    sweep_result = jnp.stack(sweep_results, axis=0)        
+
+    total_buffer_sweep_pl = jnp.zeros((total_toposorts.angle.shape[0], domain.n_elements, jax_sn.solution_domain.transport_operator_pallas._next_power_of_two(lagrangian_element.n_basis)))
+    from jax_sn.solution_domain.transport_operator_pallas import transport_inverse_sweep_multiple_angles_batched_pallas
+    sweep_result_multi_angle_pl = transport_inverse_sweep_multiple_angles_batched_pallas(domain, femmatrices, precomputed_data, mapped_xs, total_toposorts, source_angle, total_buffer_sweep_pl, batch_size=7)
+    onp.testing.assert_allclose(sweep_result_multi_angle_pl, sweep_result, atol=1e-12)

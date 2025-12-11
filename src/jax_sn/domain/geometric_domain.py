@@ -141,6 +141,14 @@ class TopologicalSortedAngle:
         levels_argsort = jnp.argsort(levels)
         return cls(levels=levels, angle=angle, levels_argsort=levels_argsort)
     
+    def __getitem__(self, idx):
+        assert self.levels.ndim == 2, "Indexing is only supported for batched TopologicalSortedAngle instances."
+        return TopologicalSortedAngle(
+            levels         = self.levels[idx],
+            angle          = self.angle[idx],
+            levels_argsort = self.levels_argsort[idx]
+        )
+    
 
 @lru_cache(maxsize=16)
 def _build_bvh(geometric_domain : GeometricDomain):    

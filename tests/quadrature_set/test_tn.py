@@ -3,6 +3,7 @@ import jax_sn
 import numpy as onp
 import jax
 jax.config.update("jax_enable_x64", True)
+import jax.numpy as jnp
 # Old StellBlanket implementation for verification
 def create_TN(N: int):
     import numpy as np
@@ -111,5 +112,6 @@ def test_tn(N : int):
 
     angles_ref, weights_ref = create_TN(N)
     onp.testing.assert_allclose(qset.angles, angles_ref)
-    onp.testing.assert_allclose(qset.weights, weights_ref)
+    onp.testing.assert_allclose(qset.weights / 4 / onp.pi, weights_ref)
+
 

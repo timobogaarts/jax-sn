@@ -40,7 +40,8 @@ class SolutionDomain(eqx.Module):
 
     @classmethod
     def from_element_and_domain(cls, element : Element, domain : Domain) -> "SolutionDomain":        
-        assert isinstance(domain, Domain), "domain must be an instance of Domain"
+        assert isinstance(domain, Domain), f"domain must be an instance of Domain but got {type(domain)}"
+        assert isinstance(element, Element), f"element must be an instance of Element but got {type(element)}"
         return cls(SolutionDomainData(domain, *compute_setup_for_solution_domain(element, domain)),
             element)
     

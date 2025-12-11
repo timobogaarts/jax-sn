@@ -16,6 +16,12 @@ def pytest_addoption(parser):
         default=False,
         help="Run slow tests"
     )    
+    parser.addoption(
+        "--runpallas",
+        action="store_true",
+        default=False,
+        help="Run Pallas tests"
+    )
 
 def pytest_configure(config):
     platform = config.getoption("--jax-platform")
@@ -27,3 +33,5 @@ def pytest_runtest_setup(item):
     # Check if the test has the "slow" marker
     if "slow" in item.keywords and not item.config.getoption("--runslow"):
         pytest.skip("Skipping slow test, use --runslow to run")
+    if "pallas" in item.keywords and not item.config.getoption("--runpallas"):
+        pytest.skip("Skipping Pallas test, use --runpallas to run")
