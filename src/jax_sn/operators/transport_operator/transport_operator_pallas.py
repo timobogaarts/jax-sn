@@ -1,15 +1,15 @@
 import jax 
 import jax.numpy as jnp 
 from jax_sn.domain.geometric_domain import GeometricDomain, TopologicalSortedAngle, CrossSectionDataSingleGroup, Domain
-from .base_fem import PrecomputedGeometricData, FEMMatrices
-from .solution_domain import FEMMatrices
+from jax_sn.solution_domain.base_fem import PrecomputedGeometricData, FEMMatrices
+from jax_sn.solution_domain import FEMMatrices
 from jax_sn.source import Source
 from functools import partial
 from typing import Tuple
 
 import numpy as onp
 from dataclasses import dataclass
-from .transport_operator import _assert_shape_base, _setup_elements_idx_in_precomp_with_omega_n_calculation
+from .transport_operator_imp import _assert_shape_base, _setup_elements_idx_in_precomp_with_omega_n_calculation
 
 from jax.experimental import pallas as pl
 

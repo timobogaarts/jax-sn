@@ -9,7 +9,6 @@ from jax_sn.source import Source
 import equinox as eqx
 from .base_fem import Element
 from jax_sn.domain import Domain
-from .transport_operator import transport_inverse_sweep_complete_vmap, transport_inverse_sweep_batched
 
 def compute_setup_for_solution_domain(element : Element, domain : GeometricDomain) -> Tuple[FEMMatrices, PrecomputedGeometricData]:
     fem_matrices     = FEMMatrices.from_element(element)
@@ -29,6 +28,10 @@ class SolutionDomainData:
         yield self.fem_matrices
         yield self.precomputed_data
 
+    @property
+    def n_basis(self) -> int:
+        return self.fem_matrices.n_basis
+
 
 class SolutionDomain(eqx.Module):
     '''
@@ -46,7 +49,7 @@ class SolutionDomain(eqx.Module):
             element)
     
     def sweep(self, toposort_angle, source : Source, energy_group : int, sweep_buffer : jnp.ndarray, method : str = "vmap", **kwargs) -> jnp.ndarray:
-
+        from jax_sn.operators.transport_operator import transport_inverse_sweep_complete_vmap, transport_inverse_sweep_batched
         if method == "vmap":
             return transport_inverse_sweep_complete_vmap(
                 *self.solution_domain_data,

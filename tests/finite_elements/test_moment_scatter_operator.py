@@ -43,6 +43,9 @@ def _setup_all(element, degree, tn_order, _vertices_conn_function, _source_funct
     sweep_array      = jnp.zeros((angles.n_angles, domain.n_elements, lagrangian_element.n_basis))
     
     return solution_domain, angles, total_toposorts,sweep_array, source_total
+
+def _setup_all_sb(dimension, degree, tn_order):
+    return _setup_all(dimension, degree, tn_order, _verts_conn_from_sb, _source_from_sb, _cross_sections_from_sb)
 # dim      = 2 
 # degree   = 2
 # tn_order = 3
@@ -81,10 +84,17 @@ def _expected_value_from_sb(dimension, degree, tn_order, lmax):
 
 def check_moment_operator(dimension, degree, tn_order, lmax, _verts_conn_function, _source_function, _cross_section_function, _expected_values_function):
     solution_domain, quadrature_set, total_toposorts, sweep_array, source_total = _setup_all(dimension, degree, tn_order, _verts_conn_function, _source_function, _cross_section_function)
-    sweep_angles = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_multiple_angles_batched(*solution_domain.solution_domain_data, solution_domain.map_cross_sections_to_full_array(0), total_toposorts, source_total, sweep_array, 10)
-    moment_operator = jax_sn.quadrature_set.moment_operator.MomentOperator.from_quadrature_set(quadrature_set, lmax)
 
-    psilm = moment_operator(sweep_angles)
+    inv_transport_operator = jax_sn.operators.transport_operator.InverseTransportOperatorBatched.from_solution_domain_data_and_toposort(solution_domain.solution_domain_data, total_toposorts, batch_size = 10)
+    #sweep_angles = jax_sn.operators.transport_operator.transport_inverse_sweep_multiple_angles_batched(*solution_domain.solution_domain_data, solution_domain.map_cross_sections_to_full_array(0), total_toposorts, source_total, sweep_array, 10)
+    moment_operator = jax_sn.operators.moment_operator.MomentOperator.from_quadrature_set(quadrature_set, lmax)
+
+    psilm = moment_operator(inv_transport_operator(source_total, 0 ))
+
+
+
+
+    #psilm = moment_operator(sweep_angles)
     expected_values = _expected_values_function(dimension, degree, tn_order, lmax)
 
     onp.testing.assert_allclose(psilm, expected_values, rtol=1e-12, atol=1e-12)

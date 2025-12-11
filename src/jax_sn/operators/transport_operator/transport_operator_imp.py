@@ -1,8 +1,8 @@
 import jax 
 import jax.numpy as jnp 
 from jax_sn.domain.geometric_domain import GeometricDomain, TopologicalSortedAngle, CrossSectionDataSingleGroup, Domain
-from .base_fem import PrecomputedGeometricData, FEMMatrices
-from .solution_domain import FEMMatrices
+from jax_sn.solution_domain.base_fem import PrecomputedGeometricData, FEMMatrices
+from jax_sn.solution_domain import FEMMatrices
 from jax_sn.source import Source
 from functools import partial
 from typing import Tuple
@@ -561,30 +561,41 @@ def transport_inverse_sweep_multiple_angles_batched(geometric_domain           :
     f_batch = jax.vmap(transport_inverse_sweep_batched, in_axes=(None, None, None, None, 0, 0, 0, None ))
     return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result, batch_size)
 
-@partial(jax.jit, static_argnums = (7,))
-def transport_inverse_sweep_multiple_angles_batched_single_f( geometric_domain           : GeometricDomain,
-                                                              fem_matrices               : FEMMatrices,
-                                                              precomputed_geometric_data : PrecomputedGeometricData,
-                                                              cross_sections             : CrossSectionDataSingleGroup,
-                                                              topological_sorted_angles  : TopologicalSortedAngle,                                                                                                         
-                                                              precomputed_source         : Source,
-                                                              sweep_result               : jnp.ndarray,
-                                                              batch_size                 : int):  
-    
+@jax.jit
+def transport_inverse_sweep_multiple_angles_complete_vmap(geometric_domain           : GeometricDomain,
+                                                          fem_matrices               : FEMMatrices,
+                                                          precomputed_geometric_data : PrecomputedGeometricData,
+                                                          cross_sections             : CrossSectionDataSingleGroup,
+                                                          topological_sorted_angles  : TopologicalSortedAngle,                                                                                                         
+                                                          precomputed_source         : Source,
+                                                          sweep_result               : jnp.ndarray,
+                                                          ):
+    '''
+    Perform a complete transport inverse sweep over all elements in the geometric domain for multiple angles using batched vmap and fori_loop.
+
+    vmap is used to compute all Gij_inv, QM_i and Dij_f_p_fm matrices for all elements in a vectorized manner for a fixed batch size and multiple angles.
+    Then, a fori_loop is used to iterate over the elements in topological order to compute the sweep result in batches.
+    This takes significantly less memory than using the complete vmap version.
+
+    Parameters
+    ----------
+    geometric_domain : GeometricDomain
+        The geometric domain data.
+    fem_matrices : FEMMatrices
+        The finite element method matrices.
+    precomputed_geometric_data : PrecomputedGeometricData
+        The precomputed geometric data (Jacobian determinants and inverses).
+    cross_sections : CrossSectionDataSingleGroup
+        The cross section data.
+    topological_sorted_angles : TopologicalSortedAngle
+        The topologically sorted angle data for multiple angles. (batch dimension is the first dimension)
+    precomputed_source : Source [n_angles, n_elements, n_basis]
+        The source data. Should also be batched over angles (batch dimension is the first dimension).
+    sweep_result : jnp.ndarray [n_angles, n_elements, n_basis]
+        The initial sweep result array (usually zeros).
+    '''
+        
     _assert_shape_multiple_angles(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result)
-
-    n_batches                  = jnp.ceil(geometric_domain.n_elements / batch_size).astype(int)        
-    multi_angle_batch_setup    = jax.vmap(_setup_elements_idx_in_precomp_with_omega_n_calculation, in_axes=(0, None, None, None, None, 0, 0 ))
-    sweep_result_multi_angle   = jax.vmap(_sweep_elements, in_axes= (0, 0, 0,0,0, None, 0))
-
-    def single_batch(batch_i, sweep_result):
-        batch_indices = jnp.clip(jnp.arange(batch_size) + batch_i * batch_size, 0, geometric_domain.n_elements - 1)    
-        elements_batch = topological_sorted_angles.levels_argsort[:, batch_indices]
-        gij_inv_batch, qm_i_batch, dij_f_p_fm_batch, _, abs_omega_dot_n_Je = multi_angle_batch_setup(elements_batch, geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles.angle, precomputed_source)
-        return sweep_result_multi_angle(elements_batch, sweep_result, gij_inv_batch, qm_i_batch, dij_f_p_fm_batch, geometric_domain, abs_omega_dot_n_Je)
-    return jax.lax.fori_loop(0, n_batches, single_batch, sweep_result)
-
-
-      
-    
+    f_batch = jax.vmap(transport_inverse_sweep_complete_vmap, in_axes=(None, None, None, None, 0, 0, 0))
+    return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result)
 

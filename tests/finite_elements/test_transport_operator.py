@@ -1,6 +1,6 @@
 import jax 
 import jax.numpy as jnp
-from jax_sn.solution_domain.transport_operator import transport_inverse_sweep_complete_vmap
+from jax_sn.operators.transport_operator import transport_inverse_sweep_complete_vmap
 import jax_sn
 
 import numpy as onp
@@ -186,8 +186,8 @@ def test_different_sweeps(dimension):
     
     xs_domain = jax_sn.domain.Domain.from_geometric_domain_and_cross_sections(domain, cross_sections)
 
-    complete_vmap_sweep = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_complete_vmap(*base_parameters)
-    batched_sweep = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_batched(*base_parameters, batch_size=11)
+    complete_vmap_sweep = jax_sn.operators.transport_operator.transport_inverse_sweep_complete_vmap(*base_parameters)
+    batched_sweep = jax_sn.operators.transport_operator.transport_inverse_sweep_batched(*base_parameters, batch_size=11)
 
     solution_domain = jax_sn.solution_domain.SolutionDomain.from_element_and_domain(lagrangian_element, xs_domain)
     complete_vmap_sweep_sd = solution_domain.sweep(toposort, source, 0, sweep_array, method="vmap")
@@ -198,14 +198,16 @@ def test_different_sweeps(dimension):
     onp.testing.assert_allclose(complete_vmap_sweep, complete_vmap_sweep_sd, atol=1e-12)
     onp.testing.assert_allclose(batched_sweep, batched_sweep_sd, atol=1e-12)
 
-    topolevel = jax_sn.solution_domain.transport_operator_levels.TopologicalSortedAnglePrecomputedLevels.from_topological_sorted_angle(toposort)
+    topolevel = jax_sn.operators.transport_operator.transport_operator_levels.TopologicalSortedAnglePrecomputedLevels.from_topological_sorted_angle(toposort)
     max_level = int(jnp.max(topolevel.level_log2_size))
 
 
     base_parameters_levels = (domain, femmatrices, precomputed_data, mapped_xs, topolevel, source, jnp.zeros((domain.n_elements + 1, femmatrices.mass_matrix.shape[-1])))
-    sweep_levels = jax_sn.solution_domain.transport_operator_levels.transport_inverse_sweep_complete_vmap_levels_max(*base_parameters_levels, max_level)
+    sweep_levels = jax_sn.operators.transport_operator.transport_operator_levels.transport_inverse_sweep_complete_vmap_levels_max(*base_parameters_levels, max_level)
 
     onp.testing.assert_allclose(complete_vmap_sweep, sweep_levels[:-1], atol=1e-12)
+
+    jax_sn.operators.transport_operator
 
 
 
@@ -228,7 +230,7 @@ def test_multi_angle_batch_vs_loop(dimension):
     for i in range(total_toposorts.angle.shape[0]):
         single_toposort = jax.tree.map(lambda x : x[i], total_toposorts)
         single_source  = jax.tree.map(lambda x : x[i], source_angle)
-        sweep_result = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_complete_vmap(
+        sweep_result = jax_sn.operators.transport_operator.transport_inverse_sweep_complete_vmap(
             domain, 
             femmatrices,         
             precomputed_data,
@@ -241,7 +243,7 @@ def test_multi_angle_batch_vs_loop(dimension):
 
     sweep_result = jnp.stack(sweep_results, axis=0)
     
-    sweep_result_multi_angle = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_multiple_angles_batched(domain, femmatrices, precomputed_data, mapped_xs, total_toposorts, source_angle, total_buffer_sweep, batch_size=7)
+    sweep_result_multi_angle = jax_sn.operators.transport_operator.transport_inverse_sweep_multiple_angles_batched(domain, femmatrices, precomputed_data, mapped_xs, total_toposorts, source_angle, total_buffer_sweep, batch_size=7)
     onp.testing.assert_allclose(sweep_result_multi_angle, sweep_result, atol=1e-12)
 
     
@@ -255,11 +257,11 @@ def test_pallas_sweeps(dimension):
         mapped_xs = cross_sections.map_to_full_array(0)
         base_parameters = (domain, femmatrices, precomputed_data, mapped_xs, toposort, source, sweep_array)
 
-        sweep_array_pallas = jnp.zeros((domain.n_elements, jax_sn.solution_domain.transport_operator_pallas._next_power_of_two(femmatrices.n_basis) ))
+        sweep_array_pallas = jnp.zeros((domain.n_elements, jax_sn.operators.transport_operator_pallas._next_power_of_two(femmatrices.n_basis) ))
         
         xs_domain = jax_sn.domain.Domain.from_geometric_domain_and_cross_sections(domain, cross_sections)
-        complete_vmap_sweep = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_complete_vmap(*base_parameters)
-        from jax_sn.solution_domain.transport_operator_pallas import transport_inverse_sweep_complete_vmap_pallas, transport_inverse_sweep_batched_pallas
+        complete_vmap_sweep = jax_sn.operators.transport_operator.transport_inverse_sweep_complete_vmap(*base_parameters)
+        from jax_sn.operators.transport_operator.transport_operator_pallas import transport_inverse_sweep_complete_vmap_pallas, transport_inverse_sweep_batched_pallas
 
         pallas_complete_vmap = transport_inverse_sweep_complete_vmap_pallas(*base_parameters[:-1], sweep_array_pallas)
         onp.testing.assert_allclose(complete_vmap_sweep, pallas_complete_vmap, atol=1e-12)
@@ -287,7 +289,7 @@ def test_multi_angle_batch_vs_loop_pallas(dimension):
     for i in range(total_toposorts.angle.shape[0]):
         single_toposort = jax.tree.map(lambda x : x[i], total_toposorts)
         single_source  = jax.tree.map(lambda x : x[i], source_angle)
-        sweep_result = jax_sn.solution_domain.transport_operator.transport_inverse_sweep_complete_vmap(
+        sweep_result = jax_sn.operators.transport_operator.transport_inverse_sweep_complete_vmap(
             domain, 
             femmatrices,         
             precomputed_data,
@@ -300,7 +302,54 @@ def test_multi_angle_batch_vs_loop_pallas(dimension):
 
     sweep_result = jnp.stack(sweep_results, axis=0)        
 
-    total_buffer_sweep_pl = jnp.zeros((total_toposorts.angle.shape[0], domain.n_elements, jax_sn.solution_domain.transport_operator_pallas._next_power_of_two(lagrangian_element.n_basis)))
-    from jax_sn.solution_domain.transport_operator_pallas import transport_inverse_sweep_multiple_angles_batched_pallas
+    total_buffer_sweep_pl = jnp.zeros((total_toposorts.angle.shape[0], domain.n_elements, jax_sn.operators.transport_operator_pallas._next_power_of_two(lagrangian_element.n_basis)))
+    from jax_sn.operators.transport_operator.transport_operator_pallas import transport_inverse_sweep_multiple_angles_batched_pallas
     sweep_result_multi_angle_pl = transport_inverse_sweep_multiple_angles_batched_pallas(domain, femmatrices, precomputed_data, mapped_xs, total_toposorts, source_angle, total_buffer_sweep_pl, batch_size=7)
     onp.testing.assert_allclose(sweep_result_multi_angle_pl, sweep_result, atol=1e-12)
+
+
+#@pytest.mark.slow
+@pytest.mark.parametrize("dimension", [1,2,3])
+def test_multi_angle_transport_operator(dimension):    
+    # This tests the InverseTransportOperatorVmap and InverseTransportOperatorBatched interfaces for multiple angles and single angles.
+    
+    degree    = 2
+    lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values = _setup_all(dimension, degree, _verts_conn_from_sb, _angle_function_tn, _expected_values_from_sb, _source_from_sb, _cross_sections_from_sb)
+    mapped_xs = cross_sections.map_to_full_array(0)
+
+    quad_set = jax_sn.quadrature_set.create_tn_quadrature_set(2)
+    toposorts = [jax_sn.domain.geometric_domain.TopologicalSortedAngle.from_domain_angle(domain, angle, 100) for angle in quad_set.angles]
+    total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
+
+    source_angle = jax.tree.map(lambda ts : jnp.repeat(ts, total_toposorts.angle.shape[0], axis=0).reshape((total_toposorts.angle.shape[0],)+ts.shape), source)
+    total_buffer_sweep = jnp.zeros((total_toposorts.angle.shape[0], domain.n_elements, lagrangian_element.n_basis))
+    
+    sweep_result_multi_angle = jax_sn.operators.transport_operator.transport_inverse_sweep_multiple_angles_batched(domain, femmatrices, precomputed_data, mapped_xs, total_toposorts, source_angle, total_buffer_sweep, batch_size=7)
+    # This was already tested to work. 
+    # now we are going to test the different InverseTransportOperator interface
+
+    solution_domain = jax_sn.solution_domain.SolutionDomain.from_element_and_domain(lagrangian_element, jax_sn.domain.Domain.from_geometric_domain_and_cross_sections(domain, cross_sections))
+
+
+    from jax_sn.operators.transport_operator import InverseTransportOperatorVmap, InverseTransportOperatorBatched
+    tvmap_tot  = InverseTransportOperatorVmap.from_solution_domain_data_and_toposort(solution_domain.solution_domain_data, total_toposorts)
+    tbatch_tot = InverseTransportOperatorBatched.from_solution_domain_data_and_toposort(solution_domain.solution_domain_data, total_toposorts, batch_size=7)
+
+    sweep_result_vmap_op = tvmap_tot(source_angle, 0)
+    sweep_result_batched_op = tbatch_tot(source_angle, 0)
+
+    onp.testing.assert_allclose(sweep_result_multi_angle, sweep_result_vmap_op, atol=1e-12)
+    onp.testing.assert_allclose(sweep_result_multi_angle, sweep_result_batched_op, atol=1e-12)
+
+    tvmap_sa = InverseTransportOperatorVmap.from_solution_domain_data_and_toposort(solution_domain.solution_domain_data, total_toposorts[0])
+    tbatch_sa = InverseTransportOperatorBatched.from_solution_domain_data_and_toposort(solution_domain.solution_domain_data, total_toposorts[0], batch_size=7)
+
+    sweep_result_vmap_op_sa = tvmap_sa(source_angle[0], 0)
+    sweep_result_batched_op_sa = tbatch_sa(source_angle[0], 0)
+
+    onp.testing.assert_allclose(sweep_result_multi_angle[0], sweep_result_vmap_op_sa, atol=1e-12)
+    onp.testing.assert_allclose(sweep_result_multi_angle[0], sweep_result_batched_op_sa, atol=1e-12)
+
+
+
+
