@@ -1,6 +1,6 @@
 import jax
 import jax.numpy as jnp 
-from jax_sn.domain.geometric_domain import GeometricDomain, TopologicalSortedAngle, CrossSectionDataSingleGroup, Domain
+from jax_sn.domain.geometric_domain import GeometricDomain, CrossSectionDataSingleGroup, Domain
 from jax_sn.solution_domain.base_fem import PrecomputedGeometricData, FEMMatrices
 from jax_sn.source import Source
 from .transport_operator_imp import gij_kernel_idx_in_precomp, dij_f_p_fm_kernel_idx_in_precomp, _compute_omega_dot_n_Je_inflow_vmap, _compute_omega_dot_n_Je_inflow
@@ -59,11 +59,13 @@ def forward_transport_operator_vmap(
     fem_matrices               : FEMMatrices, 
     precomputed_geometric_data : PrecomputedGeometricData,                                      
     cross_sections             : CrossSectionDataSingleGroup, 
-    topological_sorted_angle  : TopologicalSortedAngle,
+    angle                      : jnp.ndarray,
     x                          : jnp.ndarray,  
 ) -> jnp.ndarray:
     '''
     Forward transport operator using vmap over angles.
+
+    Does not require a topological sort so angle is sufficient.
 
     Parameters
     ----------
@@ -75,8 +77,8 @@ def forward_transport_operator_vmap(
         Precomputed geometric data.
     cross_sections             : CrossSectionDataSingleGroup [n_elements, ...]
         Cross sections for a single energy group
-    topological_sorted_angle  : TopologicalSortedAngle
-        Topologically sorted angles.
+    angle                      : jnp.ndarray [ndim,]
+        Angle direction
     x                          : jnp.ndarray [n_elements, n_basis]
         x vector to apply the transport operator to.
 
@@ -92,7 +94,7 @@ def forward_transport_operator_vmap(
         fem_matrices,
         precomputed_geometric_data,
         cross_sections,
-        topological_sorted_angle,
+        angle,
         x
     )
 
@@ -103,7 +105,7 @@ def forward_transport_operator_batch(
     fem_matrices               : FEMMatrices, 
     precomputed_geometric_data : PrecomputedGeometricData,                                      
     cross_sections             : CrossSectionDataSingleGroup, 
-    topological_sorted_angle  : TopologicalSortedAngle,
+    angle                      : jnp.ndarray,
     x                          : jnp.ndarray,  
     batch_size                 : int
 ) -> jnp.ndarray:
@@ -120,8 +122,8 @@ def forward_transport_operator_batch(
         Precomputed geometric data.
     cross_sections             : CrossSectionDataSingleGroup [n_elements, ...]
         Cross sections for a single energy group
-    topological_sorted_angle  : TopologicalSortedAngle
-        Topologically sorted angles.
+    angle                      : jnp.ndarray [ndim,]
+        Angle direction.
     x                          : jnp.ndarray [n_elements, n_basis]
         x vector to apply the transport operator to.
 
@@ -131,7 +133,7 @@ def forward_transport_operator_batch(
         Result of applying the forward transport operator. Shape [n_angles, n_elements, n_basis]
     '''
     elements_all = jnp.arange(geometric_domain.n_elements)
-    f_batch = lambda i : _single_compute_forward(i, geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, x)
+    f_batch = lambda i : _single_compute_forward(i, geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, x)
     return jax.lax.map(f_batch, elements_all, batch_size=batch_size)
 
 def _single_compute_forward(
@@ -140,13 +142,13 @@ def _single_compute_forward(
     fem_matrices               : FEMMatrices, 
     precomputed_geometric_data : PrecomputedGeometricData,                                      
     cross_sections             : CrossSectionDataSingleGroup, 
-    topological_sorted_angle  : TopologicalSortedAngle,
+    angle                      : jnp.ndarray,
     x                          : jnp.ndarray,      
 ) -> jnp.ndarray:
     abs_omega_dot_n_Je, inflow = _compute_omega_dot_n_Je_inflow(
         element_idx,
         geometric_domain,
-        topological_sorted_angle.angle,
+        angle,
         precomputed_geometric_data)        
     return _forward_transport_operator_kernel(
         element_idx,
@@ -154,7 +156,7 @@ def _single_compute_forward(
         fem_matrices,
         precomputed_geometric_data,
         cross_sections,
-        topological_sorted_angle.angle,
+        angle,
         inflow, 
         abs_omega_dot_n_Je,
         x
@@ -162,17 +164,17 @@ def _single_compute_forward(
 
 _single_compute_forward_vmap = jax.vmap(_single_compute_forward, in_axes=(0, None, None, None, None, None, None))
 
-#@partial(jax.jit, static_argnums=(6,))
+@partial(jax.jit, static_argnums=(6,))
 def forward_transport_operator_multiple_angles_batch(
     geometric_domain           : GeometricDomain, 
     fem_matrices               : FEMMatrices, 
     precomputed_geometric_data : PrecomputedGeometricData,                                      
     cross_sections             : CrossSectionDataSingleGroup, 
-    topological_sorted_angle  : TopologicalSortedAngle,
+    angle                      : jnp.ndarray,
     x                          : jnp.ndarray,  
     batch_size                 : int) -> jnp.ndarray:
     f_vmap = jax.vmap(forward_transport_operator_batch, in_axes=(None, None, None, None, 0, 0, None))
-    return f_vmap(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, x, batch_size)
+    return f_vmap(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, x, batch_size)
 
 forward_transport_operator_multiple_angles_vmap = partial(forward_transport_operator_multiple_angles_batch, batch_size=None)
 

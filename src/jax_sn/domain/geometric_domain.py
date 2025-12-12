@@ -149,6 +149,25 @@ class TopologicalSortedAngle:
             levels_argsort = self.levels_argsort[idx]
         )
     
+    @property
+    def reverse(self):
+        '''
+        Reverses the angle and topological sort
+        Correct for batched angles as well.
+        Topological sort can be directly reversed. 
+        The levels are reversed by subtracting from the maximum level. This is non-optimal, but produces a valid topological sort.
+
+        Returns
+        -------
+        reversed_toposort : TopologicalSortedAngle
+            The reversed topological sort.
+        '''        
+        return TopologicalSortedAngle(
+            levels         = jnp.max(self.levels, axis = -1, keepdims=True) - self.levels, # technically not optimal, but produces valid levels [not entirely sure, but in general we don't use this anyway except for level-based parallelism....]
+            angle          = -1.0 * self.angle,
+            levels_argsort = self.levels_argsort[..., ::-1] 
+        )
+    
 
 @lru_cache(maxsize=16)
 def _build_bvh(geometric_domain : GeometricDomain):    
