@@ -18,20 +18,18 @@ from dataclasses import dataclass
 # In principle, all these functions only use simple matrix algebra. They could be implemented in custom kernels for performance.
 # All setup is done in precomputation functions in base_fem.py and elsewhere.
 
-@partial(jax.jit, static_argnums = (7,))
+@partial(jax.jit, static_argnums = (6,))
 def transport_inverse_sweep_batched(geometric_domain           : GeometricDomain, 
                                     fem_matrices               : FEMMatrices, 
                                     precomputed_geometric_data : PrecomputedGeometricData,                                      
                                     cross_sections             : CrossSectionDataSingleGroup, 
                                     topological_sorted_angle   : TopologicalSortedAngle,                                     
-                                    precomputed_source         : Source, 
-                                    sweep_result               : jnp.ndarray, 
-                                    batch_size                 : int):
-    
+                                    x                          : jnp.ndarray,                                   
+                                    batch_size                 : int):    
     '''
     Perform a complete transport inverse sweep over all elements in the geometric domain using batched vmap and fori_loop.
 
-    vmap is used to compute all Gij_inv, QM_i and Dij_f_p_fm matrices for all elements in a vectorized manner for a fixed batch size.
+    vmap is used to compute all Gij_inv, and Dij_f_p_fm matrices for all elements in a vectorized manner for a fixed batch size.
     Then, a fori_loop is used to iterate over the elements in topological order to compute the sweep result in batches.
     This takes significantly less memory than using the complete vmap version.
 
@@ -47,37 +45,35 @@ def transport_inverse_sweep_batched(geometric_domain           : GeometricDomain
         The cross section data.
     topological_sorted_angle : TopologicalSortedAngle
         The topologically sorted angle data.
-    precomputed_source : Source
-        The source data.
-    sweep_result : jnp.ndarray [n_elements, n_basis]
-        The initial sweep result array (usually zeros).
+    x : jnp.ndarray [n_elements, n_basis]
+        The x vector to apply the transport inverse sweep to.
+    batch_size : int
+        The batch size to use for the batched vmap computation.
     Returns
     -------
     sweep_result : jnp.ndarray [n_elements, n_basis]    
         The computed sweep result array after performing the transport sweep.
-    '''
-    
-    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, precomputed_source, sweep_result, False)
+    '''    
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, x, False)
     
     n_batches                  = jnp.ceil(geometric_domain.n_elements / batch_size).astype(int)        
 
     def single_batch(batch_i, sweep_result):
         batch_indices                               = jnp.clip(jnp.arange(batch_size) + batch_i * batch_size, 0, geometric_domain.n_elements - 1)    
         batch_elements                              = topological_sorted_angle.levels_argsort[batch_indices]        
-        gij_inv_batch, qm_i_batch, dij_f_p_fm_batch, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(batch_elements, geometric_domain, fem_matrices,
-                                                            precomputed_geometric_data, cross_sections, topological_sorted_angle.angle,
-                                                            precomputed_source)        
-        return _sweep_elements(batch_elements, sweep_result, gij_inv_batch, qm_i_batch, dij_f_p_fm_batch, geometric_domain, abs_omega_dot_n_Je)    
-    return jax.lax.fori_loop(0, n_batches, single_batch, sweep_result)
+        gij_inv_batch, dij_f_p_fm_batch, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(batch_elements, geometric_domain, fem_matrices,
+                                                            precomputed_geometric_data, cross_sections, topological_sorted_angle.angle)        
+        return _sweep_elements(batch_elements, sweep_result, gij_inv_batch, x, dij_f_p_fm_batch, geometric_domain, abs_omega_dot_n_Je)    
+    return jax.lax.fori_loop(0, n_batches, single_batch, jnp.zeros_like(x))
 
 @jax.jit
-def transport_inverse_sweep_complete_vmap(geometric_domain           : GeometricDomain, 
+def transport_inverse_sweep_complete_vmap(geometric_domain                : GeometricDomain, 
                                                fem_matrices               : FEMMatrices, 
                                                precomputed_geometric_data : PrecomputedGeometricData, 
                                                cross_sections             : CrossSectionDataSingleGroup,                                                
                                                topological_sorted_angle   : TopologicalSortedAngle, 
-                                               precomputed_source         : Source, 
-                                               sweep_result               : jnp.ndarray) -> jnp.ndarray:    
+                                               x                          : jnp.ndarray
+                                               ) -> jnp.ndarray:    
     '''
     Perform a complete transport inverse sweep over all elements in the geometric domain using vmap and fori_loop.
 
@@ -97,22 +93,20 @@ def transport_inverse_sweep_complete_vmap(geometric_domain           : Geometric
         The cross section data.
     topological_sorted_angle : TopologicalSortedAngle
         The topologically sorted angle data.
-    precomputed_source : Source
-        The source data.
-    sweep_result : jnp.ndarray [n_elements, n_basis]
-        The initial sweep result array (usually zeros).
+    x : jnp.ndarray [n_elements, n_basis]
+        The x vector to apply the transport inverse sweep to.
+    
     Returns
     -------
     sweep_result : jnp.ndarray [n_elements, n_basis]    
         The computed sweep result array after performing the transport sweep.
     '''    
-    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, precomputed_source, sweep_result, False)
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, x, False)
 
-    gij_inv_all, qm_i_all, dij_f_p_fm_all, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(topological_sorted_angle.levels_argsort, geometric_domain, fem_matrices,
-                                                            precomputed_geometric_data, cross_sections, topological_sorted_angle.angle,
-                                                            precomputed_source)    
-                                                            
-    return _sweep_elements(topological_sorted_angle.levels_argsort, sweep_result, gij_inv_all, qm_i_all, dij_f_p_fm_all, geometric_domain, abs_omega_dot_n_Je)
+    gij_inv_all, dij_f_p_fm_all, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(topological_sorted_angle.levels_argsort, geometric_domain, fem_matrices,
+                                                            precomputed_geometric_data, cross_sections, topological_sorted_angle.angle)                                                            
+    sweep_result = jnp.zeros_like(x)
+    return _sweep_elements(topological_sorted_angle.levels_argsort, sweep_result, gij_inv_all, x, dij_f_p_fm_all, geometric_domain, abs_omega_dot_n_Je)
 
 
 #=============================================================================================================================================================================
@@ -143,8 +137,7 @@ def gij_kernel_idx_in_precomp(
         The direction vector.
     inflow : jnp.ndarray [n_faces_per_element]
         Boolean array indicating inflow faces for the specified element. This has the advantage of allowing us to batch it by providing it for each element in the batch only (instead of all elements).
-        Since we have to compute it separately for each direction anyway, this does not involve additional copying (as it would be for the precomputed jacobian data).
-        
+        Since we have to compute it separately for each direction anyway, this does not involve additional copying (as it would be for the precomputed jacobian data).        
     abs_omega_dot_n_Je : jnp.ndarray [n_faces_per_element]
         The absolute value of the dot product of omega and face normals multiplied by face Jacobian determinants
         for the specified element.
@@ -196,38 +189,6 @@ def gij_inv_kernel_idx_in_precomp(
 
 gij_inv_kernel_idx_in_precomp_vmap = jax.jit(jax.vmap(gij_inv_kernel_idx_in_precomp, in_axes=(0, None, None, None, None, 0, 0)))
 
-def qm_i_kernel_idx_in_precomp(
-        elem_idx                    : int,
-        fem_matrices                : FEMMatrices,    
-        precomputed_geometric_data  : PrecomputedGeometricData,
-        source                      : Source
-    ):
-    '''
-    Compute the QM_i external source vector for a single element index:
-        QM_i = ∑_{j} Jv ∫H_i H_j dV q_j 
-
-    We index directly in the source instead of passing a subsource. This can save significant memory when vmapping over all elements and all directions with the same source independent of direction.
-
-    Parameters
-    ----------
-    elem_idx : int
-        The element index to compute the QM_i vector for.
-    fem_matrices : FEMMatrices
-        The finite element method matrices.
-    precomputed_geometric_data : PrecomputedGeometricData
-        The precomputed geometric data (Jacobian determinants and inverses).
-    source : Source
-        The source data.
-    Returns
-    -------
-    qm_i : jnp.ndarray
-        The computed QM_i vector for the specified element.
-    '''    
-    return mass_kernel_idx_in_precomp(elem_idx, fem_matrices, precomputed_geometric_data, source.source_values)
-
-qm_i_kernel_idx_in_precomp_vmap = jax.jit(jax.vmap(qm_i_kernel_idx_in_precomp, in_axes=(0, None, None, None)))
-
-
 def dij_f_p_fm_kernel_idx_in_precomp(
         elem_idx                    : int,
         fem_matrices                : FEMMatrices,    
@@ -266,9 +227,9 @@ def dij_f_p_fm_kernel_idx_in_precomp(
 
 dij_f_p_fm_kernel_idx_in_precomp_vmap = jax.jit(jax.vmap(dij_f_p_fm_kernel_idx_in_precomp, in_axes=(0, None, 0, None, None)))
 
-def _setup_elements_idx_in_precomp(element_indices : jnp.ndarray, geometric_domain : GeometricDomain, fem_matrices : FEMMatrices, precomputed_geometric_data : PrecomputedGeometricData, cross_sections : CrossSectionDataSingleGroup, angle : jnp.ndarray, precomputed_source : Source, inflow : jnp.ndarray, abs_omega_dot_n_Je : jnp.ndarray):
+def _setup_elements_idx_in_precomp(element_indices : jnp.ndarray, geometric_domain : GeometricDomain, fem_matrices : FEMMatrices, precomputed_geometric_data : PrecomputedGeometricData, cross_sections : CrossSectionDataSingleGroup, angle : jnp.ndarray, inflow : jnp.ndarray, abs_omega_dot_n_Je : jnp.ndarray):
     '''
-    Setup all Gij_inv, QM_i and Dij_f_p_fm matrices for a set of element indices. This is embarassingly parallel and uses vmap.
+    Setup all Gij_inv and Dij_f_p_fm matrices for a set of element indices. This is embarassingly parallel and uses vmap.
 
     Not necessarily *all* elements at the same time. The element indices can be an arbitrary subset of elements.
 
@@ -285,9 +246,7 @@ def _setup_elements_idx_in_precomp(element_indices : jnp.ndarray, geometric_doma
     cross_sections : CrossSectionDataSingleGroup 
         The cross section data. total attribute must have [n_elements] shape (indexed in)
     angle : jnp.ndarray [n_dim]
-        The direction vector.
-    precomputed_source : Source [n_elements, n_basis]
-        The source data.
+        The direction vector.    
     inflow : jnp.ndarray [n_elements_setup, n_faces_per_element]
         Boolean array indicating inflow faces for the specified elements (indexed by in the same order, i.e. inflow[0] corresponds to element_indices[0], etc).
     abs_omega_dot_n_Je : jnp.ndarray [n_elements_setup, n_faces_per_element]
@@ -296,9 +255,7 @@ def _setup_elements_idx_in_precomp(element_indices : jnp.ndarray, geometric_doma
     Returns
     -------
     gij_inv_all    : jnp.ndarray [n_elements_setup, n_basis, n_basis]
-        The computed Gij_inv matrices for all specified elements.
-    qm_i_all       : jnp.ndarray [n_elements_setup, n_basis]
-        The computed QM_i vectors for all specified elements.
+        The computed Gij_inv matrices for all specified elements.    
     dij_f_p_fm_all : jnp.ndarray [n_elements_setup, n_faces_per_element, n_basis, n_basis]
         The computed Dij_f_p_fm matrices for all specified elements.
     '''
@@ -309,39 +266,32 @@ def _setup_elements_idx_in_precomp(element_indices : jnp.ndarray, geometric_doma
                                 cross_sections,
                                 angle,
                                 inflow,
-                                abs_omega_dot_n_Je)     #[n_elements, n_basis, n_basis]
-    qm_i_all       = qm_i_kernel_idx_in_precomp_vmap(
-                                element_indices,
-                                fem_matrices,
-                                precomputed_geometric_data,
-                                precomputed_source)     #[n_elements, n_basis]
+                                abs_omega_dot_n_Je)     #[n_elements, n_basis, n_basis]    
     dij_f_p_fm_all = dij_f_p_fm_kernel_idx_in_precomp_vmap(
                                 element_indices,
                                 fem_matrices,
                                 inflow,
                                 geometric_domain.etof,
                                 geometric_domain.face_perm_idx) #[n_elements, n_faces_per_element, n_basis, n_basis]
-    return gij_inv_all, qm_i_all, dij_f_p_fm_all
+    return gij_inv_all, dij_f_p_fm_all
 
 @jax.jit
-def _setup_elements_from_args(geometric_domain           : GeometricDomain, 
+def _setup_elements_from_args(                 geometric_domain           : GeometricDomain, 
                                                fem_matrices               : FEMMatrices, 
                                                precomputed_geometric_data : PrecomputedGeometricData, 
                                                cross_sections             : CrossSectionDataSingleGroup,                                                
                                                topological_sorted_angle   : TopologicalSortedAngle, 
-                                               precomputed_source         : Source, 
-                                               sweep_result               : jnp.ndarray) -> jnp.ndarray:    
+                                               x) -> jnp.ndarray:    
     '''
-    Convenience function to setup all Gij_inv, QM_i and Dij_f_p_fm matrices for all elements in the geometric domain using the topological sorted angle.
+    Convenience function to setup all Gij_inv and Dij_f_p_fm matrices for all elements in the geometric domain using the topological sorted angle.
     (same as _setup_elements_idx_in_precomp_with_omega_n_calculation)
     '''
     
-    gij_inv_all, qm_i_all, dij_f_p_fm_all, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(topological_sorted_angle.levels_argsort, geometric_domain, fem_matrices,
-                                                            precomputed_geometric_data, cross_sections, topological_sorted_angle.angle,
-                                                            precomputed_source)    
-    return gij_inv_all, qm_i_all, dij_f_p_fm_all, abs_omega_dot_n_Je
+    gij_inv_all, dij_f_p_fm_all, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(topological_sorted_angle.levels_argsort, geometric_domain, fem_matrices,
+                                                            precomputed_geometric_data, cross_sections, topological_sorted_angle.angle)    
+    return gij_inv_all, dij_f_p_fm_all, abs_omega_dot_n_Je
 
-def _setup_elements_idx_in_precomp_with_omega_n_calculation(element_indices : jnp.ndarray, geometric_domain : GeometricDomain, fem_matrices : FEMMatrices, precomputed_geometric_data : PrecomputedGeometricData, cross_sections : CrossSectionDataSingleGroup, angle : jnp.ndarray, precomputed_source : Source):
+def _setup_elements_idx_in_precomp_with_omega_n_calculation(element_indices : jnp.ndarray, geometric_domain : GeometricDomain, fem_matrices : FEMMatrices, precomputed_geometric_data : PrecomputedGeometricData, cross_sections : CrossSectionDataSingleGroup, angle : jnp.ndarray):
     '''
     Setup all Gij_inv, QM_i and Dij_f_p_fm matrices for a set of element indices. This is embarassingly parallel and uses vmap.
 
@@ -369,13 +319,12 @@ def _setup_elements_idx_in_precomp_with_omega_n_calculation(element_indices : jn
     -------
     gij_inv_all    : jnp.ndarray [n_elements_setup, n_basis, n_basis]
         The computed Gij_inv matrices for all specified elements.
-    qm_i_all       : jnp.ndarray [n_elements_setup, n_basis]
-        The computed QM_i vectors for all specified elements.
+    
     dij_f_p_fm_all : jnp.ndarray [n_elements_setup, n_faces_per_element, n_basis, n_basis]
         The computed Dij_f_p_fm matrices for all specified elements.
     '''
     abs_omega_dot_n_Je, inflow = _compute_omega_dot_n_Je_inflow_vmap(element_indices, geometric_domain, angle, precomputed_geometric_data)        
-    return *_setup_elements_idx_in_precomp(element_indices, geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, precomputed_source, inflow, abs_omega_dot_n_Je), inflow, abs_omega_dot_n_Je
+    return *_setup_elements_idx_in_precomp(element_indices, geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, inflow, abs_omega_dot_n_Je), inflow, abs_omega_dot_n_Je
 @jax.jit
 def _collapse_dij(elem_idx : int, dij_f_p_fm : jnp.ndarray,  sweep_result : jnp.ndarray, etoe : jnp.ndarray, abs_omega_dot_n_Je : jnp.ndarray):  
     '''
@@ -406,7 +355,8 @@ def _collapse_dij(elem_idx : int, dij_f_p_fm : jnp.ndarray,  sweep_result : jnp.
 _collapse_dij_vmap = jax.vmap(_collapse_dij, in_axes=(0,0,None, None, 0))
     
 
-def _sweep_elements(elements_topological_sorting, sweep_result, gij_inv_all, qm_i_all, dij_f_p_fm_all, geometric_domain, abs_omega_dot_n_Je):
+def _sweep_elements(elements_topological_sorting : jnp.ndarray, sweep_result : jnp.ndarray, 
+                    gij_inv_all : jnp.ndarray, x : jnp.ndarray,  dij_f_p_fm_all : jnp.ndarray, geometric_domain : GeometricDomain, abs_omega_dot_n_Je : jnp.ndarray) -> jnp.ndarray:
     '''
     Internal function that performs the sweep over elements in topological order using fori_loop. This function assumes that all necessary matrices have already been computed.
     It can perform part of the sweep for a subset of elements.    
@@ -436,8 +386,8 @@ def _sweep_elements(elements_topological_sorting, sweep_result, gij_inv_all, qm_
         The initial sweep result array (usually zeros).
     gij_inv_all : jnp.ndarray [n_elements_subset, n_basis, n_basis]
         The computed Gij_inv matrices for all specified elements.
-    qm_i_all : jnp.ndarray [n_elements_subset, n_basis]
-        The computed QM_i vectors for all specified elements.
+    x : jnp.ndarray [n_elements, n_basis]
+        The x vector to apply (part of) the transport inverse sweep to.
     dij_f_p_fm_all : jnp.ndarray [n_elements_subset, n_faces_per_element, n_basis, n_basis]
         The computed Dij_f_p_fm matrices for all specified elements.
     geometric_domain : GeometricDomain
@@ -450,14 +400,14 @@ def _sweep_elements(elements_topological_sorting, sweep_result, gij_inv_all, qm_
     sweep_result : jnp.ndarray [n_elements, n_basis]    
         The computed sweep result array after performing the transport sweep for the specified elements.
     '''
-    assert elements_topological_sorting.shape[0] == gij_inv_all.shape[0] == qm_i_all.shape[0] == dij_f_p_fm_all.shape[0] == abs_omega_dot_n_Je.shape[0],\
-        "Input arrays must have the same number of elements but got: elements_topological_sorting {}, gij_inv_all {}, qm_i_all {}, dij_f_p_fm_all {}, abs_omega_dot_n_Je {}".format(\
-            elements_topological_sorting.shape[0], gij_inv_all.shape[0], qm_i_all.shape[0], dij_f_p_fm_all.shape[0], abs_omega_dot_n_Je.shape[0])
+    assert elements_topological_sorting.shape[0] == gij_inv_all.shape[0] == dij_f_p_fm_all.shape[0] == abs_omega_dot_n_Je.shape[0],\
+        "Input arrays must have the same number of elements but got: elements_topological_sorting {}, gij_inv_all {}, dij_f_p_fm_all {}, abs_omega_dot_n_Je {}".format(\
+            elements_topological_sorting.shape[0], gij_inv_all.shape[0], dij_f_p_fm_all.shape[0], abs_omega_dot_n_Je.shape[0])
     
     def sweep_elements_in_order(elem_i_in_order,sweep_result):  
         elem_idx = elements_topological_sorting[elem_i_in_order]
         s_dj     = _collapse_dij(elem_idx, dij_f_p_fm_all[elem_i_in_order], sweep_result, geometric_domain.etoe, abs_omega_dot_n_Je[elem_i_in_order])
-        result   =  gij_inv_all[elem_i_in_order] @ (qm_i_all[elem_i_in_order] + s_dj)                
+        result   =  gij_inv_all[elem_i_in_order] @ (x[elem_idx] + s_dj)                
         return sweep_result.at[elem_idx].set(result)    
     
     return jax.lax.fori_loop(0, elements_topological_sorting.shape[0], sweep_elements_in_order, sweep_result)
@@ -476,8 +426,7 @@ def _assert_types(geometric_domain           : GeometricDomain,
                   fem_matrices               : FEMMatrices, 
                   precomputed_geometric_data : PrecomputedGeometricData, 
                   cross_sections             : CrossSectionDataSingleGroup,                                                
-                  topological_sorted_angle   : TopologicalSortedAngle, 
-                  precomputed_source         : Source,
+                  topological_sorted_angle   : TopologicalSortedAngle,                   
                   x                          : jnp.ndarray):
     
     '''
@@ -489,32 +438,28 @@ def _assert_types(geometric_domain           : GeometricDomain,
     assert isinstance(precomputed_geometric_data, PrecomputedGeometricData), f"precomputed_geometric_data is not of type PrecomputedGeometricData but {type(precomputed_geometric_data)}"
     assert isinstance(cross_sections, CrossSectionDataSingleGroup), f"cross_sections is not of type CrossSectionDataSingleGroup but {type(cross_sections)}"
     assert isinstance(topological_sorted_angle, TopologicalSortedAngle), f"topological_sorted_angle is not of type TopologicalSortedAngle but {type(topological_sorted_angle)}"
-    assert isinstance(precomputed_source, Source), f"precomputed_source is not of type Source but {type(precomputed_source)}"
-
 
 def _assert_shape(geometric_domain           : GeometricDomain, 
                   fem_matrices               : FEMMatrices, 
                   precomputed_geometric_data : PrecomputedGeometricData, 
                   cross_sections             : CrossSectionDataSingleGroup,                                                
-                  topological_sorted_angle   : TopologicalSortedAngle, 
-                  precomputed_source         : Source,
+                  topological_sorted_angle   : TopologicalSortedAngle,                   
                   x                          : jnp.ndarray,
                   multiple_angles : bool):
+    _assert_types(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, x)
     if multiple_angles:                 
-        assert topological_sorted_angle.angle.ndim == 2, f"topological_sorted_angles.angle should have 2 dimensions [n_angles, n_dim] but has shape {topological_sorted_angle.angle.shape}"
-        assert precomputed_source.source_values.ndim == 3, f"precomputed_source.source_values should have 3 dimensions [n_angles, n_elements, n_basis] but has shape {precomputed_source.source_values.shape}"
+        assert topological_sorted_angle.angle.ndim == 2, f"topological_sorted_angles.angle should have 2 dimensions [n_angles, n_dim] but has shape {topological_sorted_angle.angle.shape}"                
         assert x.ndim == 3, f"sweep_result should have 3 dimensions [n_angles, n_elements, n_basis] but has shape {x.shape}"  
         n_angles = topological_sorted_angle.angle.shape[0]
         assert topological_sorted_angle.levels_argsort.shape[0] == n_angles, f"topological sorted_angles.levels_argsort first dimension {topological_sorted_angle.levels_argsort.shape[0]} does not match number of angles {n_angles}"
-        assert precomputed_source.source_values.shape[0] == n_angles, f"precomputed_source.source_values first dimension {precomputed_source.source_values.shape[0]} does not match number of angles {n_angles}"
+        
         assert x.shape[0] == n_angles, f"sweep_result first dimension {x.shape[0]} does not match number of angles {n_angles}"
         assert x.shape[1] == geometric_domain.n_elements, f"sweep_result second dimension {x.shape[1]} does not match number of elements {geometric_domain.n_elements}"
         assert x.shape[2] == fem_matrices.mass_matrix.shape[0], f"sweep_result third dimension {x.shape[2]} does not match number of basis functions {fem_matrices.mass_matrix.shape[0]}" 
                                             
     else:
         assert x.shape == (geometric_domain.n_elements, fem_matrices.mass_matrix.shape[0]), f"sweep_result shape {x.shape} does not match expected (n_elements, n_basis): {(geometric_domain.n_elements, fem_matrices.mass_matrix.shape[0])}"
-        assert cross_sections.total.shape[0] == geometric_domain.n_elements, f"cross_sections shape {cross_sections.total.shape} does not match expected (n_elements, ): {(geometric_domain.n_elements, )}"
-        assert precomputed_source.source_values.shape == (geometric_domain.n_elements, fem_matrices.mass_matrix.shape[0]), f"precomputed_source shape {precomputed_source.source_values.shape} does not match expected (n_elements, n_basis): {(geometric_domain.n_elements, fem_matrices.mass_matrix.shape[0])}"
+        assert cross_sections.total.shape[0] == geometric_domain.n_elements, f"cross_sections shape {cross_sections.total.shape} does not match expected (n_elements, ): {(geometric_domain.n_elements, )}"        
 
 
 #=============================================================================================================================================================================
@@ -523,14 +468,13 @@ def _assert_shape(geometric_domain           : GeometricDomain,
 
                                 
 
-@partial(jax.jit, static_argnums = (7,))
+@partial(jax.jit, static_argnums = (6,))
 def transport_inverse_sweep_multiple_angles_batched(geometric_domain           : GeometricDomain,
                                                     fem_matrices               : FEMMatrices,
                                                     precomputed_geometric_data : PrecomputedGeometricData,
                                                     cross_sections             : CrossSectionDataSingleGroup,
-                                                    topological_sorted_angles  : TopologicalSortedAngle,                                                                                                         
-                                                    precomputed_source         : Source,
-                                                    sweep_result               : jnp.ndarray,
+                                                    topological_sorted_angles  : TopologicalSortedAngle,                                                                                                                                                             
+                                                    x                          : jnp.ndarray,
                                                     batch_size                 : int):
     '''
     Perform a complete transport inverse sweep over all elements in the geometric domain for multiple angles using batched vmap and fori_loop.
@@ -551,15 +495,13 @@ def transport_inverse_sweep_multiple_angles_batched(geometric_domain           :
         The cross section data.
     topological_sorted_angles : TopologicalSortedAngle
         The topologically sorted angle data for multiple angles. (batch dimension is the first dimension)
-    precomputed_source : Source [n_angles, n_elements, n_basis]
-        The source data. Should also be batched over angles (batch dimension is the first dimension).
-    sweep_result : jnp.ndarray [n_angles, n_elements, n_basis]
-        The initial sweep result array (usually zeros).
+    x : jnp.ndarray [n_angles, n_elements, n_basis]
+        The x vector to apply the transport inverse sweep to.
     '''
         
-    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result, True)
-    f_batch = jax.vmap(transport_inverse_sweep_batched, in_axes=(None, None, None, None, 0, 0, 0, None ))
-    return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result, batch_size)
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, x, True)
+    f_batch = jax.vmap(transport_inverse_sweep_batched, in_axes=(None, None, None, None, 0, 0, None ))
+    return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, x, batch_size)
 
 @jax.jit
 def transport_inverse_sweep_multiple_angles_complete_vmap(geometric_domain           : GeometricDomain,
@@ -567,8 +509,7 @@ def transport_inverse_sweep_multiple_angles_complete_vmap(geometric_domain      
                                                           precomputed_geometric_data : PrecomputedGeometricData,
                                                           cross_sections             : CrossSectionDataSingleGroup,
                                                           topological_sorted_angles  : TopologicalSortedAngle,                                                                                                         
-                                                          precomputed_source         : Source,
-                                                          sweep_result               : jnp.ndarray,
+                                                          x                          : jnp.ndarray
                                                           ):
     '''
     Perform a complete transport inverse sweep over all elements in the geometric domain for multiple angles using batched vmap and fori_loop.
@@ -589,13 +530,10 @@ def transport_inverse_sweep_multiple_angles_complete_vmap(geometric_domain      
         The cross section data.
     topological_sorted_angles : TopologicalSortedAngle
         The topologically sorted angle data for multiple angles. (batch dimension is the first dimension)
-    precomputed_source : Source [n_angles, n_elements, n_basis]
-        The source data. Should also be batched over angles (batch dimension is the first dimension).
-    sweep_result : jnp.ndarray [n_angles, n_elements, n_basis]
-        The initial sweep result array (usually zeros).
-    '''
-        
-    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result, True)
-    f_batch = jax.vmap(transport_inverse_sweep_complete_vmap, in_axes=(None, None, None, None, 0, 0, 0))
-    return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result)
+    x : jnp.ndarray [n_angles, n_elements, n_basis]
+        The x vector to apply the transport inverse sweep to.
+    '''        
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, x, True)
+    f_batch = jax.vmap(transport_inverse_sweep_complete_vmap, in_axes=(None, None, None, None, 0, 0))
+    return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, x)
 

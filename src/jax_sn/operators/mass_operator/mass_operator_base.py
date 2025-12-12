@@ -2,6 +2,45 @@ import jax
 import jax.numpy as jnp
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from jax_sn.source import Source
+from dataclasses import dataclass
+
+@jax.tree_util.register_dataclass
+@dataclass(frozen=True)
+class MassOperator:
+    r'''
+    Interface for mass operator. Computes:
+
+    .. math::
+        v_i = \sum_{j} Jv \int H_i H_j dV v_j
+    '''
+    fem_matrices                : FEMMatrices    
+    precomputed_geometric_data  : PrecomputedGeometricData
+
+    @classmethod    
+    def from_fem_matrices_and_precomputed_geometric_data(cls, fem_matrices : FEMMatrices, precomputed_geometric_data : PrecomputedGeometricData) -> "MassOperator":
+        return cls(
+            fem_matrices,
+            precomputed_geometric_data
+        )
+    
+
+    def __call__(self, x : jnp.ndarray) -> jnp.ndarray:
+        if x.ndim == 2:
+            return _mass_kernel_idx_in_precomp_vmap(
+                jnp.arange(self.precomputed_geometric_data.n_elements),
+                self.fem_matrices,
+                self.precomputed_geometric_data,
+                x
+            )
+        elif x.ndim ==3:
+            return _mass_kernel_idx_in_precomp_vmap_vmap_values(
+                jnp.arange(self.precomputed_geometric_data.n_elements),
+                self.fem_matrices,
+                self.precomputed_geometric_data,
+                x
+            )
+        else:
+            raise ValueError(f"Input x must have 2 or 3 dimensions but has shape {x.shape}")    
 
 def mass_kernel_idx_in_precomp(
         elem_idx                    : int,

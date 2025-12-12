@@ -62,7 +62,7 @@ class TopologicalSortedAnglePrecomputedLevels(TopologicalSortedAngle):
 
 
 def _single_level(level_size : int, level_i : int, precomputed_levels : TopologicalSortedAnglePrecomputedLevels,
-                  gij_inv_level : jnp.ndarray, qm_i_level : jnp.ndarray, dij_f_p_fm_level : jnp.ndarray, abs_omega_dot_n_Je_level : jnp.ndarray, 
+                  gij_inv_level : jnp.ndarray, x : jnp.ndarray, dij_f_p_fm_level : jnp.ndarray, abs_omega_dot_n_Je_level : jnp.ndarray, 
                   etoe : jnp.ndarray, sweep_result : jnp.ndarray):
     '''
     Perform a single level sweep in parallel. This assumes the elements in the level are independent.
@@ -91,20 +91,23 @@ def _single_level(level_size : int, level_i : int, precomputed_levels : Topologi
     sweep_result     : jnp.ndarray
         Current sweep result array [n_elements + 1, n_basis]
     '''
-    assert level_size == gij_inv_level.shape[0] == qm_i_level.shape[0] == dij_f_p_fm_level.shape[0] == abs_omega_dot_n_Je_level.shape[0], \
-        "Input arrays must have the same number of elements in the level but got: level_size {}, gij_inv_level {}, qm_i_level {}, dij_f_p_fm_level {}, abs_omega_dot_n_Je_level {}".format(\
-            level_size, gij_inv_level.shape[0], qm_i_level.shape[0], dij_f_p_fm_level.shape[0], abs_omega_dot_n_Je_level.shape[0])    
+    assert level_size == gij_inv_level.shape[0] == dij_f_p_fm_level.shape[0] == abs_omega_dot_n_Je_level.shape[0], \
+        "Input arrays must have the same number of elements in the level but got: level_size {}, gij_inv_level {}, dij_f_p_fm_level {}, abs_omega_dot_n_Je_level {}".format(\
+            level_size, gij_inv_level.shape[0],  dij_f_p_fm_level.shape[0], abs_omega_dot_n_Je_level.shape[0])    
     assert sweep_result.shape[0] == etoe.shape[0] + 1, \
         "Sweep result array must have one extra element compared to etoe (number of elements) but got: sweep_result {}, etoe {}".format(sweep_result.shape[0], etoe.shape[0])
     
     level_start                = precomputed_levels.starting_indices_padded[level_i]
     level_indices              = jax.lax.dynamic_slice(precomputed_levels.padded_levels, (level_start,), (level_size,)) # Get the indices for this level [level_size] (elem_idx in geometric domain)
     s_dj                       = _collapse_dij_vmap(level_indices, dij_f_p_fm_level, sweep_result, etoe, abs_omega_dot_n_Je_level)        
-    result                     = jnp.einsum("mij, mj->mi", gij_inv_level, (qm_i_level + s_dj))    
+
+    x_level                    = x[level_indices]  #[level_size, n_basis]
+    
+    result                     = jnp.einsum("mij, mj->mi", gij_inv_level, (x_level + s_dj))    
     return sweep_result.at[level_indices].set(result)
 
 def _single_level_from_complete_vmap(level_size : int, level_i : int, precomputed_levels : TopologicalSortedAnglePrecomputedLevels,
-                                      gij_inv_all, qm_i_all, dij_f_p_fm_all, abs_omega_dot_n_Je_all, 
+                                      gij_inv_all, x, dij_f_p_fm_all, abs_omega_dot_n_Je_all, 
                                       etoe, sweep_result):
     ''' 
     Perform a single level sweep in parallel. This assumes the elements in the level are independent. Here, we pass the entire vmap array (over all elements) (as computed by a vmap over all elements in topological order) and slice the relevant level data.
@@ -114,12 +117,11 @@ def _single_level_from_complete_vmap(level_size : int, level_i : int, precompute
     
     safe_mask                  = indices_desired < gij_inv_all.shape[0]
     indices_safe               = jnp.minimum(indices_desired, gij_inv_all.shape[0]) 
-    gij_inv_safe               = jnp.where(safe_mask[:, None, None],       gij_inv_all[indices_safe],            0)
-    qm_i_safe                  = jnp.where(safe_mask[:, None],             qm_i_all[indices_safe],               0)
+    gij_inv_safe               = jnp.where(safe_mask[:, None, None],       gij_inv_all[indices_safe],            0)    
     dij_f_p_fm_safe            = jnp.where(safe_mask[:, None, None, None], dij_f_p_fm_all[indices_safe],         0)
     abs_omega_dot_n_Je_safe    = jnp.where(safe_mask[:, None],             abs_omega_dot_n_Je_all[indices_safe], 0)
     
-    return _single_level(level_size, level_i, precomputed_levels, gij_inv_safe, qm_i_safe, dij_f_p_fm_safe, abs_omega_dot_n_Je_safe, etoe, sweep_result)
+    return _single_level(level_size, level_i, precomputed_levels, gij_inv_safe, x, dij_f_p_fm_safe, abs_omega_dot_n_Je_safe, etoe, sweep_result)
 
 from typing import Callable
 def transport_inverse_sweep_complete_vmap_levels(geometric_domain           : GeometricDomain, 
@@ -127,31 +129,31 @@ def transport_inverse_sweep_complete_vmap_levels(geometric_domain           : Ge
                                                  precomputed_geometric_data : PrecomputedGeometricData, 
                                                  cross_sections             : CrossSectionDataSingleGroup,                                                
                                                  topological_sorted_angle   : TopologicalSortedAnglePrecomputedLevels, 
-                                                 precomputed_source         : Source, 
-                                                 sweep_result               : jnp.ndarray, 
+                                                 x                          : jnp.ndarray,
                                                  sweep_level_f_sizes        : Tuple[Callable]) -> jnp.ndarray:    
-    gij_inv_all, qm_i_all, dij_f_p_fm_all, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(topological_sorted_angle.levels_argsort, 
+    gij_inv_all, dij_f_p_fm_all, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(topological_sorted_angle.levels_argsort, 
                                                                     geometric_domain, fem_matrices,
-                                                                    precomputed_geometric_data, cross_sections, topological_sorted_angle.angle,
-                                                                    precomputed_source)            
+                                                                    precomputed_geometric_data, cross_sections, topological_sorted_angle.angle)            
+    
+    sweep_result = jnp.zeros((geometric_domain.n_elements + 1, fem_matrices.mass_matrix.shape[-1]))
+    
     def sweep_level(sweep_result, level_i):
-        sweep_result = jax.lax.switch(topological_sorted_angle.level_log2_size[level_i], sweep_level_f_sizes, level_i, topological_sorted_angle, gij_inv_all, qm_i_all, dij_f_p_fm_all, abs_omega_dot_n_Je, geometric_domain.etoe, sweep_result)
+        sweep_result = jax.lax.switch(topological_sorted_angle.level_log2_size[level_i], sweep_level_f_sizes, level_i, topological_sorted_angle, gij_inv_all, x, dij_f_p_fm_all, abs_omega_dot_n_Je, geometric_domain.etoe, sweep_result)
         return sweep_result, None    
     return jax.lax.scan(sweep_level, sweep_result, jnp.arange(topological_sorted_angle.sizes.shape[0]))[0]
 
 
 
-@partial(jax.jit, static_argnums = (7,))
+@partial(jax.jit, static_argnums = (6,))
 def transport_inverse_sweep_complete_vmap_levels_max(geometric_domain       : GeometricDomain, 
                                                  fem_matrices               : FEMMatrices, 
                                                  precomputed_geometric_data : PrecomputedGeometricData, 
                                                  cross_sections             : CrossSectionDataSingleGroup,                                                
                                                  topological_sorted_angle   : TopologicalSortedAnglePrecomputedLevels, 
-                                                 precomputed_source         : Source, 
-                                                 sweep_result               : jnp.ndarray, 
+                                                 x                          : jnp.ndarray,                                                 
                                                  max_levels_log2            : int) -> jnp.ndarray: 
     callables = tuple([partial(_single_level_from_complete_vmap, int(2**i)) for i in range(max_levels_log2+1)])        
-    return transport_inverse_sweep_complete_vmap_levels(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, precomputed_source, sweep_result, callables)
+    return transport_inverse_sweep_complete_vmap_levels(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, x , callables)
 
 
 

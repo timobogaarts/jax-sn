@@ -46,6 +46,10 @@ class PrecomputedGeometricData:
     vol_jacobians_det     : jnp.ndarray #[n_elements]
     face_jacobians_det    : jnp.ndarray #[n_elements, n_faces_per_element]
 
+    @property 
+    def n_elements(self) -> int:
+        return self.vol_jacobians.shape[0]
+
 
 #======================================================================================================================================================================
 #                                                               Base Element Class

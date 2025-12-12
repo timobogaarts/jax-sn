@@ -26,11 +26,11 @@ class TransportOperator(eqx.Module):
         )
             
     
-    def __call__(self, precomputed_source : Source, energy_group : int) -> jnp.ndarray:
+    def __call__(self, x : jnp.ndarray, energy_group : int) -> jnp.ndarray:
         pass
 
     @abstractmethod
-    def inv(self, precomputed_source : Source, energy_group : int) -> jnp.ndarray:
+    def inv(self, x : jnp.ndarray, energy_group : int) -> jnp.ndarray:
         ...
 
     @property
@@ -44,22 +44,20 @@ class TransportOperatorVmap(TransportOperator):
     Transport operator using fully vmap-based sweeps.
 
     '''
-    def inv(self, precomputed_source : Source, energy_group : int) -> jnp.ndarray:
+    def inv(self, x : jnp.ndarray, energy_group : int) -> jnp.ndarray:
         if self.batched_angles:
             return transport_inverse_sweep_multiple_angles_complete_vmap(
                 *self.solution_domain_data,
                 self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group),
                 self.topological_sorted_angles,
-                precomputed_source,
-                jnp.zeros((self.topological_sorted_angles.angle.shape[0], self.solution_domain_data.domain.n_elements, self.solution_domain_data.n_basis))
+                x
             )
         else:
             return transport_inverse_sweep_complete_vmap(
                 *self.solution_domain_data,
                 self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group),
                 self.topological_sorted_angles,
-                precomputed_source,
-                jnp.zeros((self.solution_domain_data.domain.n_elements, self.solution_domain_data.n_basis))
+                x
             )
 
 class TransportOperatorBatched(TransportOperator):
@@ -79,14 +77,13 @@ class TransportOperatorBatched(TransportOperator):
             topological_sorted_angles = topological_sorted_angles, 
             batch_size = kwargs.get("batch_size")
         )
-    def inv(self, precomputed_source : Source, energy_group : int) -> jnp.ndarray:
+    def inv(self, x : jnp.ndarray, energy_group : int) -> jnp.ndarray:
         if self.batched_angles:
             return transport_inverse_sweep_multiple_angles_batched(
                 *self.solution_domain_data,
                 self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group),
                 self.topological_sorted_angles,
-                precomputed_source,
-                jnp.zeros((self.topological_sorted_angles.angle.shape[0], self.solution_domain_data.domain.n_elements, self.solution_domain_data.n_basis)),
+                x,
                 self.batch_size
             )
         else:   
@@ -94,8 +91,7 @@ class TransportOperatorBatched(TransportOperator):
                 *self.solution_domain_data,
                 self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group),
                 self.topological_sorted_angles,
-                precomputed_source,
-                jnp.zeros((self.solution_domain_data.domain.n_elements, self.solution_domain_data.n_basis)),
+                x,
                 self.batch_size
                 )            
 
@@ -106,22 +102,20 @@ class TransportOperatorVmapPallas(TransportOperator):
     Transport operator using fully vmap-based sweeps with Pallas.
 
     '''
-    def inv(self, precomputed_source : Source, energy_group : int) -> jnp.ndarray:
+    def inv(self, x : jnp.ndarray, energy_group : int) -> jnp.ndarray:
         if self.batched_angles:
             return transport_inverse_sweep_multiple_angles_complete_vmap_pallas(
                 *self.solution_domain_data,
                 self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group),
                 self.topological_sorted_angles,
-                precomputed_source,
-                jnp.zeros((self.topological_sorted_angles.angle.shape[0], self.solution_domain_data.domain.n_elements, _next_power_of_two(self.solution_domain_data.n_basis)))
+                x
             )
         else:
             return transport_inverse_sweep_complete_vmap_pallas(
                 *self.solution_domain_data,
                 self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group),
                 self.topological_sorted_angles,
-                precomputed_source,
-                jnp.zeros((self.solution_domain_data.domain.n_elements, _next_power_of_two(self.solution_domain_data.n_basis)))
+                x
             )
         
 class TransportOperatorBatchedPallas(TransportOperator):
@@ -140,14 +134,13 @@ class TransportOperatorBatchedPallas(TransportOperator):
             topological_sorted_angles = topological_sorted_angles, 
             batch_size = kwargs.get("batch_size")
         )
-    def inv(self, precomputed_source : Source, energy_group : int) -> jnp.ndarray:
+    def inv(self, x : jnp.ndarray, energy_group : int) -> jnp.ndarray:
         if self.batched_angles:
             return transport_inverse_sweep_multiple_angles_batched_pallas(
                 *self.solution_domain_data,
                 self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group),
                 self.topological_sorted_angles,
-                precomputed_source,
-                jnp.zeros((self.topological_sorted_angles.angle.shape[0], self.solution_domain_data.domain.n_elements, _next_power_of_two(self.solution_domain_data.n_basis))),
+                x,
                 self.batch_size
             )
         else:   
@@ -155,7 +148,6 @@ class TransportOperatorBatchedPallas(TransportOperator):
                 *self.solution_domain_data,
                 self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group),
                 self.topological_sorted_angles,
-                precomputed_source,
-                jnp.zeros((self.solution_domain_data.domain.n_elements, _next_power_of_two(self.solution_domain_data.n_basis))),
+                x,
                 self.batch_size
                 )

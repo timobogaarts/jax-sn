@@ -47,25 +47,6 @@ class SolutionDomain(eqx.Module):
         assert isinstance(element, Element), f"element must be an instance of Element but got {type(element)}"
         return cls(SolutionDomainData(domain, *compute_setup_for_solution_domain(element, domain)),
             element)
-    
-    def sweep(self, toposort_angle, source : Source, energy_group : int, sweep_buffer : jnp.ndarray, method : str = "vmap", **kwargs) -> jnp.ndarray:
-        from jax_sn.operators.transport_operator import transport_inverse_sweep_complete_vmap, transport_inverse_sweep_batched
-        if method == "vmap":
-            return transport_inverse_sweep_complete_vmap(
-                *self.solution_domain_data,
-                self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group),
-                toposort_angle,
-                source, 
-                sweep_buffer)
-        elif method == "batched":
-            return transport_inverse_sweep_batched(
-                *self.solution_domain_data,
-                self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group),
-                toposort_angle,
-                source, 
-                sweep_buffer, kwargs.get("batch_size"))
-        else:
-            raise ValueError(f"Unknown sweep method {method}")
         
     def interpolate(self, points : jnp.ndarray, solution : jnp.ndarray):
         return _interpolate_from_solution_domain(points, self, solution)
@@ -95,5 +76,5 @@ def _interpolate_from_solution_domain(points, solution_domain : SolutionDomain, 
     Interpolate the solution at given points from the solution domain
     '''
     indices_elem = solution_domain.domain.containing_cell(points)
-    return jnp.where(indices_elem >=0, solution_domain.element.interpolate_from_real_coordinate(points, indices_elem, solution_domain.domain, solution_domain.precomputed_data, solution), jnp.nan)
+    return jnp.where(indices_elem >=0, solution_domain.element.interpolate_from_real_coordinate(points, indices_elem, solution_domain.domain, solution_domain.precomputed_geometric_data, solution), jnp.nan)
     

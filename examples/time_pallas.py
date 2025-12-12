@@ -28,7 +28,7 @@ from jax_sn.operators.transport_operator import transport_inverse_sweep_multiple
 from jax_sn.operators.transport_operator.transport_operator_pallas import transport_inverse_sweep_batched_pallas, transport_inverse_sweep_complete_vmap_pallas, _next_power_of_two, _setup_elements_pad_args, transport_inverse_sweep_multiple_angles_batched_pallas
 from jax_sn.operators.transport_operator.transport_operator_imp import transport_inverse_sweep_batched, transport_inverse_sweep_complete_vmap, _setup_elements_from_args
 import timeit
-
+from jax_sn.operators.mass_operator import MassOperator
 
 sigma      = 5
 xs_0       = CrossSectionData.constant(sigma, 1, 1)
@@ -52,29 +52,31 @@ def time_executions(degree: int):
     solution_domain                      = SolutionDomain.from_element_and_domain(element_type, domain)
     source_mapped                        = Source(jnp.repeat(sources, element_type.n_basis, axis=-1).reshape(-1, element_type.n_basis))
 
+    source_x                             = MassOperator.from_fem_matrices_and_precomputed_geometric_data(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data)(source_mapped.source_values)
+
     n_basis_pow2                         = _next_power_of_two(element_type.n_basis)
     buffer_sweep                         = jnp.zeros((domain.n_elements, element_type.n_basis))
     buffer_sweep_pl                      = jnp.zeros((domain.n_elements, n_basis_pow2))
 
-    base_parameters                      = (*solution_domain.solution_domain_data, solution_domain.map_cross_sections_to_full_array(0), toposort, source_mapped)
+    base_parameters                      = (*solution_domain.solution_domain_data, solution_domain.map_cross_sections_to_full_array(0), toposort, source_x)
 
     def run_setup():
-        return _setup_elements_from_args(*base_parameters, buffer_sweep)[0].block_until_ready()
+        return _setup_elements_from_args(*base_parameters)[0].block_until_ready()
     
     def run_setup_pl():
-        return _setup_elements_pad_args(*base_parameters, buffer_sweep_pl)[0].block_until_ready()
+        return _setup_elements_pad_args(*base_parameters)[0].block_until_ready()
 
     def run_vmap():
-        return transport_inverse_sweep_complete_vmap(*base_parameters, buffer_sweep).block_until_ready()
+        return transport_inverse_sweep_complete_vmap(*base_parameters).block_until_ready()
     
     def run_batch():
-        return transport_inverse_sweep_batched(*base_parameters, buffer_sweep, batch_size=batch_size).block_until_ready()
+        return transport_inverse_sweep_batched(*base_parameters, batch_size=batch_size).block_until_ready()
     
     def run_vmap_pl():        
-        return transport_inverse_sweep_complete_vmap_pallas(*base_parameters, buffer_sweep_pl).block_until_ready()
+        return transport_inverse_sweep_complete_vmap_pallas(*base_parameters).block_until_ready()
     
     def run_batch_pl():
-        return transport_inverse_sweep_batched_pallas(*base_parameters, buffer_sweep_pl, batch_size=batch_size).block_until_ready()
+        return transport_inverse_sweep_batched_pallas(*base_parameters, batch_size=batch_size).block_until_ready()
     element_str = ["interval", "triangle", "tetrahedron"][dim - 1]
     print("Timings for a degree", degree, element_str, "domain with", domain.n_elements, "elements and batch size", batch_size)
     run_setup() # warmup jit
@@ -114,17 +116,17 @@ def test_multiple_angles():
         source_mapped                        = Source(jnp.repeat(sources, element_type.n_basis, axis=-1).reshape(-1, element_type.n_basis))
         source_total = jax.tree.map(lambda * xs : jnp.stack(xs), *[source_mapped for _ in toposorts])
 
+        source_x                             = MassOperator.from_fem_matrices_and_precomputed_geometric_data(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data)(source_total.source_values)
+
         n_basis_pow2                         = _next_power_of_two(element_type.n_basis)
 
-        base_parameters                      = (*solution_domain.solution_domain_data, solution_domain.map_cross_sections_to_full_array(0), total_toposorts, source_total)
+        base_parameters                      = (*solution_domain.solution_domain_data, solution_domain.map_cross_sections_to_full_array(0), total_toposorts, source_x)
 
-        def run_batch():
-            buffer_sweep                         = jnp.zeros((len(toposorts), domain.n_elements, element_type.n_basis))
-            return transport_inverse_sweep_multiple_angles_batched(*base_parameters, buffer_sweep, batch_size=multiple_angles_batch_size).block_until_ready()
+        def run_batch():            
+            return transport_inverse_sweep_multiple_angles_batched(*base_parameters, batch_size=multiple_angles_batch_size).block_until_ready()
 
-        def run_batch_pl():
-            buffer_sweep_pl                      = jnp.zeros((len(toposorts), domain.n_elements, n_basis_pow2))
-            return transport_inverse_sweep_multiple_angles_batched_pallas(*base_parameters, buffer_sweep_pl, batch_size=multiple_angles_batch_size).block_until_ready()
+        def run_batch_pl():            
+            return transport_inverse_sweep_multiple_angles_batched_pallas(*base_parameters, batch_size=multiple_angles_batch_size).block_until_ready()
 
         element_str = ["interval", "triangle", "tetrahedron"][dim - 1]
         print("Timings for a degree", degree, element_str, "domain with", domain.n_elements, "elements and batch size", multiple_angles_batch_size, "and", len(toposorts), "angles")
