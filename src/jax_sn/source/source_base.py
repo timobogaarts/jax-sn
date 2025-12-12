@@ -9,6 +9,6 @@ class Source:
 
 
     def __getitem__(self, idx):
-        assert self.source_values.ndim >= 3, "Indexing is only supported for batched Source (..., n_elements, n_basis) instances but has shape {self.source_values.shape}."
+        assert self.source_values.ndim >= 3, f"Indexing is only supported for batched Source (..., n_elements, n_basis) instances but has shape {self.source_values.shape}."
         return Source(self.source_values[idx])
 

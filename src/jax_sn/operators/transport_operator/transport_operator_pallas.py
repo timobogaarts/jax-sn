@@ -9,7 +9,8 @@ from typing import Tuple
 
 import numpy as onp
 from dataclasses import dataclass
-from .transport_operator_imp import _assert_shape_base, _setup_elements_idx_in_precomp_with_omega_n_calculation
+from .transport_operator_imp import _setup_elements_idx_in_precomp_with_omega_n_calculation
+from .transport_operator_base import TransportOperator, SolutionDomainData
 
 from jax.experimental import pallas as pl
 
@@ -470,5 +471,45 @@ def transport_inverse_sweep_multiple_angles_batched_pallas(geometric_domain    :
     _assert_shape_multiple_angles_pad(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result)
     f_batch = jax.vmap(transport_inverse_sweep_batched_pallas, in_axes=(None, None, None, None, 0, 0, 0, None ))
     return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result, batch_size)
+
+@jax.jit
+def transport_inverse_sweep_multiple_angles_complete_vmap_pallas(geometric_domain    : GeometricDomain,
+                                                            fem_matrices               : FEMMatrices,
+                                                            precomputed_geometric_data : PrecomputedGeometricData,
+                                                            cross_sections             : CrossSectionDataSingleGroup,
+                                                            topological_sorted_angles  : TopologicalSortedAngle,                                                                                                         
+                                                            precomputed_source         : Source,
+                                                            sweep_result               : jnp.ndarray):
+        '''
+        Perform a complete transport inverse sweep over all elements in the geometric domain for multiple angles using fully vmap-based sweeps with Pallas.
+    
+        vmap is used to compute all Gij_inv, QM_i and Dij_f_p_fm matrices for all elements in a vectorized manner for multiple angles.
+        Then, a fori_loop is used to iterate over the elements in topological order to compute the sweep result. The sweep kernel uses Pallas for improved performance.
+        
+        Parameters
+        ----------
+        geometric_domain : GeometricDomain
+            The geometric domain data.
+        fem_matrices : FEMMatrices
+            The finite element method matrices.
+        precomputed_geometric_data : PrecomputedGeometricData
+            The precomputed geometric data (Jacobian determinants and inverses).
+        cross_sections : CrossSectionDataSingleGroup
+            The cross section data.
+        topological_sorted_angles : TopologicalSortedAngle
+            The topologically sorted angle data for multiple angles. (batch dimension is the first dimension)
+        precomputed_source : Source [n_angles, n_elements, n_basis]
+            The source data. Should also be batched over angles (batch dimension is the first dimension).
+        sweep_result : jnp.ndarray [n_angles, n_elements, power_of_two_padded_n_basis]
+            The initial sweep result array (usually zeros).
+        Returns
+        -------
+        jnp.ndarray [n_angles, n_elements, n_basis]
+            The sweep result after performing the transport inverse sweep for all angles.
+        '''
+            
+        _assert_shape_multiple_angles_pad(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result)
+        f_batch = jax.vmap(transport_inverse_sweep_complete_vmap_pallas, in_axes=(None, None, None, None, 0, 0, 0 ))
+        return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result)
 
 

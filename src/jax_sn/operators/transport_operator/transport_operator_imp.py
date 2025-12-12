@@ -6,7 +6,7 @@ from jax_sn.solution_domain import FEMMatrices
 from jax_sn.source import Source
 from functools import partial
 from typing import Tuple
-
+from jax_sn.operators.mass_operator.mass_operator_base import mass_kernel_idx_in_precomp
 import numpy as onp
 from dataclasses import dataclass
 
@@ -57,7 +57,7 @@ def transport_inverse_sweep_batched(geometric_domain           : GeometricDomain
         The computed sweep result array after performing the transport sweep.
     '''
     
-    _assert_shape_base(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, precomputed_source, sweep_result)
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, precomputed_source, sweep_result, False)
     
     n_batches                  = jnp.ceil(geometric_domain.n_elements / batch_size).astype(int)        
 
@@ -106,7 +106,7 @@ def transport_inverse_sweep_complete_vmap(geometric_domain           : Geometric
     sweep_result : jnp.ndarray [n_elements, n_basis]    
         The computed sweep result array after performing the transport sweep.
     '''    
-    _assert_shape_base(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, precomputed_source, sweep_result)
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, precomputed_source, sweep_result, False)
 
     gij_inv_all, qm_i_all, dij_f_p_fm_all, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(topological_sorted_angle.levels_argsort, geometric_domain, fem_matrices,
                                                             precomputed_geometric_data, cross_sections, topological_sorted_angle.angle,
@@ -164,6 +164,8 @@ def gij_kernel_idx_in_precomp(
     Gij_matrix       = Aij + Bij + Cij    
     return Gij_matrix
 
+gij_kernel_idx_in_precomp_vmap = jax.jit(jax.vmap(gij_kernel_idx_in_precomp, in_axes=(0, None, None, None, None, 0, 0)))
+
 def gij_inv_kernel_idx_in_precomp( 
             elem_idx                 : int,
             fem_matrices               : FEMMatrices,
@@ -220,9 +222,8 @@ def qm_i_kernel_idx_in_precomp(
     -------
     qm_i : jnp.ndarray
         The computed QM_i vector for the specified element.
-    '''
-    qm_i = precomputed_geometric_data.vol_jacobians_det[elem_idx] * fem_matrices.mass_matrix @ source.source_values[elem_idx]
-    return qm_i
+    '''    
+    return mass_kernel_idx_in_precomp(elem_idx, fem_matrices, precomputed_geometric_data, source.source_values)
 
 qm_i_kernel_idx_in_precomp_vmap = jax.jit(jax.vmap(qm_i_kernel_idx_in_precomp, in_axes=(0, None, None, None)))
 
@@ -470,15 +471,17 @@ def _compute_omega_dot_n_Je_inflow(elem_idx : int, geometric_domain : GeometricD
 
 _compute_omega_dot_n_Je_inflow_vmap = jax.jit(jax.vmap(_compute_omega_dot_n_Je_inflow, in_axes=(0, None, None, None)))
 
-def _assert_shape_base( geometric_domain           : GeometricDomain, 
-                        fem_matrices               : FEMMatrices, 
-                        precomputed_geometric_data : PrecomputedGeometricData, 
-                        cross_sections             : CrossSectionDataSingleGroup,                                                
-                        topological_sorted_angle   : TopologicalSortedAngle, 
-                        precomputed_source         : Source, 
-                        sweep_result               : jnp.ndarray):    
+
+def _assert_types(geometric_domain           : GeometricDomain, 
+                  fem_matrices               : FEMMatrices, 
+                  precomputed_geometric_data : PrecomputedGeometricData, 
+                  cross_sections             : CrossSectionDataSingleGroup,                                                
+                  topological_sorted_angle   : TopologicalSortedAngle, 
+                  precomputed_source         : Source,
+                  x                          : jnp.ndarray):
+    
     '''
-    Function checking the types and shapes of the inputs to the transport sweep functions.
+    Function checking the types of the inputs to the transport sweep functions.
     Raises AssertionError if any of the checks fail.
     '''
     assert isinstance(geometric_domain, GeometricDomain), f"geometric_domain is not of type GeometricDomain but {type(geometric_domain)}"
@@ -487,40 +490,37 @@ def _assert_shape_base( geometric_domain           : GeometricDomain,
     assert isinstance(cross_sections, CrossSectionDataSingleGroup), f"cross_sections is not of type CrossSectionDataSingleGroup but {type(cross_sections)}"
     assert isinstance(topological_sorted_angle, TopologicalSortedAngle), f"topological_sorted_angle is not of type TopologicalSortedAngle but {type(topological_sorted_angle)}"
     assert isinstance(precomputed_source, Source), f"precomputed_source is not of type Source but {type(precomputed_source)}"
-    
-    assert sweep_result.shape == (geometric_domain.n_elements, fem_matrices.mass_matrix.shape[0]), f"sweep_result shape {sweep_result.shape} does not match expected (n_elements, n_basis): {(geometric_domain.n_elements, fem_matrices.mass_matrix.shape[0])}"
-    assert cross_sections.total.shape[0] == geometric_domain.n_elements, f"cross_sections shape {cross_sections.total.shape} does not match expected (n_elements, ): {(geometric_domain.n_elements, )}"
-    assert precomputed_source.source_values.shape == (geometric_domain.n_elements, fem_matrices.mass_matrix.shape[0]), f"precomputed_source shape {precomputed_source.source_values.shape} does not match expected (n_elements, n_basis): {(geometric_domain.n_elements, fem_matrices.mass_matrix.shape[0])}"
+
+
+def _assert_shape(geometric_domain           : GeometricDomain, 
+                  fem_matrices               : FEMMatrices, 
+                  precomputed_geometric_data : PrecomputedGeometricData, 
+                  cross_sections             : CrossSectionDataSingleGroup,                                                
+                  topological_sorted_angle   : TopologicalSortedAngle, 
+                  precomputed_source         : Source,
+                  x                          : jnp.ndarray,
+                  multiple_angles : bool):
+    if multiple_angles:                 
+        assert topological_sorted_angle.angle.ndim == 2, f"topological_sorted_angles.angle should have 2 dimensions [n_angles, n_dim] but has shape {topological_sorted_angle.angle.shape}"
+        assert precomputed_source.source_values.ndim == 3, f"precomputed_source.source_values should have 3 dimensions [n_angles, n_elements, n_basis] but has shape {precomputed_source.source_values.shape}"
+        assert x.ndim == 3, f"sweep_result should have 3 dimensions [n_angles, n_elements, n_basis] but has shape {x.shape}"  
+        n_angles = topological_sorted_angle.angle.shape[0]
+        assert topological_sorted_angle.levels_argsort.shape[0] == n_angles, f"topological sorted_angles.levels_argsort first dimension {topological_sorted_angle.levels_argsort.shape[0]} does not match number of angles {n_angles}"
+        assert precomputed_source.source_values.shape[0] == n_angles, f"precomputed_source.source_values first dimension {precomputed_source.source_values.shape[0]} does not match number of angles {n_angles}"
+        assert x.shape[0] == n_angles, f"sweep_result first dimension {x.shape[0]} does not match number of angles {n_angles}"
+        assert x.shape[1] == geometric_domain.n_elements, f"sweep_result second dimension {x.shape[1]} does not match number of elements {geometric_domain.n_elements}"
+        assert x.shape[2] == fem_matrices.mass_matrix.shape[0], f"sweep_result third dimension {x.shape[2]} does not match number of basis functions {fem_matrices.mass_matrix.shape[0]}" 
+                                            
+    else:
+        assert x.shape == (geometric_domain.n_elements, fem_matrices.mass_matrix.shape[0]), f"sweep_result shape {x.shape} does not match expected (n_elements, n_basis): {(geometric_domain.n_elements, fem_matrices.mass_matrix.shape[0])}"
+        assert cross_sections.total.shape[0] == geometric_domain.n_elements, f"cross_sections shape {cross_sections.total.shape} does not match expected (n_elements, ): {(geometric_domain.n_elements, )}"
+        assert precomputed_source.source_values.shape == (geometric_domain.n_elements, fem_matrices.mass_matrix.shape[0]), f"precomputed_source shape {precomputed_source.source_values.shape} does not match expected (n_elements, n_basis): {(geometric_domain.n_elements, fem_matrices.mass_matrix.shape[0])}"
 
 
 #=============================================================================================================================================================================
 # Multiple angle functions
 #=============================================================================================================================================================================
 
-def _assert_shape_multiple_angles( geometric_domain : GeometricDomain, 
-                                  fem_matrices : FEMMatrices, 
-                                  precomputed_geometric_data : PrecomputedGeometricData, 
-                                  cross_sections : CrossSectionDataSingleGroup,                                 
-                                  topological_sorted_angles : TopologicalSortedAngle, 
-                                  precomputed_source : Source, 
-                                  sweep_result : jnp.ndarray):  
-    assert isinstance(geometric_domain, GeometricDomain), f"geometric_domain is not of type GeometricDomain but {type(geometric_domain)}"
-    assert isinstance(fem_matrices, FEMMatrices), f"fem_matrices is not of type FEMMatrices but {type(fem_matrices)}"
-    assert isinstance(precomputed_geometric_data, PrecomputedGeometricData), f"precomputed_geometric_data is not of type PrecomputedGeometricData but {type(precomputed_geometric_data)}"
-    assert isinstance(cross_sections, CrossSectionDataSingleGroup), f"cross_sections is not of type CrossSectionDataSingleGroup but {type(cross_sections)}"
-    assert isinstance(topological_sorted_angles, TopologicalSortedAngle), f"topological_sorted_angles is not of type TopologicalSortedAngle but {type(topological_sorted_angles)}"
-    assert isinstance(precomputed_source, Source), f"precomputed_source is not of type Source but {type(precomputed_source)}"   
-
-    assert topological_sorted_angles.angle.ndim == 2, f"topological_sorted_angles.angle should have 2 dimensions [n_angles, n_dim] but has shape {topological_sorted_angles.angle.shape}"
-    assert precomputed_source.source_values.ndim == 3, f"precomputed_source.source_values should have 3 dimensions [n_angles, n_elements, n_basis] but has shape {precomputed_source.source_values.shape}"
-    assert sweep_result.ndim == 3, f"sweep_result should have 3 dimensions [n_angles, n_elements, n_basis] but has shape {sweep_result.shape}"  
-    n_angles = topological_sorted_angles.angle.shape[0]
-    assert topological_sorted_angles.levels_argsort.shape[0] == n_angles, f"topological sorted_angles.levels_argsort first dimension {topological_sorted_angles.levels_argsort.shape[0]} does not match number of angles {n_angles}"
-    assert precomputed_source.source_values.shape[0] == n_angles, f"precomputed_source.source_values first dimension {precomputed_source.source_values.shape[0]} does not match number of angles {n_angles}"
-    assert sweep_result.shape[0] == n_angles, f"sweep_result first dimension {sweep_result.shape[0]} does not match number of angles {n_angles}"
-    assert sweep_result.shape[1] == geometric_domain.n_elements, f"sweep_result second dimension {sweep_result.shape[1]} does not match number of elements {geometric_domain.n_elements}"
-    assert sweep_result.shape[2] == fem_matrices.mass_matrix.shape[0], f"sweep_result third dimension {sweep_result.shape[2]} does not match number of basis functions {fem_matrices.mass_matrix.shape[0]}" 
-    
                                 
 
 @partial(jax.jit, static_argnums = (7,))
@@ -557,7 +557,7 @@ def transport_inverse_sweep_multiple_angles_batched(geometric_domain           :
         The initial sweep result array (usually zeros).
     '''
         
-    _assert_shape_multiple_angles(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result)
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result, True)
     f_batch = jax.vmap(transport_inverse_sweep_batched, in_axes=(None, None, None, None, 0, 0, 0, None ))
     return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result, batch_size)
 
@@ -595,7 +595,7 @@ def transport_inverse_sweep_multiple_angles_complete_vmap(geometric_domain      
         The initial sweep result array (usually zeros).
     '''
         
-    _assert_shape_multiple_angles(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result)
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result, True)
     f_batch = jax.vmap(transport_inverse_sweep_complete_vmap, in_axes=(None, None, None, None, 0, 0, 0))
     return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, precomputed_source, sweep_result)
 

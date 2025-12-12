@@ -18,15 +18,15 @@ def compute_setup_for_solution_domain(element : Element, domain : GeometricDomai
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class SolutionDomainData:
-    domain             : Domain        # JIT-compatible (frozen dataclass)
-    fem_matrices       : FEMMatrices   # JIT-compatible (frozen dataclass)
-    precomputed_data   : PrecomputedGeometricData # JIT-compatible (frozen dataclass)
+    domain                       : Domain        # JIT-compatible (frozen dataclass)
+    fem_matrices                 : FEMMatrices   # JIT-compatible (frozen dataclass)
+    precomputed_geometric_data   : PrecomputedGeometricData # JIT-compatible (frozen dataclass)
 
 
     def __iter__(self):        
         yield self.domain
         yield self.fem_matrices
-        yield self.precomputed_data
+        yield self.precomputed_geometric_data
 
     @property
     def n_basis(self) -> int:
@@ -74,8 +74,8 @@ class SolutionDomain(eqx.Module):
     def domain(self) -> Domain:
         return self.solution_domain_data.domain
     @property   
-    def precomputed_data(self) -> PrecomputedGeometricData:
-        return self.solution_domain_data.precomputed_data
+    def precomputed_geometric_data(self) -> PrecomputedGeometricData:
+        return self.solution_domain_data.precomputed_geometric_data
     @property
     def fem_matrices(self) -> FEMMatrices:
         return self.solution_domain_data.fem_matrices

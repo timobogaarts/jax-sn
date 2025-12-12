@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from jax_sn.domain.geometric_domain import TopologicalSortedAngle
 from typing import Tuple
 from .transport_operator_imp import GeometricDomain, FEMMatrices, PrecomputedGeometricData, Source, CrossSectionDataSingleGroup, _setup_elements_idx_in_precomp_with_omega_n_calculation
-from .transport_operator_imp import _collapse_dij, _collapse_dij_vmap, _assert_shape_base
+from .transport_operator_imp import _collapse_dij, _collapse_dij_vmap
 from functools import partial
 
 #--------------------------------------------------------------------------------------------------------------------------------------------------------------

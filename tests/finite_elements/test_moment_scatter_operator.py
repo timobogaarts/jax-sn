@@ -85,11 +85,11 @@ def _expected_value_from_sb(dimension, degree, tn_order, lmax):
 def check_moment_operator(dimension, degree, tn_order, lmax, _verts_conn_function, _source_function, _cross_section_function, _expected_values_function):
     solution_domain, quadrature_set, total_toposorts, sweep_array, source_total = _setup_all(dimension, degree, tn_order, _verts_conn_function, _source_function, _cross_section_function)
 
-    inv_transport_operator = jax_sn.operators.transport_operator.InverseTransportOperatorBatched.from_solution_domain_data_and_toposort(solution_domain.solution_domain_data, total_toposorts, batch_size = 10)
+    transport_operator = jax_sn.operators.transport_operator.TransportOperatorBatched.from_solution_domain_data_and_toposort(solution_domain.solution_domain_data, total_toposorts, batch_size = 10)
     #sweep_angles = jax_sn.operators.transport_operator.transport_inverse_sweep_multiple_angles_batched(*solution_domain.solution_domain_data, solution_domain.map_cross_sections_to_full_array(0), total_toposorts, source_total, sweep_array, 10)
     moment_operator = jax_sn.operators.moment_operator.MomentOperator.from_quadrature_set(quadrature_set, lmax)
 
-    psilm = moment_operator(inv_transport_operator(source_total, 0 ))
+    psilm = moment_operator(transport_operator.inv(source_total, 0 ))
 
 
 
@@ -99,8 +99,6 @@ def check_moment_operator(dimension, degree, tn_order, lmax, _verts_conn_functio
 
     onp.testing.assert_allclose(psilm, expected_values, rtol=1e-12, atol=1e-12)
 
-def _testing_options():
-    []
 
 
 @pytest.mark.slow
