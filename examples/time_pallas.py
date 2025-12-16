@@ -33,7 +33,7 @@ from jax_sn.operators.mass_operator import MassOperator
 sigma      = 5
 xs_0       = CrossSectionData.constant(sigma, 1, 1)
 q          = 5
-dim        = 2
+dim        = 3
 batch_size = 1000
 n_elem     = 100
 other_dims = [[(0.2, 10)]]*(dim - 1)

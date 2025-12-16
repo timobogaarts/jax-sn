@@ -42,11 +42,8 @@ class TransportOperator(eqx.Module):
 
     
     def inv(self, x : jnp.ndarray, energy_group : int) -> jnp.ndarray:
-        total_sweep_args = (*self._base_sweep_args(x, energy_group), *self._additional_sweep_args(x, energy_group))
-        if self.batched_angles:
-            return self._multiple_angle_sweep_f(*total_sweep_args)                
-        else:
-            return self._single_angle_sweep_f(*total_sweep_args)
+        
+        return jax.lax.custom_linear_solve(lambda v : self.__call__(v, energy_group), b = x, solve =  lambda _, v : self._solve_internal(v, energy_group), transpose_solve= lambda _, v : self._solve_T_internal(v, energy_group))
         
     def T(self, x : jnp.ndarray, energy_group : int) -> jnp.ndarray:
         total_forward_args_T = (*self._base_forward_args_T(x, energy_group), *self._additional_forward_args(x, energy_group))
@@ -57,11 +54,7 @@ class TransportOperator(eqx.Module):
     
     
     def T_inv(self, x : jnp.ndarray, energy_group : int) -> jnp.ndarray:
-        total_sweep_args_T = (*self._base_sweep_args_T(x, energy_group), *self._additional_sweep_args(x, energy_group))
-        if self.batched_angles:
-            return self._multiple_angle_sweep_f(*total_sweep_args_T)                
-        else:
-            return self._single_angle_sweep_f(*total_sweep_args_T)
+        return self._solve_T_internal(x, energy_group)
             
     def _base_sweep_args(self, x, energy_group):
         return (
@@ -100,6 +93,20 @@ class TransportOperator(eqx.Module):
     
     def _additional_forward_args(self, x, energy_group):
         return ()
+    
+    def _solve_internal(self, x : jnp.ndarray, energy_group : int):
+        total_sweep_args = (*self._base_sweep_args(x, energy_group), *self._additional_sweep_args(x, energy_group))
+        if self.batched_angles:
+            return self._multiple_angle_sweep_f(*total_sweep_args)                
+        else:
+            return self._single_angle_sweep_f(*total_sweep_args)
+    def _solve_T_internal(self, x : jnp.ndarray, energy_group : int):
+        total_sweep_args_T = (*self._base_sweep_args_T(x, energy_group), *self._additional_sweep_args(x, energy_group))
+        if self.batched_angles:
+            return self._multiple_angle_sweep_f(*total_sweep_args_T)
+        else:
+            return self._single_angle_sweep_f(*total_sweep_args_T)
+        
 
     @property     
     @abstractmethod    
