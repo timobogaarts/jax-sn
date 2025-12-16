@@ -53,28 +53,10 @@ def _setup_all(element, degree, _vertices_conn_function, _angle_function, _expec
     
     return lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values
 
-def _int_setup_solution_domain_data_and_toposort_sb(request):
-    dimension = request.param
-    degree = 2
-    lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values = _setup_all(dimension, degree, _verts_conn_from_sb, _angle_function_tn, _expected_values_from_sb, _source_from_sb, _cross_sections_from_sb)
-    mapped_xs = cross_sections.map_to_full_array(0)
-    solution_domain = jax_sn.solution_domain.SolutionDomain.from_element_and_domain(lagrangian_element, jax_sn.domain.Domain.from_geometric_domain_and_cross_sections(domain, cross_sections))
 
-    
-    quad_set = jax_sn.quadrature_set.create_tn_quadrature_set(2)
-    toposorts = [jax_sn.domain.geometric_domain.TopologicalSortedAngle.from_domain_angle(domain, angle, 100) for angle in quad_set.angles]
-    total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
-
-    source_angle = jax.tree.map(lambda ts : jnp.repeat(ts, total_toposorts.angle.shape[0], axis=0).reshape((total_toposorts.angle.shape[0],)+ts.shape), source)
-    return solution_domain, toposort, mapped_xs, source, expected_values, quad_set, total_toposorts, source_angle
-
-
-@pytest.fixture(params=[1,2,3], scope='session')
-def setup_solution_domain_data_and_toposort_sb(request):
-    return _int_setup_solution_domain_data_and_toposort_sb(request)
-#===========================================================================================================================
-#                                      StellBlanket comparison functions
-#===========================================================================================================================
+#====================================================================================================================================================================================
+#                                      StellBlanket functions for testing & comparison [ugly but works]
+#====================================================================================================================================================================================
 def _switch_element_type(dimension):
     import StellBlanket as SB
     if dimension == 1:
@@ -158,14 +140,34 @@ def _n_degree_old_code(dimension):
 
 def _expected_values_from_sb(dimension, degree):
     import StellBlanket as SB
-    nte, total_source = _matfree_nte_from_sb(dimension, degree, *tn_order_index())
-    
+    nte, total_source = _matfree_nte_from_sb(dimension, degree, *tn_order_index())    
     nte.simulation.Sweep(nte.energy_set[0], nte.quadrature_set[0], total_source)
     values = nte.global_solution.All_Solution_Values(nte.energy_set[0], nte.quadrature_set[0]).reshape(nte.geometric_domain.connectivity.shape[0], -1   )
-
-    permutation = create_permutation_dimension(dimension, degree)
-    
+    permutation = create_permutation_dimension(dimension, degree)    
     return values[:, permutation]
+
+def _int_setup_solution_domain_data_and_toposort_sb(request):
+    # If there is a better testing / ground truth, just replace this function.
+    dimension = request.param
+    degree = 2
+    lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values = _setup_all(dimension, degree, _verts_conn_from_sb, _angle_function_tn, _expected_values_from_sb, _source_from_sb, _cross_sections_from_sb)
+    mapped_xs = cross_sections.map_to_full_array(0)
+    solution_domain = jax_sn.solution_domain.SolutionDomain.from_element_and_domain(lagrangian_element, jax_sn.domain.Domain.from_geometric_domain_and_cross_sections(domain, cross_sections))
+
+    
+    quad_set = jax_sn.quadrature_set.create_tn_quadrature_set(2)
+    toposorts = [jax_sn.domain.geometric_domain.TopologicalSortedAngle.from_domain_angle(domain, angle, 100) for angle in quad_set.angles]
+    total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
+
+    source_angle = jax.tree.map(lambda ts : jnp.repeat(ts, total_toposorts.angle.shape[0], axis=0).reshape((total_toposorts.angle.shape[0],)+ts.shape), source)
+    return solution_domain, toposort, mapped_xs, source, expected_values, quad_set, total_toposorts, source_angle
+
+
+@pytest.fixture(params=[1,2,3], scope='session')
+def setup_solution_domain_data_and_toposort_sb(request):
+    return _int_setup_solution_domain_data_and_toposort_sb(request)
+
+#====================================================================================================================================================================================
     
 @pytest.mark.slow
 @pytest.mark.parametrize("dimension", [1,2,3])
@@ -175,9 +177,6 @@ def test_sweep_complete_vmap(dimension):
     degree = _n_degree_old_code(dimension)
     for i in range(degree + 1):
         check_transport_inverse_sweep_complete_vmap(dimension, degree, _verts_conn_from_sb, _angle_function_tn, _expected_values_from_sb, _source_from_sb, _cross_sections_from_sb)
-
-def setup_all_sb(element, degree):
-    return _setup_all(element, degree, _verts_conn_from_sb, _angle_function_tn, _expected_values_from_sb, _source_from_sb, _cross_sections_from_sb)
 
 
 @pytest.mark.slow
