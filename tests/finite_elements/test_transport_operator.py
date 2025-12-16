@@ -233,9 +233,11 @@ def setup_all_transport_operators(request):
     
     desired_ops = _all_transport_operators_pallas() if ( request.config.getoption("--runpallas")) else _all_transport_operators()
     operators = []
-    for operator_class, operator_kwargs in desired_ops.items():
-        for _angle_toposort in [toposort, total_toposorts]:
-            operators.append(operator_class.from_solution_domain_data_and_toposort(solution_domain.solution_domain_data, _angle_toposort, **operator_kwargs))
+    for operator_class, operator_kwargs in desired_ops.items():        
+        operators.append(operator_class(solution_domain.solution_domain_data, toposort, 0, **operator_kwargs))
+
+    for operator_class, operator_kwargs in desired_ops.items():        
+        operators.append(jax_sn.operators.transport_operator.transport_operator_base.TransportOperatorMultipleAnglesVmap(operator_class(solution_domain.solution_domain_data, total_toposorts, 0, **operator_kwargs)))
     
     return operators
 
@@ -246,24 +248,18 @@ def test_transport_operator_adjoint(setup_all_transport_operators):
     # <Tinvx, y> = <x, T'invy>
     onp.random.seed(12122025)
     operators = setup_all_transport_operators
-    n_basis   = operators[0].solution_domain_data.fem_matrices.n_basis
-    n_elements = operators[0].solution_domain_data.domain.n_elements
 
     for operator in operators:
-        if operator.batched_angles:
-            x = jnp.array(onp.random.rand(operator.topological_sorted_angles.angle.shape[0], n_elements, n_basis))
-            y = jnp.array(onp.random.rand(operator.topological_sorted_angles.angle.shape[0], n_elements, n_basis))
-        else:
-            x = jnp.array(onp.random.rand(n_elements, n_basis))
-            y = jnp.array(onp.random.rand(n_elements, n_basis))        
-        Tx = operator(x, 0)
-        Tty = operator.T(y,0)    
+        x = jnp.array(onp.random.rand(*operator.in_structure().shape))
+        y = jnp.array(onp.random.rand(*operator.in_structure().shape))
+        Tx = operator.mv(x)
+        Tty = operator.T.mv(y)    
         lhs = onp.einsum('...ij,...ij->...', Tx, y) # for batched angles the ... takes care of the angle dimension. Note that because each angle is independent, its adjoint property holds separately.
         rhs = onp.einsum('...ij,...ij->...', x, Tty)
         onp.testing.assert_allclose(lhs, rhs, atol=1e-12)
 
-        Tinvx = operator.inv(x, 0)
-        Tinvty = operator.T_inv(y,0)        
+        Tinvx = operator.inv(x)
+        Tinvty = operator.T.inv(y)  
         lhs_inv = onp.einsum('...ij,...ij->...', Tinvx, y)
         rhs_inv = onp.einsum('...ij,...ij->...', x, Tinvty)
         onp.testing.assert_allclose(lhs_inv, rhs_inv, atol=1e-12)
@@ -273,19 +269,14 @@ def test_transport_operator_forward_backward(setup_all_transport_operators):
     onp.random.seed(12122025)
 
     operators = setup_all_transport_operators
-    n_basis   = operators[0].solution_domain_data.fem_matrices.n_basis
-    n_elements = operators[0].solution_domain_data.domain.n_elements
 
-    for operator in operators:
-        if operator.batched_angles:
-            x = jnp.array(onp.random.rand(operator.topological_sorted_angles.angle.shape[0], n_elements, n_basis))
-        else:
-            x = jnp.array(onp.random.rand(n_elements, n_basis))        
-        Tx = operator(x, 0)
-        TinvTx = operator.inv(Tx, 0)
+    for operator in operators:       
+        x = jnp.array(onp.random.rand(*operator.in_structure().shape))        
+        Tx = operator.mv(x)
+        TinvTx = operator.inv(Tx)
         onp.testing.assert_allclose(x, TinvTx, atol=1e-12)
-        Tty = operator.T(x,0)    
-        TinvTty = operator.T_inv(Tty,0)
+        Tty = operator.T.mv(x)    
+        TinvTty = operator.T.inv(Tty)
         onp.testing.assert_allclose(x, TinvTty, atol=1e-12)
 
 
@@ -297,63 +288,60 @@ def test_transport_operator_consistency(setup_all_transport_operators):
     n_basis   = operators[0].solution_domain_data.fem_matrices.n_basis
     n_elements = operators[0].solution_domain_data.domain.n_elements
 
-    x_batch         = jnp.array(onp.random.rand(operators[1].topological_sorted_angles.angle.shape[0], n_elements, n_basis))
     x_non_batch     = jnp.array(onp.random.rand(n_elements, n_basis))
 
+    tx_gt = operators[0].mv(x_non_batch)
+    ttx_gt = operators[0].T.mv(x_non_batch)
+    tinv_gt = operators[0].inv(x_non_batch)
+    tinvt_gt = operators[0].T.inv(x_non_batch)
 
-    tx_gt = operators[0](x_non_batch, 0)
-    ttx_gt = operators[0].T(x_non_batch, 0)
-    tinv_gt = operators[0].inv(x_non_batch, 0)
-    tinvt_gt = operators[0].T_inv(x_non_batch, 0)
-
-    tx_gt_batched = operators[1](x_batch, 0)
-    ttx_gt_batched = operators[1].T(x_batch, 0)
-    tinv_gt_batched = operators[1].inv(x_batch, 0)
-    tinvt_gt_batched = operators[1].T_inv(x_batch, 0)
-
-    for i in range(len(operators)//2):
-        operator_non_batched = operators[2*i]
-        operator_batched     = operators[2*i + 1]
-        tx = operator_non_batched(x_non_batch, 0)
-        ttx = operator_non_batched.T(x_non_batch, 0)
-        tinv = operator_non_batched.inv(x_non_batch, 0)
-        tinvt = operator_non_batched.T_inv(x_non_batch, 0)  
+    for operator_non_batched in operators[:len(operators)//2]:        
+        tx = operator_non_batched.mv(x_non_batch)
+        ttx = operator_non_batched.T.mv(x_non_batch)
+        tinv = operator_non_batched.inv(x_non_batch)
+        tinvt = operator_non_batched.T.inv(x_non_batch)  
 
         onp.testing.assert_allclose(tx_gt, tx, atol=1e-12)
         onp.testing.assert_allclose(ttx_gt, ttx, atol=1e-12)
         onp.testing.assert_allclose(tinv_gt, tinv, atol=1e-12)
         onp.testing.assert_allclose(tinvt_gt, tinvt, atol=1e-12)
 
-        tx_batched = operator_batched(x_batch, 0)
-        ttx_batched = operator_batched.T(x_batch, 0)
-        tinv_batched = operator_batched.inv(x_batch, 0)
-        tinvt_batched = operator_batched.T_inv(x_batch, 0)  
+    x_batch = jnp.array(onp.random.rand(*(operators[-1].in_structure().shape)))
 
-        onp.testing.assert_allclose(tx_gt_batched, tx_batched, atol=1e-12)
-        onp.testing.assert_allclose(ttx_gt_batched, ttx_batched, atol=1e-12)
-        onp.testing.assert_allclose(tinv_gt_batched, tinv_batched, atol=1e-12)
-        onp.testing.assert_allclose(tinvt_gt_batched, tinvt_batched, atol=1e-12)    
+    tx_gt = operators[len(operators)//2].mv(x_batch)
+    ttx_gt = operators[len(operators)//2].T.mv(x_batch)
+    tinv_gt = operators[len(operators)//2].inv(x_batch)
+    tinvt_gt = operators[len(operators)//2].T.inv(x_batch)
+
+    for operator_batched in operators[len(operators)//2:]:
+        tx = operator_batched.mv(x_batch)
+        ttx = operator_batched.T.mv(x_batch)
+        tinv = operator_batched.inv(x_batch)
+        tinvt = operator_batched.T.inv(x_batch)  
+
+        onp.testing.assert_allclose(tx_gt, tx, atol=1e-12)
+        onp.testing.assert_allclose(ttx_gt, ttx, atol=1e-12)
+        onp.testing.assert_allclose(tinv_gt, tinv, atol=1e-12)
+        onp.testing.assert_allclose(tinvt_gt, tinvt, atol=1e-12)        
 
 @pytest.mark.slow 
 def test_transport_operator_batching(setup_all_transport_operators):
     onp.random.seed(12122025)
 
     operators = setup_all_transport_operators
-    n_basis   = operators[0].solution_domain_data.fem_matrices.n_basis
-    n_elements = operators[0].solution_domain_data.domain.n_elements
-
-    x_batch         = jnp.array(onp.random.rand(operators[1].topological_sorted_angles.angle.shape[0], n_elements, n_basis))
+    
+    x_batch         = jnp.array(onp.random.rand(*(operators[-1].in_structure().shape)))
 
     tx_singles = []    
     ttx_singles = []
     tinv_singles = []    
     tinvt_singles = []
     for i in range(x_batch.shape[0]):
-        transport_operator_single = jax_sn.operators.transport_operator.TransportOperatorVmap.from_solution_domain_data_and_toposort(operators[0].solution_domain_data, operators[1].topological_sorted_angles[i])
-        tx_singles.append(transport_operator_single(x_batch[i], 0))
-        ttx_singles.append(transport_operator_single.T(x_batch[i], 0))
-        tinv_singles.append(transport_operator_single.inv(x_batch[i], 0))
-        tinvt_singles.append(transport_operator_single.T_inv(x_batch[i], 0))
+        transport_operator_single = jax_sn.operators.transport_operator.TransportOperatorVmap(operators[0].solution_domain_data, operators[-1].batched_transport_operator_class.topological_sorted_angle[i], 0)
+        tx_singles.append(transport_operator_single.mv(x_batch[i]))
+        ttx_singles.append(transport_operator_single.T.mv(x_batch[i]))
+        tinv_singles.append(transport_operator_single.inv(x_batch[i]))
+        tinvt_singles.append(transport_operator_single.T.inv(x_batch[i]))
         
 
     tx_single = jnp.stack(tx_singles, axis=0)
@@ -361,12 +349,11 @@ def test_transport_operator_batching(setup_all_transport_operators):
     tinv_single = jnp.stack(tinv_singles, axis=0)
     tinvt_single = jnp.stack(tinvt_singles, axis=0)
 
-    for i in range(len(operators)//2):
-        operator_batched     = operators[2*i + 1]
-        tx_batched = operator_batched(x_batch, 0)
-        ttx_batched = operator_batched.T(x_batch, 0)
-        tinv_batched = operator_batched.inv(x_batch, 0)
-        tinvt_batched = operator_batched.T_inv(x_batch, 0)  
+    for operator_batched in operators[len(operators)//2:]:        
+        tx_batched = operator_batched.mv(x_batch)
+        ttx_batched = operator_batched.T.mv(x_batch)
+        tinv_batched = operator_batched.inv(x_batch)
+        tinvt_batched = operator_batched.T.inv(x_batch)  
 
         onp.testing.assert_allclose(tx_single, tx_batched, atol=1e-12)
         onp.testing.assert_allclose(ttx_single, ttx_batched, atol=1e-12)

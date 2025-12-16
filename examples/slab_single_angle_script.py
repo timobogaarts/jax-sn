@@ -1,6 +1,7 @@
 # %%
 import os 
-#os.environ["JAX_PLATFORM_NAME"] = 'cpu'
+os.environ["JAX_PLATFORM_NAME"] = 'cpu'
+
 import jax.numpy as jnp
 import numpy as onp
 
@@ -77,10 +78,10 @@ sol_domain, source, buffer, toposort = setup_1d_slab(sigma = sigma, q = q, degre
 
 # %%
 mass_operator = MassOperator.from_fem_matrices_and_precomputed_geometric_data(sol_domain.fem_matrices, sol_domain.precomputed_geometric_data)
-transport_operator = TransportOperatorBatched.from_solution_domain_data_and_toposort(sol_domain.solution_domain_data, toposort, batch_size = 10)
+transport_operator = TransportOperatorBatched(sol_domain.solution_domain_data, toposort, 0, batch_size = 10)
 
 # %%
-solution = transport_operator.inv(mass_operator(source.source_values),0 )
+solution = transport_operator.inv(mass_operator(source.source_values))
 
 # %%
 import matplotlib.pyplot as plt
@@ -88,15 +89,15 @@ x_vals = onp.linspace(0, 1.0, 1000)[:, None]
 plt.plot(x_vals, analytical_solution_1D_slab(x_vals), label="Analytical", color='black', linestyle = 'dashed')
 plt.plot(x_vals, sol_domain.interpolate(x_vals, solution), label="Numerical", linestyle='solid'); plt.xlabel("x"); plt.ylabel("psi"); plt.legend(); plt.title("1D slab single angle solution")
 
-plt.show()
+
 # %%
 def convergence_study(deg : int, n_cells_list : List[int]):
     L2_errors = []
     for n_cells in n_cells_list:
         sol_domain, source, buffer, toposort = setup_1d_slab(sigma = sigma, q = q, degree = deg, n_cells = n_cells, angle = angle_norm)
         mass_operator = MassOperator.from_fem_matrices_and_precomputed_geometric_data(sol_domain.fem_matrices, sol_domain.precomputed_geometric_data)
-        transport_operator = TransportOperatorBatched.from_solution_domain_data_and_toposort(sol_domain.solution_domain_data, toposort, batch_size = 10)
-        solution = transport_operator.inv(mass_operator(source.source_values),0 )
+        transport_operator = TransportOperatorBatched(sol_domain.solution_domain_data, toposort, 0, batch_size = 10)
+        solution = transport_operator.inv(mass_operator(source.source_values) )
         L2_error = compute_L2_error(solution, analytical_solution_1D_slab, sol_domain, quad_order=8*(deg+1))
         L2_errors.append(L2_error)
         print(f"Degree {deg}, Cells {n_cells}, L2 error: {L2_error}")
@@ -126,7 +127,6 @@ plt.xlabel("Number of cells")
 plt.ylabel("L2 error")
 plt.title(f"Convergence study") 
 plt.legend()
-plt.show()
 
 # %%
 def setup_3d_slab(sigma: float, q: float, degree: int, n_cells: int, angle : jnp.ndarray):
@@ -156,9 +156,9 @@ xmax  = 1.0
 # %%
 sol_domain, source_map, buffer, toposort = setup_3d_slab(sigma, q, 3, 20, angle_norm)
 mass_op_3d = MassOperator.from_fem_matrices_and_precomputed_geometric_data(sol_domain.fem_matrices, sol_domain.precomputed_geometric_data)
-transport_op_3d = TransportOperatorBatched.from_solution_domain_data_and_toposort(sol_domain.solution_domain_data, toposort, batch_size = 100)
+transport_op_3d = TransportOperatorBatched(sol_domain.solution_domain_data, toposort, 0, batch_size = 100)
 
-result = transport_op_3d.inv(mass_op_3d(source_map.source_values),0 )
+result = transport_op_3d.inv(mass_op_3d(source_map.source_values))
 
 # %%
 x_vals = jnp.linspace(0, 1.0, 1000)[:, None]
@@ -204,4 +204,3 @@ plt.plot(x_vals, pvalues_points, label="3D Numerical", linestyle='solid')
 plt.plot(x_vals, analytical, label="3D analytical", linestyle ="dashed"); plt.xlabel("x"); plt.ylabel("psi"); plt.legend(); plt.title("3D slab single angle solution along x-axis")
 
 
-plt.show()
