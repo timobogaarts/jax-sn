@@ -18,7 +18,7 @@ def check_transport_inverse_sweep_complete_vmap(element, degree,
 
     mass_operator = jax_sn.operators.mass_operator.MassOperator.from_fem_matrices_and_precomputed_geometric_data(femmatrices, precomputed_data)
 
-    source_mass_op = mass_operator(source.source_values)
+    source_mass_op = mass_operator.mv(source.source_values)
 
     mapped_array = cross_sections.map_to_full_array(0)
 
@@ -204,7 +204,7 @@ def test_local_real_inversion(dimension):
 def test_level_sweep(setup_solution_domain_data_and_toposort_sb):
     solution_domain, toposort, mapped_xs, source, _, _ , _, _ = setup_solution_domain_data_and_toposort_sb
     mass_operator = jax_sn.operators.mass_operator.MassOperator.from_fem_matrices_and_precomputed_geometric_data(solution_domain.solution_domain_data.fem_matrices, solution_domain.solution_domain_data.precomputed_geometric_data)
-    source_mass_op = mass_operator(source.source_values)
+    source_mass_op = mass_operator.mv(source.source_values)
     base_parameters = (*solution_domain.solution_domain_data, mapped_xs, toposort, source_mass_op)    
     complete_vmap_sweep = jax_sn.operators.transport_operator.transport_inverse_sweep_complete_vmap(*base_parameters)        
     topolevel = jax_sn.operators.transport_operator.transport_operator_levels.TopologicalSortedAnglePrecomputedLevels.from_topological_sorted_angle(toposort)
@@ -337,7 +337,7 @@ def test_transport_operator_batching(setup_all_transport_operators):
     tinv_singles = []    
     tinvt_singles = []
     for i in range(x_batch.shape[0]):
-        transport_operator_single = jax_sn.operators.transport_operator.TransportOperatorVmap(operators[0].solution_domain_data, operators[-1].batched_transport_operator_class.topological_sorted_angle[i], 0)
+        transport_operator_single = jax_sn.operators.transport_operator.TransportOperatorVmap(operators[0].solution_domain_data, operators[-1].transport_operator.topological_sorted_angle[i], 0)
         tx_singles.append(transport_operator_single.mv(x_batch[i]))
         ttx_singles.append(transport_operator_single.T.mv(x_batch[i]))
         tinv_singles.append(transport_operator_single.inv(x_batch[i]))

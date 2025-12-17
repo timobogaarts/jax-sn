@@ -91,7 +91,7 @@ def check_moment_operator(dimension, degree, tn_order, lmax, _verts_conn_functio
     moment_operator = jax_sn.operators.moment_operator.MomentOperator.from_quadrature_set(quadrature_set, lmax)
 
     mass_operator  = jax_sn.operators.mass_operator.MassOperator.from_fem_matrices_and_precomputed_geometric_data(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data)
-    source_x = mass_operator(source_total.source_values)
+    source_x = mass_operator.mv_batch(source_total.source_values)
     psilm = moment_operator(transport_operator.inv(source_x ))
 
     #psilm = moment_operator(sweep_angles)

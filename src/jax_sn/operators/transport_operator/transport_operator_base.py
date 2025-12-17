@@ -27,10 +27,10 @@ class TransportOperatorSolver(lx.AbstractLinearSolver):
         return False
     
     def transpose(self, solver_state, options):
-        return solver_state.transpose()
+        return solver_state.transpose(), options
     
     def conj(self, solver_state, options):
-        return solver_state.conj()
+        return solver_state.conj(), options
 
 
 class TransportOperator(lx.AbstractLinearOperator):
@@ -209,10 +209,10 @@ def vmap_multiple_angles_inv(transport_operator : TransportOperator, b : jnp.nda
     return f_vmap(*args)
 
 class TransportOperatorMultipleAngles(lx.AbstractLinearOperator):    
-    batched_transport_operator_class : TransportOperator
+    transport_operator : TransportOperator
 
     def _assert_shape_base(self):
-        assert self.batched_transport_operator_class.topological_sorted_angle.angle.ndim==2, "topological_sorted_angle must be 2D for base TransportOperatorMultipleAngles"
+        assert self.transport_operator.topological_sorted_angle.angle.ndim==2, "topological_sorted_angle must be 2D for base TransportOperatorMultipleAngles"
 
     @abstractmethod
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:
@@ -227,7 +227,7 @@ class TransportOperatorMultipleAngles(lx.AbstractLinearOperator):
         return lx.linear_solve(self, b, solver).value
     
     def transpose(self):
-        return eqx.tree_at(lambda t_operator : t_operator.batched_transport_operator_class.topological_sorted_angle, self, self.batched_transport_operator_class.topological_sorted_angle.reverse)    
+        return eqx.tree_at(lambda t_operator : t_operator.transport_operator.topological_sorted_angle, self, self.transport_operator.topological_sorted_angle.reverse)    
     
     def as_matrix(self):
         assert False, "Not desired for TransportOperator due to large size"
@@ -241,15 +241,27 @@ class TransportOperatorMultipleAngles(lx.AbstractLinearOperator):
     
     def out_structure(self):
         return self._shape_inout
+    
+    @property
+    def solution_domain_data(self):
+        return self.transport_operator.solution_domain_data
+    
+    @property 
+    def energy_group(self):
+        return self.transport_operator.energy_group
+
+    @property 
+    def topological_sorted_angle(self):
+        return self.transport_operator.topological_sorted_angle
         
     
     @property 
     def _shape_inout(self):
         self._assert_shape_base()
-        n_angles   = self.batched_transport_operator_class.topological_sorted_angle.angle.shape[0]
-        n_elements = self.batched_transport_operator_class.solution_domain_data.domain.n_elements
-        n_basis    = self.batched_transport_operator_class.solution_domain_data.fem_matrices.n_basis        
-        return jax.ShapeDtypeStruct((n_angles, n_elements, n_basis), self.batched_transport_operator_class.solution_domain_data.fem_matrices.mass_matrix.dtype)
+        n_angles   = self.transport_operator.topological_sorted_angle.angle.shape[0]
+        n_elements = self.transport_operator.solution_domain_data.domain.n_elements
+        n_basis    = self.transport_operator.solution_domain_data.fem_matrices.n_basis        
+        return jax.ShapeDtypeStruct((n_angles, n_elements, n_basis), self.transport_operator.solution_domain_data.fem_matrices.mass_matrix.dtype)
     
 
 @lx.is_symmetric.register(TransportOperatorMultipleAngles)
@@ -263,9 +275,9 @@ def _(operator : TransportOperator):
 class TransportOperatorMultipleAnglesVmap(TransportOperatorMultipleAngles):
 
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        return vmap_multiple_angles_forward(self.batched_transport_operator_class, x)
+        return vmap_multiple_angles_forward(self.transport_operator, x)
     
     def _invert_internal(self, b : jnp.ndarray) -> jnp.ndarray:
-        return vmap_multiple_angles_inv(self.batched_transport_operator_class, b)
+        return vmap_multiple_angles_inv(self.transport_operator, b)
 
         

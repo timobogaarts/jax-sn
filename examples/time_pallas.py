@@ -52,7 +52,7 @@ def time_executions(degree: int):
     solution_domain                      = SolutionDomain.from_element_and_domain(element_type, domain)
     source_mapped                        = Source(jnp.repeat(sources, element_type.n_basis, axis=-1).reshape(-1, element_type.n_basis))
 
-    source_x                             = MassOperator.from_fem_matrices_and_precomputed_geometric_data(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data)(source_mapped.source_values)
+    source_x                             = MassOperator.from_fem_matrices_and_precomputed_geometric_data(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data).mv(source_mapped.source_values)
 
     n_basis_pow2                         = _next_power_of_two(element_type.n_basis)
     buffer_sweep                         = jnp.zeros((domain.n_elements, element_type.n_basis))
@@ -116,7 +116,7 @@ def test_multiple_angles():
         source_mapped                        = Source(jnp.repeat(sources, element_type.n_basis, axis=-1).reshape(-1, element_type.n_basis))
         source_total = jax.tree.map(lambda * xs : jnp.stack(xs), *[source_mapped for _ in toposorts])
 
-        source_x                             = MassOperator.from_fem_matrices_and_precomputed_geometric_data(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data)(source_total.source_values)
+        source_x                             = MassOperator.from_fem_matrices_and_precomputed_geometric_data(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data).mv_batch(source_total.source_values)
 
         n_basis_pow2                         = _next_power_of_two(element_type.n_basis)
 
@@ -145,4 +145,109 @@ def test_multiple_angles():
 test_multiple_angles()        
     
 
-    
+
+#======================================================================================================================================
+#  Pallas versions of batched and complete vmap sweeps
+#======================================================================================================================================
+# This file contains Pallas versions of the batched and complete vmap sweeps. 
+# The Pallas versions use a custom kernel to perform the sweep update, which in my testing is faster than the fori loops using plain JAX.
+# However, this is not the case in all situations, especially for higher order elements, which have so much work per element that it 
+# seems to benefit from the matrix multiplications in plain JAX.
+
+# Furthermore, due to Triton limitations, the Pallas versions require padding of arrays to the next power-of-two sizes.
+# This padding can add significant overhead, especially as the number of basis functions in simplices does not map nicely to power of two.
+# Therefore, the Pallas versions are best suited for low-order elements with a number of basis functions close to a power of two.
+# 
+
+# Some timings (RTX3080) [auto generated from examples/time_pallas.py]:
+# Timings for a degree 0 tetrahedron domain with 60000 elements and batch size 1000
+#  Setup elements:                                       3.12 ms
+#  Setup elements padded to power of two:                3.31 ms
+#  transport_inverse_sweep_complete_vmap_fori:           1780.72 ms
+#  transport_inverse_sweep_batched:                      1812.21 ms
+#  transport_inverse_sweep_complete_vmap_pallas:         46.06 ms
+#  transport_inverse_sweep_batched_pallas:               48.45 ms
+
+# Timings for a degree 1 tetrahedron domain with 60000 elements and batch size 1000
+#  Setup elements:                                       1.60 ms
+#  Setup elements padded to power of two:                1.60 ms
+#  transport_inverse_sweep_complete_vmap_fori:           571.63 ms
+#  transport_inverse_sweep_batched:                      570.89 ms
+#  transport_inverse_sweep_complete_vmap_pallas:         84.33 ms
+#  transport_inverse_sweep_batched_pallas:               76.13 ms
+
+# Timings for a degree 2 tetrahedron domain with 60000 elements and batch size 1000
+#  Setup elements:                                       6.00 ms
+#  Setup elements padded to power of two:                7.07 ms
+#  transport_inverse_sweep_complete_vmap_fori:           583.50 ms
+#  transport_inverse_sweep_batched:                      587.54 ms
+#  transport_inverse_sweep_complete_vmap_pallas:         149.16 ms
+#  transport_inverse_sweep_batched_pallas:               156.60 ms
+
+# Timings for a degree 3 tetrahedron domain with 60000 elements and batch size 1000
+#  Setup elements:                                       30.39 ms
+#  Setup elements padded to power of two:                32.71 ms
+#  transport_inverse_sweep_complete_vmap_fori:           704.43 ms
+#  transport_inverse_sweep_batched:                      706.89 ms
+#  transport_inverse_sweep_complete_vmap_pallas:         490.57 ms
+#  transport_inverse_sweep_batched_pallas:               501.36 ms
+# Timings for a degree 1 tetrahedron domain with 60000 elements and batch size 100 and 72 angles
+#  transport_inverse_sweep_multiple_angles_batched:           1478.25 ms
+#  transport_inverse_sweep_multiple_angles_batched_pallas:    179.32 ms
+
+# Timings for a degree 2 tetrahedron domain with 60000 elements and batch size 100 and 72 angles
+#  transport_inverse_sweep_multiple_angles_batched:           1883.58 ms
+#  transport_inverse_sweep_multiple_angles_batched_pallas:    755.03 ms
+
+# Timings for a degree 3 tetrahedron domain with 60000 elements and batch size 100 and 72 angles
+#  transport_inverse_sweep_multiple_angles_batched:           4209.55 ms
+#  transport_inverse_sweep_multiple_angles_batched_pallas:    3119.95 ms
+
+# Timings for a degree 0 triangle domain with 2000 elements and batch size 1000
+#  Setup elements:                                       0.36 ms
+#  Setup elements padded to power of two:                0.47 ms
+#  transport_inverse_sweep_complete_vmap:           82.23 ms
+#  transport_inverse_sweep_batched:                      63.25 ms
+#  transport_inverse_sweep_complete_vmap_pallas:         1.80 ms
+#  transport_inverse_sweep_batched_pallas:               1.76 ms
+
+# Timings for a degree 1 triangle domain with 2000 elements and batch size 1000
+#  Setup elements:                                       0.36 ms
+#  Setup elements padded to power of two:                1.62 ms
+#  transport_inverse_sweep_complete_vmap:           72.29 ms
+#  transport_inverse_sweep_batched:                      62.01 ms
+#  transport_inverse_sweep_complete_vmap_pallas:         3.00 ms
+#  transport_inverse_sweep_batched_pallas:               2.88 ms
+
+# Timings for a degree 2 triangle domain with 2000 elements and batch size 1000
+#  Setup elements:                                       1.60 ms
+#  Setup elements padded to power of two:                1.61 ms
+#  transport_inverse_sweep_complete_vmap:           82.82 ms
+#  transport_inverse_sweep_batched:                      65.73 ms
+#  transport_inverse_sweep_complete_vmap_pallas:         4.88 ms
+#  transport_inverse_sweep_batched_pallas:               4.05 ms
+
+# Timings for a degree 3 triangle domain with 2000 elements and batch size 1000
+#  Setup elements:                                       2.59 ms
+#  Setup elements padded to power of two:                4.47 ms
+#  transport_inverse_sweep_complete_vmap:           52.49 ms
+#  transport_inverse_sweep_batched:                      22.57 ms
+#  transport_inverse_sweep_complete_vmap_pallas:         5.96 ms
+#  transport_inverse_sweep_batched_pallas:               6.12 ms
+
+# Timings for a degree 1 triangle domain with 2000 elements and batch size 100 and 72 angles
+#  transport_inverse_sweep_multiple_angles_batched:           59.29 ms
+#  transport_inverse_sweep_multiple_angles_batched_pallas:    7.28 ms
+
+# Timings for a degree 2 triangle domain with 2000 elements and batch size 100 and 72 angles
+#  transport_inverse_sweep_multiple_angles_batched:           66.84 ms
+#  transport_inverse_sweep_multiple_angles_batched_pallas:    10.30 ms
+
+# Timings for a degree 3 triangle domain with 2000 elements and batch size 100 and 72 angles
+#  transport_inverse_sweep_multiple_angles_batched:           79.16 ms
+#  transport_inverse_sweep_multiple_angles_batched_pallas:    26.56 ms
+
+# Given these results, it seems there is plenty of performance to be gained: the setup time is extremely low compared to the sweep time.
+# TODO Write better kernels
+#======================================================================================================================================
+

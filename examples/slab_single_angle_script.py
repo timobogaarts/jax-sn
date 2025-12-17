@@ -81,7 +81,7 @@ mass_operator = MassOperator.from_fem_matrices_and_precomputed_geometric_data(so
 transport_operator = TransportOperatorBatched(sol_domain.solution_domain_data, toposort, 0, batch_size = 10)
 
 # %%
-solution = transport_operator.inv(mass_operator(source.source_values))
+solution = transport_operator.inv(mass_operator.mv(source.source_values))
 
 # %%
 import matplotlib.pyplot as plt
@@ -97,7 +97,7 @@ def convergence_study(deg : int, n_cells_list : List[int]):
         sol_domain, source, buffer, toposort = setup_1d_slab(sigma = sigma, q = q, degree = deg, n_cells = n_cells, angle = angle_norm)
         mass_operator = MassOperator.from_fem_matrices_and_precomputed_geometric_data(sol_domain.fem_matrices, sol_domain.precomputed_geometric_data)
         transport_operator = TransportOperatorBatched(sol_domain.solution_domain_data, toposort, 0, batch_size = 10)
-        solution = transport_operator.inv(mass_operator(source.source_values) )
+        solution = transport_operator.inv(mass_operator.mv(source.source_values) )
         L2_error = compute_L2_error(solution, analytical_solution_1D_slab, sol_domain, quad_order=8*(deg+1))
         L2_errors.append(L2_error)
         print(f"Degree {deg}, Cells {n_cells}, L2 error: {L2_error}")
@@ -158,7 +158,7 @@ sol_domain, source_map, buffer, toposort = setup_3d_slab(sigma, q, 3, 20, angle_
 mass_op_3d = MassOperator.from_fem_matrices_and_precomputed_geometric_data(sol_domain.fem_matrices, sol_domain.precomputed_geometric_data)
 transport_op_3d = TransportOperatorBatched(sol_domain.solution_domain_data, toposort, 0, batch_size = 100)
 
-result = transport_op_3d.inv(mass_op_3d(source_map.source_values))
+result = transport_op_3d.inv(mass_op_3d.mv(source_map.source_values))
 
 # %%
 x_vals = jnp.linspace(0, 1.0, 1000)[:, None]

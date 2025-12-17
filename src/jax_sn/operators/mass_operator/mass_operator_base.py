@@ -4,9 +4,10 @@ from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from jax_sn.source import Source
 from dataclasses import dataclass
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class MassOperator:
+import lineax as lx
+
+
+class MassOperator(lx.AbstractLinearOperator):
     r'''
     Interface for mass operator. Computes:
 
@@ -23,24 +24,56 @@ class MassOperator:
             precomputed_geometric_data
         )
     
+    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
+        return _mass_kernel_idx_in_precomp_vmap(
+                jnp.arange(self.precomputed_geometric_data.n_elements),
+                self.fem_matrices,
+                self.precomputed_geometric_data,
+                x)
+    
+    def mv_batch(self, x : jnp.ndarray) -> jnp.ndarray:
+        _assert_x_batch(self, x)
+        return _mass_kernel_idx_in_precomp_vmap_vmap_values( 
+                jnp.arange(self.precomputed_geometric_data.n_elements),
+                self.fem_matrices,
+                self.precomputed_geometric_data,
+                x)
 
-    def __call__(self, x : jnp.ndarray) -> jnp.ndarray:
-        if x.ndim == 2:
-            return _mass_kernel_idx_in_precomp_vmap(
-                jnp.arange(self.precomputed_geometric_data.n_elements),
-                self.fem_matrices,
-                self.precomputed_geometric_data,
-                x
-            )
-        elif x.ndim ==3:
-            return _mass_kernel_idx_in_precomp_vmap_vmap_values(
-                jnp.arange(self.precomputed_geometric_data.n_elements),
-                self.fem_matrices,
-                self.precomputed_geometric_data,
-                x
-            )
-        else:
-            raise ValueError(f"Input x must have 2 or 3 dimensions but has shape {x.shape}")    
+    
+    def transpose(self) -> "MassOperator":
+        return self  # Mass matrix is symmetric
+    
+    def as_matrix(self):
+        assert False, "Not desired for MassOperator due to large size"
+        return jnp.array([[]])
+    
+    def conj(self):
+        return self  #real operator
+    
+    def in_structure(self):        
+        return self._shape_inout
+    
+    def out_structure(self):
+        return self._shape_inout
+    
+    @property 
+    def _shape_inout(self):
+        n_elements = self.precomputed_geometric_data.n_elements
+        n_basis = self.fem_matrices.n_basis        
+        return jax.ShapeDtypeStruct((n_elements, n_basis), self.fem_matrices.mass_matrix.dtype)
+    
+    
+def _assert_x_batch(massoperator : MassOperator, x):
+    assert x.ndim == 3, f"x should have 3 dimensions for batching but got {x.shape}"
+    
+                
+@lx.is_symmetric.register(MassOperator)
+def _(operator : MassOperator):
+    return True
+
+@lx.linearise.register(MassOperator)
+def _(operator : MassOperator):
+    return operator
 
 def mass_kernel_idx_in_precomp(
         elem_idx                    : int,
