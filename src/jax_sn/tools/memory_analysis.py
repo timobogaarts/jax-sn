@@ -101,6 +101,81 @@ def custom_timeit(func, number=100, ignore_n : int = 0):
 
 from abc import ABC, abstractmethod
 
+
+class OperatorAnalysis(ABC):
+
+    @staticmethod
+    def analyze_memory(operator : lx.AbstractLinearOperator, method : str):
+        '''
+        Analyzes memory usage for a operator method (mv or inv).
+        First it initializes the operator with the provided arguments and keyword arguments.
+
+        It uses _make_op to create a function that applies the specified method of the operator some input (just ones, for memory it does not matter).        
+
+        This function is then lowered and compiled and its memory usage is analyzed using _filter_jit_f_to_memory.
+
+        Parameters:
+        ----------
+        operator : lx.AbstractLinearOperator
+            The linear operator to analyze.
+        method : str
+            The method of the operator to use, e.g. "mv" or "inv".
+        
+        Returns:
+        -------
+        mem_mv : Dict[str, float]
+            Memory usage statistics for the operator method [in MB].
+        '''        
+        x_in = jnp.ones_like(operator.in_structure()) 
+        
+
+        @eqx.filter_jit
+        def method_f(operator, x_in):
+            return getattr(operator, method)(x_in)
+                
+        mem_mv  = _filter_jit_f_to_memory(method_f, operator, x_in)
+
+        return mem_mv
+    
+
+    @staticmethod
+    def analyze_timing(operator : lx.AbstractLinearOperator, method : str, n_samples : int = 100, ignore_n : int = 1):
+        '''
+        Analyzes timing for a operator method.
+
+        It uses _make_op to create a function that applies the specified method of the operator some input (just ones, for timing it does not matter).        
+
+        The function is then timed using custom_timeit, and the result is returned.
+
+        Parameters:
+        ----------
+        operator : lx.AbstractLinearOperator
+            The linear operator to analyze.
+        method : str
+            The method of the operator to use, e.g. "mv" or "inv".
+        n_samples : int, optional
+            The number of samples to use for timing, by default 100.
+        ignore_n : int, optional
+            The number of initial runs to ignore for timing (e.g. for compilation caching), by default 1.
+
+        Returns:
+        -------
+        duration_mv : float
+            The average time taken for the operator method.
+        '''
+        
+        x_in = jnp.ones_like(operator.in_structure()) 
+
+        @eqx.filter_jit
+        def method_f(operator, x_in):
+            return getattr(operator, method)(x_in)
+                
+        def run_method():
+            return method_f(operator, x_in).block_until_ready()
+                        
+        duration_mv = custom_timeit( run_method, number = n_samples , ignore_n=ignore_n)[0]                
+        return duration_mv
+
 class OperatorThetaParametrised(ABC):
     @staticmethod
     @abstractmethod

@@ -122,7 +122,7 @@ def _ylm_real(l : jnp.ndarray, m : jnp.ndarray, theta : jnp.ndarray, phi : jnp.n
     Uses the convention:
 
     .. math::
-        Y_{lm}(\theta, \phi)= \begin{cases} \sqrt{2} \mathcal{I}(Y_l^{|m|}(\theta,\phi)) & m < 0 \\ Y_l^0(\theta, \phi) & m =0 \\ \sqrt{2} \mathcal{I}(Y_l^m(\theta, \phi)) & m >0 \end{cases}
+        Y_{lm}(\theta, \phi)= \begin{cases} \sqrt{2} \mathcal{I}(Y_l^{|m|}(\theta,\phi)) & m < 0 \\ Y_l^0(\theta, \phi) & m =0 \\ \sqrt{2} \mathcal{R}(Y_l^m(\theta, \phi)) & m >0 \end{cases}
         
     where 
         :math:`Y_{lm}` are the complex spherical harmonics defined as per jax.scipy.special.sph_harm_y (including Condon-Shortley phase which is included in the :math:`P_l^m` definition):

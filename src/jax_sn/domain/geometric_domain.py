@@ -5,6 +5,7 @@ from jax_sn.tools.mesh_tools import compute_face_normal_vectors_from_3d_simplice
 from functools import lru_cache
 from typing import Tuple
 from .cross_sections import CrossSectionDataSingleGroup
+from jax_sn.quadrature_set import QuadratureSet
 
 @jax.jit
 def compute_domain_setup_from_mesh(mesh, face_template):
@@ -136,10 +137,38 @@ class TopologicalSortedAngle:
     
     @classmethod 
     def from_domain_angle(cls, geometric_domain : GeometricDomain, angle : jnp.ndarray, n_iterations_per_loop : int = 100):
+        '''
+        Computes a topological sort for the given angle and geometric domain. 
+        This function is not jittable because it uses Python control flow to safely compute levels, which can throw if there is a cycle in the graph.
+
+        Parameters
+        ----------
+        geometric_domain : GeometricDomain
+            The geometric domain for which to compute the topological sort.
+        angle : jnp.ndarray [n_dim]
+            The angle for which to compute the topological sort.
+        n_iterations_per_loop : int, optional
+            The number of iterations per loop for the level computation. The default is 100.
+
+        Returns
+        -------
+        toposort : TopologicalSortedAngle
+            The computed topological sort.
+        '''
         from .graph_generation import compute_levels_domain_safe
         levels = compute_levels_domain_safe(geometric_domain, angle, n_iterations_per_loop)
         levels_argsort = jnp.argsort(levels)
         return cls(levels=levels, angle=angle, levels_argsort=levels_argsort)
+    
+    @classmethod
+    def from_domain_quadrature_set(cls, geometric_domain : GeometricDomain, quadrature_set : QuadratureSet, n_iterations_per_loop : int = 100):
+        from .graph_generation import compute_levels_domain_safe
+        levels = [compute_levels_domain_safe(geometric_domain, angle, n_iterations_per_loop) for angle in quadrature_set.angles]
+
+        levels = jnp.stack(levels, axis=0) #[n_angles, n_elements]
+        levels_argsort = jnp.argsort(levels, axis=-1) #[n_angles, n_elements]
+        return cls(levels=levels, angle=quadrature_set.angles, levels_argsort=levels_argsort)
+
     
     def __getitem__(self, idx):
         assert self.levels.ndim == 2, "Indexing is only supported for batched TopologicalSortedAngle instances."

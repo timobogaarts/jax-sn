@@ -5,9 +5,9 @@ from jax_sn.source import Source
 from dataclasses import dataclass
 
 import lineax as lx
+from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 
-
-class MassOperator(lx.AbstractLinearOperator):
+class MassOperator(AbstractLinearOperator_sn):
     r'''
     Interface for mass operator. Computes:
 
@@ -17,28 +17,22 @@ class MassOperator(lx.AbstractLinearOperator):
     fem_matrices                : FEMMatrices    
     precomputed_geometric_data  : PrecomputedGeometricData
 
-    @classmethod    
-    def from_fem_matrices_and_precomputed_geometric_data(cls, fem_matrices : FEMMatrices, precomputed_geometric_data : PrecomputedGeometricData) -> "MassOperator":
-        return cls(
-            fem_matrices,
-            precomputed_geometric_data
-        )
-    
-    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        return _mass_kernel_idx_in_precomp_vmap(
-                jnp.arange(self.precomputed_geometric_data.n_elements),
-                self.fem_matrices,
-                self.precomputed_geometric_data,
-                x)
-    
-    def mv_batch(self, x : jnp.ndarray) -> jnp.ndarray:
-        _assert_x_batch(self, x)
-        return _mass_kernel_idx_in_precomp_vmap_vmap_values( 
-                jnp.arange(self.precomputed_geometric_data.n_elements),
-                self.fem_matrices,
-                self.precomputed_geometric_data,
-                x)
 
+    def __init__(self,
+        fem_matrices                : FEMMatrices,    
+        precomputed_geometric_data  : PrecomputedGeometricData
+    ):
+        assert isinstance(fem_matrices, FEMMatrices)
+        assert isinstance(precomputed_geometric_data, PrecomputedGeometricData)
+        
+        self.fem_matrices = fem_matrices
+        self.precomputed_geometric_data = precomputed_geometric_data    
+    
+    def mv(self, x : jnp.ndarray) -> jnp.ndarray:        
+        return total_mass_kernel_idx_in_precomp(
+                self.fem_matrices,
+                self.precomputed_geometric_data,
+                x)
     
     def transpose(self) -> "MassOperator":
         return self  # Mass matrix is symmetric
@@ -75,6 +69,7 @@ def _(operator : MassOperator):
 def _(operator : MassOperator):
     return operator
 
+
 def mass_kernel_idx_in_precomp(
         elem_idx                    : int,
         fem_matrices                : FEMMatrices,    
@@ -96,16 +91,43 @@ def mass_kernel_idx_in_precomp(
     precomputed_geometric_data : PrecomputedGeometricData
         The precomputed geometric data (Jacobian determinants and inverses).
     values : jnp.ndarray
-        The source values array of shape [n_elements, n_basis]
+        The source values array of shape [..., n_elements, n_basis]
     Returns
     -------
-    values : jnp.ndarray
+    values : jnp.ndarray [...., n_basis]
         The computed value vector for the specified element.
-    '''    
-    
-    return precomputed_geometric_data.vol_jacobians_det[elem_idx] * fem_matrices.mass_matrix @ values[elem_idx]
+    '''        
+    return precomputed_geometric_data.vol_jacobians_det[elem_idx] * jnp.einsum("ij, ...j->...i", fem_matrices.mass_matrix , values[..., elem_idx, :])
 
 
-_mass_kernel_idx_in_precomp_vmap = jax.vmap(mass_kernel_idx_in_precomp, in_axes=(0, None, None, None))
+@jax.jit
+def total_mass_kernel_idx_in_precomp(
+        fem_matrices                : FEMMatrices,    
+        precomputed_geometric_data  : PrecomputedGeometricData,
+        values                      : jnp.ndarray
+    ):
+    '''
+    Compute the mass matrix map
+        v_i = ∑_{j} Jv ∫H_i H_j dV v_j 
 
-_mass_kernel_idx_in_precomp_vmap_vmap_values = jax.vmap(_mass_kernel_idx_in_precomp_vmap, in_axes=( None, None, None,0))
+    We index directly in the source instead of passing a subsource. This can save significant memory when vmapping over all elements and all directions with the same source independent of direction.
+
+    Parameters
+    ----------
+    fem_matrices : FEMMatrices
+        The finite element method matrices.
+    precomputed_geometric_data : PrecomputedGeometricData
+        The precomputed geometric data (Jacobian determinants and inverses).
+    values : jnp.ndarray
+        The source values array of shape [..., n_elements, n_basis]
+    Returns
+    -------
+    values : jnp.ndarray [...., n_elements, n_basis]
+        The computed value vector for all elements.
+    '''            
+    return jax.vmap(mass_kernel_idx_in_precomp, in_axes=(0, None, None, None), out_axes=-2)(
+                jnp.arange(precomputed_geometric_data.n_elements),
+                fem_matrices,
+                precomputed_geometric_data,
+                values)
+

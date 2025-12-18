@@ -4,15 +4,18 @@ from functools import partial
 from dataclasses import dataclass
 from typing import Callable
 from jax_sn.quadrature_set import QuadratureSet
+import lineax as lx
+from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 
-
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class MomentOperator:
+class MomentOperator(AbstractLinearOperator_sn):
     r'''
     Represents a moment operator that maps angular fluxes to moments.
 
     Convenience class to bundle the moment operator weights and the associated quadrature set and have a callable interface.
+
+    Note that in principle, the moment operator can be batched arbitrarily: only the angle dimension has to be consistent, the rest
+    can be arbitrarily batched. However, because we subclass a lineax AbstractLinearOperator, we have to fix the input shape at construction time.
+    We choose to just use the base operation: mapping [n_angles to [n_moments]. 
 
     Also available as a standalone function `_call_moment_operator`.
 
@@ -24,15 +27,63 @@ class MomentOperator:
         The quadrature set associated with this moment operator.
     '''
     wk_yklm        : jnp.ndarray #[n_angles, n_moments]
-    quadrature_set : QuadratureSet
+    quadrature_set : QuadratureSet    
+
 
     @classmethod
     def from_quadrature_set(cls, quadrature_set : QuadratureSet, l_max : int) -> "MomentOperator":
         wk_yklm = quadrature_set.wk_ylm_real(l_max)        
         return cls(wk_yklm, quadrature_set)
     
-    def __call__(self, buffer_sweep : jnp.ndarray) -> jnp.ndarray:
-        return _call_moment_operator(buffer_sweep, self.wk_yklm)
+    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
+        return _call_moment_operator(x, self.wk_yklm)
+    
+    def transpose(self) -> "MomentOperator":
+        raise NotImplementedError("Transpose of MomentOperator is not implemented.")
+    
+    def as_matrix(self):    
+        assert False, "Not desired for MomentOperator due to large size"
+        return jnp.array([[]])
+    
+    def conj(self):
+        return self  #real operator
+    
+    def in_structure(self):
+        return jax.ShapeDtypeStruct(
+            shape=(self.wk_yklm.shape[0],), 
+            dtype=self.wk_yklm.dtype)
+    
+    def out_structure(self):
+        '''
+        Output shape is input shape with last dimension replaced by number of moments
+
+        i.e., if in is [n_angles, n_elements, n_basis], out is [n_elements, n_basis, n_moments]
+
+        In the sweep, it is useful to have a n_elements, n_basis ordering: this ensures the sweep 
+        sweeps over memory contiguous data. However, here, we want to apply the scattering operator, which 
+        operators locally on moments. Therefore, it is more natural to have the moments as the last dimension.
+
+        Returns:
+        -------
+        out_shape : jax.ShapeDtypeStruct
+            The output shape after applying the moment operator.    
+        '''
+        return jax.ShapeDtypeStruct(
+            shape=(self.wk_yklm.shape[1],), 
+            dtype=self.wk_yklm.dtype)
+
+        
+    
+    
+@lx.is_symmetric.register(MomentOperator)
+def _(operator):
+    return False
+
+@lx.linearise.register(MomentOperator)
+def _(operator):
+    return operator
+
+
 
 def _call_moment_operator(buffer_sweep : jnp.ndarray, wk_yklm : jnp.ndarray) -> jnp.ndarray:
     r'''
@@ -62,5 +113,5 @@ def _call_moment_operator(buffer_sweep : jnp.ndarray, wk_yklm : jnp.ndarray) -> 
         The computed moments.
     
     '''
-    assert buffer_sweep.shape[0] == wk_yklm.shape[0], f"Number of angles in buffer_sweep ({buffer_sweep.shape[0]}) must match number of angles in wk_yklm ({wk_yklm.shape[0]})."
-    return jnp.einsum('k...,kl->...l', buffer_sweep, wk_yklm)
+    assert buffer_sweep.shape[-1] == wk_yklm.shape[0], f"Number of angles in buffer_sweep ({buffer_sweep.shape[-1]}) must match number of angles in wk_yklm ({wk_yklm.shape[0]})."
+    return jnp.einsum('...k,kl->...l', buffer_sweep, wk_yklm)

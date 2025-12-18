@@ -64,6 +64,9 @@ class SolutionDomain(eqx.Module):
     @property 
     def n_basis(self) -> int:
         return self.solution_domain_data.fem_matrices.n_basis
+    @property 
+    def n_elements(self) -> int:
+        return self.solution_domain_data.domain.n_elements
     
     
     def map_cross_sections_to_full_array(self, energy_group : int):

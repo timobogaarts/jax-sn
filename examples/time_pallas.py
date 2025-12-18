@@ -52,7 +52,7 @@ def time_executions(degree: int):
     solution_domain                      = SolutionDomain.from_element_and_domain(element_type, domain)
     source_mapped                        = Source(jnp.repeat(sources, element_type.n_basis, axis=-1).reshape(-1, element_type.n_basis))
 
-    source_x                             = MassOperator.from_fem_matrices_and_precomputed_geometric_data(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data).mv(source_mapped.source_values)
+    source_x                             = MassOperator(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data).mv(source_mapped.source_values)
 
     n_basis_pow2                         = _next_power_of_two(element_type.n_basis)
     buffer_sweep                         = jnp.zeros((domain.n_elements, element_type.n_basis))
@@ -116,7 +116,7 @@ def test_multiple_angles():
         source_mapped                        = Source(jnp.repeat(sources, element_type.n_basis, axis=-1).reshape(-1, element_type.n_basis))
         source_total = jax.tree.map(lambda * xs : jnp.stack(xs), *[source_mapped for _ in toposorts])
 
-        source_x                             = MassOperator.from_fem_matrices_and_precomputed_geometric_data(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data).mv_batch(source_total.source_values)
+        source_x                             = MassOperator(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data).mv_batch(source_total.source_values)
 
         n_basis_pow2                         = _next_power_of_two(element_type.n_basis)
 

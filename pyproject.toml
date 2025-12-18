@@ -28,6 +28,8 @@ dependencies = [
     "h5py",          
     "scipy",
     "fenics-basix>=0.7.0"    
+    "equinox",
+    "lineax"
 ]
 
 

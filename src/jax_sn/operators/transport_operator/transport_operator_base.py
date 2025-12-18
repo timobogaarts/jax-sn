@@ -9,6 +9,7 @@ from jax_sn.domain import TopologicalSortedAngle
 from jax_sn.source import Source
 import equinox as eqx
 import lineax as lx
+from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 
 class TransportOperatorSolver(lx.AbstractLinearSolver):
     def __init__(self):
@@ -33,7 +34,7 @@ class TransportOperatorSolver(lx.AbstractLinearSolver):
         return solver_state.conj(), options
 
 
-class TransportOperator(lx.AbstractLinearOperator):
+class TransportOperator(AbstractLinearOperator_sn):
     '''
     Base class for transport operators.
     Since the implementation of the transport operator can vary (e.g., vmap-based, batched, Pallas, etc.), this is an abstract base class that defines the interface for transport operators.
@@ -208,7 +209,7 @@ def vmap_multiple_angles_inv(transport_operator : TransportOperator, b : jnp.nda
     f_vmap = jax.vmap(transport_operator._inv_op_args, in_axes=transport_operator._vmap_for_inv_multiple_angles)
     return f_vmap(*args)
 
-class TransportOperatorMultipleAngles(lx.AbstractLinearOperator):    
+class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):    
     transport_operator : TransportOperator
 
     def _assert_shape_base(self):
