@@ -6,48 +6,6 @@ from jax_sn.quadrature_set.quadrature_set_base import _lm_real_expansion
 from jax_sn.domain.geometric_domain import CrossSectionIndexed
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 import lineax as lx
-class InScatterOperator(AbstractLinearOperator_sn):
-    yklm : jnp.ndarray  # [n_angles, n_moments]
-    cross_section_index : CrossSectionIndexed
-    
-    @classmethod 
-    def from_quadrature_set_and_cross_sections(cls, quadrature_set : QuadratureSet, cross_sections : CrossSectionIndexed, l_max : int):
-        yklm = quadrature_set.wk_ylm_real(l_max)        
-        return cls(yklm, cross_sections)
-    
-    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        return total_scattering_kernel_xs_indexed_discrete(jnp.arange(self.cross_section_index.indices.shape[0]),  # elem_idx
-                                                    0,  # g_out
-                                                    0,  # g_in
-                                                    self.cross_section_index,
-                                                    x,
-                                                    self.yklm)
-    def transpose(self) -> "InScatterOperator":
-        raise NotImplementedError("Transpose of InScatterOperator is not implemented.")
-    
-    def as_matrix(self):
-        assert False, "Not desired for InScatterOperator due to large size"
-        return jnp.array([[]])
-    
-    def conj(self): 
-        return self  # real operator
-    
-    def in_structure(self):
-        return jax.ShapeDtypeStruct(
-            shape=(self.yklm.shape[-1],), 
-            dtype=self.yklm.dtype)
-    def out_structure(self):
-        return jax.ShapeDtypeStruct(
-            shape=(self.yklm.shape[0],), 
-            dtype=self.yklm.dtype)
-
-@lx.is_symmetric.register(InScatterOperator)
-def _(operator):
-    return False
-    
-@lx.linearise.register(InScatterOperator)
-def _(operator):
-    return operator
 
 def _moment_to_discrete_kernel(moment_array : jnp.ndarray, yklm : jnp.ndarray) -> jnp.ndarray:
     r'''
@@ -68,9 +26,8 @@ def _moment_to_discrete_kernel(moment_array : jnp.ndarray, yklm : jnp.ndarray) -
     jnp.ndarray [n_basis, n_angles]
         The discrete angular flux for the specified element and energy group.
     '''
-    assert moment_array.shape[-1] == yklm.shape[-1], f"Moment array last dimension {moment_array.shape} must match yklm last dimension {yklm.shape}."
-    return jnp.einsum('...l,kl->...k', moment_array, yklm)  # [..., n_moments] x [n_angles, n_moments] -> [...., n_angles]
-
+    assert moment_array.shape[0] == yklm.shape[-1], f"Moment array last dimension {moment_array.shape} must match yklm last dimension {yklm.shape}."
+    return jnp.einsum('l...,kl->k...', moment_array, yklm)  # [..., n_moments] x [n_angles, n_moments] -> [...., n_angles]
 
 def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, cross_section_indexed : CrossSectionIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
     r'''
@@ -99,6 +56,7 @@ def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, c
     jnp.ndarray [n_basis, n_moments]
         The scattering source moments for the specified element and energy groups.
     '''
+    assert moments_array.ndim == 3, f"moments_array must be 2D [n_moments, n_elements, n_basis], but has shape {moments_array.shape}."    
     
     xs_idx = cross_section_indexed.indices[elem_idx]
 
@@ -109,15 +67,13 @@ def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, c
 
 
     # now we have to pad/truncate to match moments_array
-    n_moments = moments_array.shape[-1]
+    n_moments = moments_array.shape[0]
     extended_sigma_lm_gg = extended_sigma_lm_gg[:n_moments]  #  first truncate if needed (if n_moments > extended_sigma_lm_gg.shape[0], this does nothing)
     extended_sigma_lm_gg = jnp.pad(extended_sigma_lm_gg, (0, n_moments - extended_sigma_lm_gg.shape[0]))  # pad if needed    
+    return extended_sigma_lm_gg[:, None] * moments_array[:, elem_idx, :]  # [n_moments, None] * [n_moments, n_basis] -> [n_moments, n_basis]
 
 
-    return extended_sigma_lm_gg[None, :] * moments_array[elem_idx, :, :]  # [None, n_moments] * [n_basis, n_moments] -> [n_basis, n_moments]
-
-
-def _scatter_kernel_xs_indexed_discrete(elem_idx : int, g_out : int, g_in : int, cross_section_indexed : CrossSectionIndexed, psi_ei_lm : jnp.ndarray, yklm : jnp.ndarray) -> jnp.ndarray:
+def _scatter_kernel_xs_indexed_discrete(elem_idx : int, g_out : int, g_in : int, cross_section_indexed : CrossSectionIndexed, moments_array : jnp.ndarray, yklm : jnp.ndarray) -> jnp.ndarray:
     r'''
       Computes from a given element index, outgoing group, incoming group, indexed cross section object, buffer for the specific incoming group, and the real expansion coefficients, the corresponding scattering scattering source:
 
@@ -143,14 +99,6 @@ def _scatter_kernel_xs_indexed_discrete(elem_idx : int, g_out : int, g_in : int,
     -------
     jnp.ndarray [n_basis, n_angles]
         The scattering source moments for the specified element and energy groups.
-    '''
-
-    moment_array = _scatter_kernel_xs_indexed_kernel(elem_idx, g_out, g_in, cross_section_indexed, psi_ei_lm)  # [n_basis, n_moments]
+    '''    
+    moment_array = _scatter_kernel_xs_indexed_kernel(elem_idx, g_out, g_in, cross_section_indexed, moments_array)  # [n_basis, n_moments]
     return _moment_to_discrete_kernel(moment_array, yklm)  # [n_basis, n_angles]
-    
-    
-total_scattering_kernel_xs_indexed_discrete = jax.vmap(
-    _scatter_kernel_xs_indexed_discrete,
-    in_axes=(0, None, None, None, None, None),
-    out_axes=0
-)

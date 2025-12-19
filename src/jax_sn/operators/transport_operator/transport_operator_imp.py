@@ -6,9 +6,9 @@ from jax_sn.solution_domain import FEMMatrices
 from jax_sn.source import Source
 from functools import partial
 from typing import Tuple
-from jax_sn.operators.mass_operator.mass_operator_base import mass_kernel_idx_in_precomp
+
 import numpy as onp
-from dataclasses import dataclass
+
 
 #==============================================================================================================================================================================
 #  Full Transport operator functions

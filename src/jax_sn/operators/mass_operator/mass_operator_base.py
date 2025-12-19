@@ -7,6 +7,11 @@ from dataclasses import dataclass
 import lineax as lx
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 
+from typing import Tuple
+from jax_sn.solution_domain import SolutionDomainData
+from typing import Union    
+
+from jax_sn.operators.transport_operator.transport_operator_base import TransportOperator, TransportOperatorMultipleAngles
 class MassOperator(AbstractLinearOperator_sn):
     r'''
     Interface for mass operator. Computes:
@@ -16,17 +21,31 @@ class MassOperator(AbstractLinearOperator_sn):
     '''
     fem_matrices                : FEMMatrices    
     precomputed_geometric_data  : PrecomputedGeometricData
+    addtional_shape             : Tuple[int] = ()
 
+    @classmethod 
+    def from_solution_domain_data(
+        cls,
+        solution_domain_data : SolutionDomainData,
+        additional_shape     : Tuple[int] = ()
+    ) -> "MassOperator":
+        return cls(
+            solution_domain_data.fem_matrices,
+            solution_domain_data.precomputed_geometric_data,
+            additional_shape
+        )
+    
+    @classmethod 
+    def from_transport_operator(cls, transport_operator : Union[TransportOperator, TransportOperatorMultipleAngles]) -> "MassOperator":
+        in_structure = transport_operator.in_structure()
+        solution_domain_data = transport_operator.solution_domain_data
 
-    def __init__(self,
-        fem_matrices                : FEMMatrices,    
-        precomputed_geometric_data  : PrecomputedGeometricData
-    ):
-        assert isinstance(fem_matrices, FEMMatrices)
-        assert isinstance(precomputed_geometric_data, PrecomputedGeometricData)
         
-        self.fem_matrices = fem_matrices
-        self.precomputed_geometric_data = precomputed_geometric_data    
+        return cls(solution_domain_data.fem_matrices,
+                   solution_domain_data.precomputed_geometric_data,
+                   in_structure.shape[:-2])  
+    
+
     
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:        
         return total_mass_kernel_idx_in_precomp(
@@ -54,7 +73,7 @@ class MassOperator(AbstractLinearOperator_sn):
     def _shape_inout(self):
         n_elements = self.precomputed_geometric_data.n_elements
         n_basis = self.fem_matrices.n_basis        
-        return jax.ShapeDtypeStruct((n_elements, n_basis), self.fem_matrices.mass_matrix.dtype)
+        return jax.ShapeDtypeStruct(self.addtional_shape + (n_elements, n_basis), self.fem_matrices.mass_matrix.dtype)
     
     
 def _assert_x_batch(massoperator : MassOperator, x):

@@ -60,9 +60,10 @@ def _convert_expansion_values_sb_to_norm(sb_values):
     l,m = jax_sn.quadrature_set.quadrature_set_base._lm_real_expansion(lmax)    
 
     permutation = _lm_sb_to_norm(l,m)
-    sb_values__perm = sb_values[..., permutation]
+    sb_values__perm = sb_values[..., permutation] # ..., n_moments
+
     
-    return onp.where(m !=0, sb_values__perm  * onp.sqrt(2), sb_values__perm)* onp.sqrt(4 * onp.pi)
+    return onp.moveaxis(onp.where(m !=0, sb_values__perm  * onp.sqrt(2), sb_values__perm)* onp.sqrt(4 * onp.pi), -1,0) # move n_moments to front
 
 
 def _expected_value_from_sb(dimension, degree, tn_order, lmax):
@@ -88,11 +89,12 @@ def check_moment_operator(dimension, degree, tn_order, lmax, _verts_conn_functio
     transport_operator = jax_sn.operators.transport_operator.transport_operator_base.TransportOperatorMultipleAnglesVmap(
         jax_sn.operators.transport_operator.transport_operator_base.TransportOperatorBatched(solution_domain.solution_domain_data, total_toposorts, 0, batch_size = 10))
     #sweep_angles = jax_sn.operators.transport_operator.transport_inverse_sweep_multiple_angles_batched(*solution_domain.solution_domain_data, solution_domain.map_cross_sections_to_full_array(0), total_toposorts, source_total, sweep_array, 10)
-    moment_operator = jax_sn.operators.moment_operator.MomentOperator.from_quadrature_set(quadrature_set, lmax)
+    moment_operator = jax_sn.operators.moment_operator.MomentOperator.from_quadrature_set(quadrature_set, lmax, solution_domain.elements_basis_shape)
 
     mass_operator  = jax_sn.operators.mass_operator.MassOperator(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data)
     source_x = mass_operator.mv(source_total.source_values) # this automatically batches
-    psilm = moment_operator.mv(jnp.moveaxis(transport_operator.inv(source_x ), 0, -1))
+    psilm = moment_operator.mv(transport_operator.inv(source_x ))
+
 
     #psilm = moment_operator(sweep_angles)
     expected_values = _expected_values_function(dimension, degree, tn_order, lmax)

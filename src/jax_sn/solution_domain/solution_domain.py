@@ -68,6 +68,13 @@ class SolutionDomain(eqx.Module):
     def n_elements(self) -> int:
         return self.solution_domain_data.domain.n_elements
     
+    @property 
+    def elements_basis_shape(self) -> jax.ShapeDtypeStruct:
+        return jax.ShapeDtypeStruct(
+            shape=(self.n_elements, self.n_basis),
+            dtype=self.fem_matrices.mass_matrix.dtype
+        )
+    
     
     def map_cross_sections_to_full_array(self, energy_group : int):
         return self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group)

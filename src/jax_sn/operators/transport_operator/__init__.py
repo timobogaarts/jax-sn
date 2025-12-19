@@ -1,3 +1,4 @@
+from .transport_operator_base import TransportOperator, TransportOperatorMultipleAngles
 from .transport_operator_base import TransportOperatorBatched, TransportOperatorVmap, TransportOperatorBatchedPallas, TransportOperatorVmapPallas, TransportOperatorMultipleAnglesVmap
 from .transport_operator_imp import (
     transport_inverse_sweep_complete_vmap,
@@ -8,6 +9,8 @@ from .transport_operator_imp import (
 from . import transport_operator_levels, transport_operator_pallas
 
 __all__ = [
+    'TransportOperator',
+    'TransportOperatorMultipleAngles',
     'TransportOperatorBatched',
     'TransportOperatorVmap',
     'TransportOperatorBatchedPallas',

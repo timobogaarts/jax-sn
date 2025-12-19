@@ -135,6 +135,16 @@ def _ylm_real(l : jnp.ndarray, m : jnp.ndarray, theta : jnp.ndarray, phi : jnp.n
     .. math::
         \int Y_{lm}(\theta, \phi) Y_{l'm'}(\theta, \phi) d\Omega = \delta_{ll'} \delta_{mm'}
 
+    Note that the inverse of the expansion is also _ylm_real, i.e.,
+    .. math::
+        f(\Omega_k) = \sum_{lm} f_{lm} Y_{lm}(\Omega_k) \\
+        f_{lm} = \int f(\Omega) Y_{lm}(\Omega) d\Omega \approx \sum_k w_k f(\Omega_k) Y_{lm}(\Omega_k)
+
+    Finally, note that the so-called scalar flux :math:`\phi` is defined as the zeroth moment coefficient:
+
+    .. math::
+        \phi = \sqrt{4\pi} \psi_{00} 
+
     Parameters:
     ----------
     l : jnp.ndarray [n_coefficients]
