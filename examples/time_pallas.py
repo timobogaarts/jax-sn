@@ -44,7 +44,7 @@ domain                               = Domain.from_mesh_and_cross_sections((vert
 
 quad_set = jsn.quadrature_set.create_tn_quadrature_set(4)
 toposort = TopologicalSortedAngle.from_domain_angle(domain, quad_set[0][0], 100) 
-
+print(quad_set.weights.dtype)
 
 def time_executions(degree: int):
     element_type                         = BasixLagrangianSimplex(degree, dim)    
@@ -116,7 +116,7 @@ def test_multiple_angles():
         source_mapped                        = Source(jnp.repeat(sources, element_type.n_basis, axis=-1).reshape(-1, element_type.n_basis))
         source_total = jax.tree.map(lambda * xs : jnp.stack(xs), *[source_mapped for _ in toposorts])
 
-        source_x                             = MassOperator(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data).mv_batch(source_total.source_values)
+        source_x                             = MassOperator(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data).mv(source_total.source_values)
 
         n_basis_pow2                         = _next_power_of_two(element_type.n_basis)
 

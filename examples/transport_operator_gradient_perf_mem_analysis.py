@@ -81,8 +81,7 @@ def _run_multi_angle_operators(dim, degree):
         TransportOperatorBatched : {"batch_size" : 1000},             
         TransportOperatorBatchedPallas: {"batch_size" : 1000}}
     
-    solution_domain, sources = setup_base_case(3,2)
-    i_tn     = 50
+    solution_domain, sources = setup_base_case(3,2)    
     
     angle_i  = jax_sn.quadrature_set.create_tn_quadrature_set(3)
     n_angles = angle_i.n_angles
