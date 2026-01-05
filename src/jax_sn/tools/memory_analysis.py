@@ -4,6 +4,8 @@ import equinox as eqx
 from functools import partial
 import numpy as onp 
 import lineax as lx
+from typing import Callable, Union
+from abc import ABC, abstractmethod
 
 
 
@@ -42,7 +44,7 @@ def pytree_nbytes(pytree):
 def _theta_op_apply(operator, theta, x_in, _construct_theta_op, method_name):
     return jnp.sum(getattr(_construct_theta_op(operator, theta), method_name)(x_in))
 
-def _make_theta_op(method):
+def _make_theta_op_method(method):
     '''
     Creates functions to compute particular theta-parameterised operator actions and their gradients.
     Uses a particular method of the linear operator, applies it to some input and sums the output to get a scalar.
@@ -68,9 +70,39 @@ def _make_theta_op(method):
 
     return _theta_op_eqx, _theta_op_eqx_valgrad
 
-def make_memory_parametrised_grad(method_name):
+def _make_theta_op_f(f):
+    '''
+    Creates a function to compute functions on theta-parameterised operators.
 
-    theta_op_eqx, theta_op_eqx_valgrad = _make_theta_op(method_name)
+    Similar to _make_theta_op, but for general functions f.
+
+    Parameters:
+    ----------
+    f : function
+        A function that takes an operator and x and input and returns a scalar.
+    Returns:
+    ------- 
+    _theta_op_eqx : function
+        JIT-compiled function that computes the output of f on the operator action.
+    _theta_op_eqx_valgrad : function
+        JIT-compiled function that computes the value and gradient of f with respect to theta.
+    
+    '''
+    @eqx.filter_jit
+    def _theta_op_eqx(operator, theta, x_in, _construct_theta_op):
+        return jnp.sum(f(_construct_theta_op(operator, theta), x_in))
+    
+    _theta_op_eqx_valgrad = eqx.filter_jit(jax.value_and_grad(_theta_op_eqx, argnums = 1))
+    return _theta_op_eqx, _theta_op_eqx_valgrad
+
+def _make_theta_op(method_or_f : Union[str, Callable]):
+    if callable(method_or_f):
+        return _make_theta_op_f(method_or_f)
+    else:
+        return _make_theta_op_method(method_or_f)
+
+def make_memory_parametrised_grad(method_or_f):
+    theta_op_eqx, theta_op_eqx_valgrad = _make_theta_op(method_or_f)
 
     def memory_param_grad(operator, parametrisation_case):
         x_in = jnp.ones_like(operator.in_structure())
@@ -86,13 +118,13 @@ def make_memory_parametrised_grad(method_name):
 # ============================================================================================================
 #                                             Timing utilities
 # ============================================================================================================
-from typing import Type, Tuple, Dict
+from typing import Callable, Type, Tuple, Dict, Union
 def custom_timeit(func, number=100, ignore_n : int = 0):
     import time
     times = []
     for _ in range(number):
-        start = time.time()
-        func().block_until_ready()
+        start = time.time()        
+        jax.block_until_ready(func())        
         end = time.time()
         times.append(end - start)
 
@@ -105,7 +137,7 @@ from abc import ABC, abstractmethod
 class OperatorAnalysis(ABC):
 
     @staticmethod
-    def analyze_memory(operator : lx.AbstractLinearOperator, method : str):
+    def analyze_memory(operator : lx.AbstractLinearOperator, method : Union[str, Callable]):
         '''
         Analyzes memory usage for a operator method (mv or inv).
         First it initializes the operator with the provided arguments and keyword arguments.
@@ -131,15 +163,19 @@ class OperatorAnalysis(ABC):
 
         @eqx.filter_jit
         def method_f(operator, x_in):
-            return getattr(operator, method)(x_in)
+            if callable(method):
+                return method(operator, x_in)
+            else:
+                return getattr(operator, method)(x_in)
                 
         mem_mv  = _filter_jit_f_to_memory(method_f, operator, x_in)
 
         return mem_mv
     
+    
 
     @staticmethod
-    def analyze_timing(operator : lx.AbstractLinearOperator, method : str, n_samples : int = 100, ignore_n : int = 1):
+    def analyze_timing(operator : lx.AbstractLinearOperator, method : Union[str, Callable], n_samples : int = 100, ignore_n : int = 1):
         '''
         Analyzes timing for a operator method.
 
@@ -168,7 +204,10 @@ class OperatorAnalysis(ABC):
 
         @eqx.filter_jit
         def method_f(operator, x_in):
-            return getattr(operator, method)(x_in)
+            if callable(method):
+                return method(operator, x_in)
+            else:
+                return getattr(operator, method)(x_in)
                 
         def run_method():
             return method_f(operator, x_in).block_until_ready()
@@ -188,7 +227,7 @@ class OperatorThetaParametrised(ABC):
         ...
 
     @classmethod
-    def analyze_grad_memory(cls, operator : lx.AbstractLinearOperator, method : str):
+    def analyze_grad_memory(cls, operator : lx.AbstractLinearOperator, method : Union[str, Callable]):
         '''
         Analyzes memory usage for the gradient of a parameterised operator method (mv or inv).
         First it initializes the operator with the provided arguments and keyword arguments.
@@ -218,7 +257,7 @@ class OperatorThetaParametrised(ABC):
         
 
     @classmethod
-    def analyze_grad_timing(cls, operator : lx.AbstractLinearOperator, method : str, n_samples : int = 100, ignore_n : int = 1):        
+    def analyze_grad_timing(cls, operator : lx.AbstractLinearOperator, method : Union[str, Callable], n_samples : int = 100, ignore_n : int = 1):        
         '''
         Analyzes timing for the gradient of a parameterised operator method.
 
@@ -257,7 +296,7 @@ class OperatorThetaParametrised(ABC):
                 
         duration_mv = custom_timeit( run_method, number = n_samples , ignore_n=ignore_n)[0]        
         def run_grad_method():
-            return grad_method_f(*args_method)[1].block_until_ready()   
+            return jax.block_until_ready(grad_method_f(*args_method)[1])
 
         duration_grad_mv = custom_timeit( run_grad_method, number=n_samples, ignore_n=ignore_n)[0]
         
@@ -278,3 +317,11 @@ class TransportOperatorSigmaParametrised(OperatorThetaParametrised):
     
 
 
+class TotalOperatorSigmaParametrised(OperatorThetaParametrised):
+    @staticmethod
+    def theta_base(operator ):
+        return operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data
+    
+    @staticmethod
+    def reconstruct_operator(operator, theta):
+        return eqx.tree_at(lambda op : op.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data, operator, replace = theta)

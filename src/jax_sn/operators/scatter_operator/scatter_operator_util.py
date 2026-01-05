@@ -16,18 +16,41 @@ def _moment_to_discrete_kernel(moment_array : jnp.ndarray, yklm : jnp.ndarray) -
 
     Parameters
     ----------
-    moment_array : jnp.ndarray [n_basis, n_moments]
+    moment_array : jnp.ndarray [n_moments, n_basis]
         The moment array for a specific element and energy group.
     yklm : jnp.ndarray [n_angles, n_moments]
         The yklm matrix for the quadrature set.
 
     Returns
     -------
-    jnp.ndarray [n_basis, n_angles]
+    jnp.ndarray [n_angles, n_basis]
         The discrete angular flux for the specified element and energy group.
     '''
     assert moment_array.shape[0] == yklm.shape[-1], f"Moment array last dimension {moment_array.shape} must match yklm last dimension {yklm.shape}."
-    return jnp.einsum('l...,kl->k...', moment_array, yklm)  # [..., n_moments] x [n_angles, n_moments] -> [...., n_angles]
+    return jnp.einsum('l...,kl->k...', moment_array, yklm)  # [n_moments, ... ] x [n_angles, n_moments] -> [n_angles, ...]
+
+def _moment_to_discrete_kernel_transposed(discrete_array : jnp.ndarray, yklm : jnp.ndarray) -> jnp.ndarray:
+    r'''
+    Transpose of _moment_to_discrete_kernel: Converts a discrete angle array to moments using the yklm matrix. This is *not* a conversion to moments 
+    like in MomentOperator, but the transposed operation of converting moments to discrete angles.
+
+    .. math::
+        \psi_{lm}^{(e, g)} = \sum_{k} Y_{klm} \psi^{(e, g, a)}
+
+    Parameters
+    ----------
+    discrete_array : jnp.ndarray [n_angles, n_basis]
+        The discrete angular flux for a specific element and energy group.
+    yklm : jnp.ndarray [n_angles, n_moments]
+        The yklm matrix for the quadrature set.
+
+    Returns
+    -------
+    jnp.ndarray [n_moments, n_basis]
+        The moment array for the specified element and energy group.
+    '''
+    assert discrete_array.shape[0] == yklm.shape[0], f"Discrete array first dimension {discrete_array.shape} must match yklm first dimension {yklm.shape}."
+    return jnp.einsum('k...,kl->l...', discrete_array, yklm)  # [n_angles, ...] x [n_angles, n_moments] -> [n_moments, ...]
 
 def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, cross_section_indexed : CrossSectionIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
     r'''
@@ -78,7 +101,7 @@ def _scatter_kernel_xs_indexed_discrete(elem_idx : int, g_out : int, g_in : int,
       Computes from a given element index, outgoing group, incoming group, indexed cross section object, buffer for the specific incoming group, and the real expansion coefficients, the corresponding scattering scattering source:
 
     .. math::
-        s^{g_{out}}_{k}= \sum_{lm} \sigma_{l, g_{out}\from g_{in}}^{(e)} \psi_{lm}^{(e, g_{in})} Y_{lm}(\Omega_k)
+        s^{g_{out}}_{k}= \sum_{lm} \sigma_{l, g_{out}\from g_{in}}^{(e)} \phi_{lm}^{(e, g_{in})} Y_{lm}(\Omega_k)
 
     Automatically pads or truncates the cross section data to match the number of moments in the moments_array.
         
@@ -102,3 +125,32 @@ def _scatter_kernel_xs_indexed_discrete(elem_idx : int, g_out : int, g_in : int,
     '''    
     moment_array = _scatter_kernel_xs_indexed_kernel(elem_idx, g_out, g_in, cross_section_indexed, moments_array)  # [n_basis, n_moments]
     return _moment_to_discrete_kernel(moment_array, yklm)  # [n_basis, n_angles]
+
+def _scatter_kernel_xs_indexed_discrete_transposed(elem_idx : int, g_out : int, g_in : int, cross_section_indexed : CrossSectionIndexed, discrete_array : jnp.ndarray, yklm : jnp.ndarray) -> jnp.ndarray:
+    r'''
+      Computes from a given element index, outgoing group, incoming group, indexed cross section object, buffer for the specific incoming group in discrete angles, and the real expansion coefficients, the corresponding scattering scattering source in moments:
+
+    .. math::
+        s^{g_{out}}_{lm}=  \sigma_{l, g_{out}\from g_{in}}^{(e)} \sum_{k} Y_{klm} \psi^{(e, g_{in}, k)} 
+    Automatically pads or truncates the cross section data to match the number of moments in the moments_array. 
+
+    The transpose of _scatter_kernel_xs_indexed_discrete does not matter; it does not have a angle index.
+
+    Parameters
+    ----------
+    elem_idx : int
+        The element index.      
+    g_out : int
+        The outgoing energy group index.
+    g_in : int
+        The incoming energy group index.
+    cross_section_indexed : CrossSectionIndexed
+        The indexed cross section data structure.
+    discrete_array : jnp.ndarray [n_basis, n_angles]
+        The discrete angular flux for the specified element and energy group.
+    yklm : jnp.ndarray [n_angles, n_moments]
+        The yklm matrix for the quadrature set.
+    '''
+    moment_array = _moment_to_discrete_kernel_transposed(discrete_array, yklm)  # [n_moments, n_basis]
+    return _scatter_kernel_xs_indexed_kernel(elem_idx, g_out, g_in, cross_section_indexed, moment_array)  # [n_basis, n_moments]
+

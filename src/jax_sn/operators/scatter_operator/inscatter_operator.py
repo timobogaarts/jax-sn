@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from .scatter_operator_util import _scatter_kernel_xs_indexed_discrete
+from .scatter_operator_util import _scatter_kernel_xs_indexed_discrete, _scatter_kernel_xs_indexed_discrete_transposed
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.domain.geometric_domain import CrossSectionIndexed
 
@@ -10,6 +10,30 @@ from jax_sn.quadrature_set import QuadratureSet
 import lineax as lx
 
 class InScatterOperator(AbstractLinearOperator_sn):
+    r'''
+    InScatterOperator represents the in-scattering operator that maps angular flux moments to discrete angles using indexed cross sections.
+
+    Implements:
+
+    .. math::
+        \mathbf{S} = \mathbf{S}_1 \otimes \mathbf{I}_F : \mathcal{M} \otimes F \to \mathcal{D} \otimes F
+
+    where :math:`\mathbf{S}_1` is the single-element in-scattering operator defined as:
+
+    .. math::
+        s_{ki} = \sum_{lm} Y_{klm} \sigma_{l, g_{out}\from g_{in}}^{(e)} \psi_{lm, i}^{ g_{in})} =\sum_{lm} S_{klm}^{g_{out}\from g_{in}} \psi_{lm, i}^{ g_{in})}
+
+    Tranpose is thus:
+
+    .. math::
+        \mathbf{S}^T = \mathbf{S}_1^T \otimes \mathbf{I}_F : \mathcal{D} \otimes F \to \mathcal{M} \otimes F
+
+    .. math::
+        \psi_{lm, i}^{ g_{in})} = \sum_{k} Y_{klm} \sigma_{l, g_{out}\from g_{in}}^{(e)} s_{ki}
+
+    '''
+
+
     yklm                  : jnp.ndarray           # [n_angles, n_moments]
     cross_section_indexed : CrossSectionIndexed
     energy_group          : int
@@ -57,8 +81,8 @@ class InScatterOperator(AbstractLinearOperator_sn):
                                                     self.cross_section_indexed,
                                                     x,
                                                     self.yklm)
-    def transpose(self) -> "InScatterOperator":
-        raise NotImplementedError("Transpose of InScatterOperator is not implemented. [but will be required!]")        
+    def transpose(self) -> "InScatterOperatorTransposed":
+        return InScatterOperatorTransposed(self.yklm, self.cross_section_indexed, self.energy_group, self.elements_basis_shape)
     
     def in_structure(self):
         return jax.ShapeDtypeStruct(
@@ -119,6 +143,83 @@ def total_scattering_kernel_xs_indexed_discrete(
     '''    
     return jax.vmap(
         _scatter_kernel_xs_indexed_discrete,
+        in_axes=(0, None, None, None, None, None),
+        out_axes=1
+    )(jnp.arange(cross_section_indexed.indices.shape[0]), g_out, g_in, cross_section_indexed, moments_array, yklm)
+
+
+class InScatterOperatorTransposed(InScatterOperator):
+    r'''
+    Transpose of the InScatterOperator. See InScatterOperator for details.
+    '''
+    
+    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
+        assert x.shape == self.in_structure().shape, f"Input x shape {x.shape} does not match expected in_structure shape {self.in_structure().shape}."
+        return total_scattering_kernel_xs_indexed_discrete_transpose(
+                                                    self.energy_group,  # g_out = self energy group
+                                                    self.energy_group,  # g_in  = self energy group
+                                                    self.cross_section_indexed,
+                                                    x,
+                                                    self.yklm)
+    def transpose(self) -> "InScatterOperator":
+        return InScatterOperator(self.yklm, self.cross_section_indexed, self.energy_group, self.elements_basis_shape)
+    
+    def in_structure(self):
+        return InScatterOperator.out_structure(self)
+            
+    def out_structure(self):
+        return InScatterOperator.in_structure(self)
+            
+
+@lx.is_symmetric.register(InScatterOperatorTransposed)
+def _(operator):
+    return False
+    
+@lx.linearise.register(InScatterOperatorTransposed)
+def _(operator):
+    return operator
+
+@jax.jit
+def total_scattering_kernel_xs_indexed_discrete_transpose(        
+        g_out                       : int,
+        g_in                        : int,
+        cross_section_indexed       : CrossSectionIndexed,
+        moments_array               : jnp.ndarray,
+        yklm                        : jnp.ndarray
+    ) -> jnp.ndarray:
+    r'''
+    Computes the total scattering source in discrete angles for multiple elements.
+
+    Computes:
+
+    .. math::
+        s_{kei} = \sum_{lm} Y_{klm} \sigma_{l, g_{out}\from g_{in}}^{(e)} \psi_{lm, ei}^{ g_{in})}
+
+    Ensures the angles are the leading dimension. 
+
+    Parameters
+    ----------
+    elem_indices : jnp.ndarray [n_elements]
+        The element indices to compute the scattering source for.
+    g_out : int
+        The outgoing energy group index.
+    g_in : int
+        The incoming energy group index.
+    cross_section_indexed : CrossSectionIndexed
+        The indexed cross section data structure.
+    moments_array : jnp.ndarray [n_moments, n_elements, n_basis]
+        The moments array containing angular flux moments.
+    yklm : jnp.ndarray [n_angles, n_moments]
+        The yklm matrix for the quadrature set.
+
+    Returns
+    -------
+    jnp.ndarray [n_angles, n_elements, n_basis]
+        The total scattering source in discrete angles for the specified elements and energy groups.
+    
+    '''    
+    return jax.vmap(
+        _scatter_kernel_xs_indexed_discrete_transposed,
         in_axes=(0, None, None, None, None, None),
         out_axes=1
     )(jnp.arange(cross_section_indexed.indices.shape[0]), g_out, g_in, cross_section_indexed, moments_array, yklm)

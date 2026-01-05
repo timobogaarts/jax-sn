@@ -125,8 +125,6 @@ def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim,
     from jax_sn.domain.geometric_domain import TopologicalSortedAngle
     from jax_sn.operators.single_group_operator import SingleGroupOperator
 
-
-    degree = 2 
             
     solution_domain, sources, quadrature_set = setup_anisotropic(dim, degree, n_elem_regions, d_other_dim, n_other_dim, tn_order) 
 
@@ -138,8 +136,6 @@ def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim,
     source_total              = jnp.broadcast_to(sources[0][None, :, :], (topological_sorted_angles.angle.shape[0],) + sources[0].shape) # source for all angles
     Aop = SingleGroupOperator(moment_operator, transport_operator, mass_operator, scatter_op)
     return Aop, source_total, solution_domain
-
-
 
 @pytest.fixture(params=[1,2,3], scope='session')
 def _setup_anisotropic_scattering(request):    

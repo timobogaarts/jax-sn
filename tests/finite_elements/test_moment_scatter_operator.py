@@ -110,3 +110,29 @@ def check_moment_operator(dimension, degree, tn_order, lmax, _verts_conn_functio
                            (3,2,4, 3)])
 def test_moment_operator(dimension, degree, lmax, tn_order):
     check_moment_operator(dimension, degree, tn_order, lmax, _verts_conn_from_sb, _source_from_sb, _cross_sections_from_sb, _expected_value_from_sb)
+
+def test_moment_operator_transpose():
+    
+    quadrature_set = jax_sn.quadrature_set.create_tn_quadrature_set(3)    
+    element_basis = jax.ShapeDtypeStruct(shape=(10, 15), dtype=quadrature_set.angles.dtype)
+    moment_operator = jax_sn.operators.moment_operator.MomentOperator.from_quadrature_set(quadrature_set, 5, element_basis)
+    from .operator_util import _check_adjoint_of_operator
+    
+    _check_adjoint_of_operator(moment_operator)
+
+
+
+def test_scatter_operator_transpose():
+    onp.random.seed(5012026)
+    quadrature_set = jax_sn.quadrature_set.create_tn_quadrature_set(3)    
+    n_elem = 10
+
+    xs_data_total = jnp.array(onp.random.rand(n_elem,2,2))
+    xs_data_scat = jnp.array(onp.random.rand(n_elem, 16, 2,2))
+
+    cross_section_data= jax_sn.domain.cross_sections.CrossSectionData(xs_data_total, xs_data_scat)
+    cross_sections_indexed = jax_sn.domain.geometric_domain.CrossSectionIndexed(jnp.arange(n_elem), cross_section_data)
+
+    scatter_operator = jax_sn.operators.scatter_operator.InScatterOperator.from_quadrature_set_and_cross_sections(quadrature_set, cross_sections_indexed, 0, 3, jax.ShapeDtypeStruct((n_elem, 3), dtype = xs_data_total.dtype))
+    from .operator_util import _check_adjoint_of_operator
+    _check_adjoint_of_operator(scatter_operator)

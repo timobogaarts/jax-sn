@@ -7,7 +7,7 @@ from jax_sn.operators.scatter_operator import InScatterOperator
 from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles
 import lineax as lx 
 
-
+import equinox as eqx
 
 class SingleGroupOperator(AbstractLinearOperator_sn):
     r'''
@@ -20,6 +20,11 @@ class SingleGroupOperator(AbstractLinearOperator_sn):
 
     where :math:`\mathbf{T}` is the (multi-angle) transport operator, \mathbf{H} the batched (over angles) mass operator, :math:`\mathbf{M}` the batched (over element and basis function)
     moment operator,  :math:`\mathbf{S}` the batched (over element and basis) scattering operator.
+
+    Mathematically, this operator maps:
+
+    .. math::
+        \mathbf{A}_g : \mathcal{M} \otimes F \rightarrow \mathcal{M} \otimes F
 
     '''
 
@@ -48,7 +53,10 @@ class SingleGroupOperator(AbstractLinearOperator_sn):
                                         x)
     
     def transpose(self):
-        raise NotImplementedError("Transpose of SingleGroupOperatorImp is not YET implemented.")
+        return SingleGroupOperatorTranspose(self.moment_operator,
+                                            self.transport_operator,
+                                            self.mass_operator,
+                                            self.scatter_operator)  
     
     def conj(self):
         return self  # real operator
@@ -80,7 +88,7 @@ def _(operator : SingleGroupOperator):
         
     
 
-#@jax.jit
+@eqx.filter_jit
 def _mv_single_group_operator(moment_operator, transport_operator, mass_operator, scatter_operator, x):
     r'''
     Multiplies the single group operator with a vector x.
@@ -103,4 +111,66 @@ def _mv_single_group_operator(moment_operator, transport_operator, mass_operator
     jnp.ndarray
         The result of the multiplication.
     '''        
-    return x - moment_operator.mv(transport_operator.inv(mass_operator.mv(scatter_operator.mv(x)))) # move direction axis back to last position
+    return x - moment_operator.mv(transport_operator.inv(mass_operator.mv(scatter_operator.mv(x)))) 
+
+
+@eqx.filter_jit
+def _mv_single_group_operator_transpose(moment_operator, transport_operator, mass_operator, scatter_operator, x):
+    r'''
+    Multiplies the transpose of the single group operator with a vector x.
+
+    Since the transposes are trivial (we only point to a different function), this does not add any overhead.
+
+    Parameters
+    ----------
+    moment_operator : MomentOperator
+        The moment operator :math:`\mathbf{M}`.
+    transport_operator : TransportOperatorMultipleAngles
+        The transport operator :math:`\mathbf{T}^{-1}`.
+    mass_operator : MassOperator
+        The mass operator :math:`\mathbf{H}`.
+    scatter_operator : InScatterOperator
+        The scattering operator :math:`\mathbf{S}`.
+    x : jnp.ndarray
+        The input vector.
+
+    Returns
+    -------
+    jnp.ndarray
+        The result of the multiplication.
+    '''        
+    return x - scatter_operator.transpose().mv(mass_operator.transpose().mv(transport_operator.transpose().inv(moment_operator.transpose().mv(x))))
+
+class SingleGroupOperatorTranspose(SingleGroupOperator):
+    r'''
+    Transpose of the SingleGroupOperator. See SingleGroupOperator for details.
+    '''
+    
+    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
+        assert x.shape == self.in_structure().shape, f"Input x shape {x.shape} does not match expected in_structure shape {self.in_structure().shape}."
+        return _mv_single_group_operator_transpose(self.moment_operator,
+                                                   self.transport_operator,
+                                                   self.mass_operator,
+                                                   self.scatter_operator,
+                                                   x)
+    
+    def transpose(self) -> "SingleGroupOperator":
+        return SingleGroupOperator(self.moment_operator,
+                                   self.transport_operator,
+                                   self.mass_operator,
+                                   self.scatter_operator)
+    
+    def in_structure(self):
+        return SingleGroupOperator.out_structure(self)
+            
+    def out_structure(self):
+        return SingleGroupOperator.in_structure(self)    
+
+@lx.is_symmetric.register(SingleGroupOperatorTranspose)
+def _(operator : SingleGroupOperatorTranspose):
+    return False
+
+@lx.linearise.register(SingleGroupOperatorTranspose)
+def _(operator : SingleGroupOperatorTranspose):
+    return operator    
+        
