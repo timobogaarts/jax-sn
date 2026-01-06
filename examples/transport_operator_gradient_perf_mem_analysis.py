@@ -78,8 +78,8 @@ def _run_single_angle_operators(dim, degree):
 
 def _run_multi_angle_operators(dim, degree):
     transportoperators_ma = {    
-        TransportOperatorBatched : {"batch_size" : 1000},             
-        TransportOperatorBatchedPallas: {"batch_size" : 1000}}
+        TransportOperatorBatched : {"batch_size" : 100},             
+        TransportOperatorBatchedPallas: {"batch_size" : 100}}
     
     solution_domain, sources = setup_base_case(3,2)    
     

@@ -51,3 +51,11 @@ class CrossSectionData:
                   total n_dim:{self.total.ndim}, sattering n_dim:{self.scattering.ndim}.\
                   Total shape: {self.total.shape}, Scattering shape: {self.scattering.shape}"
         assert self.total.shape[:-1] == self.scattering.shape[:-3], f"Total and scattering cross sections must be batched over the same leading dimensions. Total shape: {self.total.shape}, Scattering shape: {self.scattering.shape}"
+
+    def assert_n_energy_groups(self, n_energy_groups : int) -> bool:
+        assert self.total.shape[-1] >= n_energy_groups,\
+                f"Total cross section number of energy groups must be at least {n_energy_groups}. Provided shape: {self.total.shape}"
+        assert self.scattering.shape[-2] >= n_energy_groups and self.scattering.shape[-1] >= n_energy_groups,\
+                f"Scattering cross section number of energy groups must be at least {n_energy_groups}. Provided shape: {self.scattering.shape}"
+        
+               

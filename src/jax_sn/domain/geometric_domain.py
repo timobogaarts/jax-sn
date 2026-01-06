@@ -87,6 +87,10 @@ class CrossSectionIndexed:
     @property 
     def n_energy_groups(self):
         return self.cross_section_data.total.shape[-1]
+    
+    @property
+    def l_max(self):
+        return self.cross_section_data.scattering.shape[-3] - 1
 
 @jax.jit
 def _map_cross_sections_to_full_array(cross_sections : CrossSectionIndexed, energy_group : int) -> CrossSectionDataSingleGroup:

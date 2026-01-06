@@ -31,16 +31,16 @@ class SingleGroupOperator(AbstractLinearOperator_sn):
     moment_operator    : MomentOperator
     transport_operator : TransportOperatorMultipleAngles
     mass_operator      : MassOperator
-    scatter_operator   : InScatterOperator
+    inscatter_operator   : InScatterOperator
 
     def __check_init__(self):
-        assert self.transport_operator.energy_group == self.scatter_operator.energy_group, f"Energy group mismatch between operators: transport: {self.transport_operator.energy_group}, scatter: {self.scatter_operator.energy_group}"
+        #assert self.transport_operator.energy_group == self.inscatter_operator.energy_group, f"Energy group mismatch between operators: transport: {self.transport_operator.energy_group}, scatter: {self.inscatter_operator.energy_group}"
         assert isinstance(self.transport_operator, TransportOperatorMultipleAngles), f"transport_operator must be of type TransportOperatorMultipleAngles but is {type(self.transport_operator)}"
         assert isinstance(self.moment_operator, MomentOperator), f"moment_operator must be of type MomentOperator but is {type(self.moment_operator)}"
         assert isinstance(self.mass_operator, MassOperator), f"mass_operator must be of type MassOperator but is {type(self.mass_operator)}"
-        assert isinstance(self.scatter_operator, InScatterOperator), f"scatter_operator must be of type InScatterOperator but is {type(self.scatter_operator)}"
+        assert isinstance(self.inscatter_operator, InScatterOperator), f"inscatter_operator must be of type InScatterOperator but is {type(self.inscatter_operator)}"
         assert self.mass_operator.out_structure() == self.transport_operator.out_structure(), f"mass_operator out_structure {self.mass_operator.out_structure()} must match transport_operator [note it is inverted] out_structure {self.transport_operator.out_structure()}"
-        assert self.scatter_operator.in_structure() == self.moment_operator.out_structure(), f"scatter_operator in_structure {self.scatter_operator.in_structure()} must match moment_operator out_structure {self.moment_operator.out_structure()}"
+        assert self.inscatter_operator.in_structure() == self.moment_operator.out_structure(), f"inscatter_operator in_structure {self.inscatter_operator.in_structure()} must match moment_operator out_structure {self.moment_operator.out_structure()}"
         assert self.transport_operator.in_structure() == self.moment_operator.in_structure(), f"transport_operator in_structure [note it is inverted] {self.transport_operator.in_structure()} must match moment_operator in_structure {self.moment_operator.in_structure()}"
         # TODO add more checks? shapes, etc.
          
@@ -49,21 +49,17 @@ class SingleGroupOperator(AbstractLinearOperator_sn):
         return _mv_single_group_operator(self.moment_operator,
                                         self.transport_operator,
                                         self.mass_operator,
-                                        self.scatter_operator,
+                                        self.inscatter_operator,
                                         x)
     
-    def transpose(self):
+    def transpose(self) -> "SingleGroupOperatorTranspose":
         return SingleGroupOperatorTranspose(self.moment_operator,
                                             self.transport_operator,
                                             self.mass_operator,
-                                            self.scatter_operator)  
+                                            self.inscatter_operator)  
     
-    def conj(self):
-        return self  # real operator
-
-    def as_matrix(self):
-        assert False, "Not desired for SingleGroupOperatorImp due to large size"        
-        return jnp.array([[]])
+    def to_energy_group(self, energy_group)-> "SingleGroupOperator":
+        return SingleGroupOperator(self.moment_operator, self.transport_operator.to_energy_group(energy_group), self.mass_operator, self.inscatter_operator.to_energy_group(energy_group))
     
     def in_structure(self):
         return jax.ShapeDtypeStruct((self.moment_operator.wk_yklm.shape[-1],) + self.transport_operator.out_structure().shape[1:] , self.moment_operator.wk_yklm.dtype)
@@ -89,7 +85,7 @@ def _(operator : SingleGroupOperator):
     
 
 @eqx.filter_jit
-def _mv_single_group_operator(moment_operator, transport_operator, mass_operator, scatter_operator, x):
+def _mv_single_group_operator(moment_operator, transport_operator, mass_operator, inscatter_operator, x):
     r'''
     Multiplies the single group operator with a vector x.
 
@@ -101,7 +97,7 @@ def _mv_single_group_operator(moment_operator, transport_operator, mass_operator
         The transport operator :math:`\mathbf{T}^{-1}`.
     mass_operator : MassOperator
         The mass operator :math:`\mathbf{H}`.
-    scatter_operator : InScatterOperator
+    inscatter_operator : InScatterOperator
         The scattering operator :math:`\mathbf{S}`.
     x : jnp.ndarray
         The input vector.
@@ -111,11 +107,11 @@ def _mv_single_group_operator(moment_operator, transport_operator, mass_operator
     jnp.ndarray
         The result of the multiplication.
     '''        
-    return x - moment_operator.mv(transport_operator.inv(mass_operator.mv(scatter_operator.mv(x)))) 
+    return x - moment_operator.mv(transport_operator.inv(mass_operator.mv(inscatter_operator.mv(x)))) 
 
 
 @eqx.filter_jit
-def _mv_single_group_operator_transpose(moment_operator, transport_operator, mass_operator, scatter_operator, x):
+def _mv_single_group_operator_transpose(moment_operator, transport_operator, mass_operator, inscatter_operator, x):
     r'''
     Multiplies the transpose of the single group operator with a vector x.
 
@@ -129,7 +125,7 @@ def _mv_single_group_operator_transpose(moment_operator, transport_operator, mas
         The transport operator :math:`\mathbf{T}^{-1}`.
     mass_operator : MassOperator
         The mass operator :math:`\mathbf{H}`.
-    scatter_operator : InScatterOperator
+    inscatter_operator : InScatterOperator
         The scattering operator :math:`\mathbf{S}`.
     x : jnp.ndarray
         The input vector.
@@ -139,7 +135,7 @@ def _mv_single_group_operator_transpose(moment_operator, transport_operator, mas
     jnp.ndarray
         The result of the multiplication.
     '''        
-    return x - scatter_operator.transpose().mv(mass_operator.transpose().mv(transport_operator.transpose().inv(moment_operator.transpose().mv(x))))
+    return x - inscatter_operator.transpose().mv(mass_operator.transpose().mv(transport_operator.transpose().inv(moment_operator.transpose().mv(x))))
 
 class SingleGroupOperatorTranspose(SingleGroupOperator):
     r'''
@@ -151,14 +147,14 @@ class SingleGroupOperatorTranspose(SingleGroupOperator):
         return _mv_single_group_operator_transpose(self.moment_operator,
                                                    self.transport_operator,
                                                    self.mass_operator,
-                                                   self.scatter_operator,
+                                                   self.inscatter_operator,
                                                    x)
     
     def transpose(self) -> "SingleGroupOperator":
         return SingleGroupOperator(self.moment_operator,
                                    self.transport_operator,
                                    self.mass_operator,
-                                   self.scatter_operator)
+                                   self.inscatter_operator)
     
     def in_structure(self):
         return SingleGroupOperator.out_structure(self)

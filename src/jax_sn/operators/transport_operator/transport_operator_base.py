@@ -243,6 +243,9 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
     def out_structure(self):
         return self._shape_inout
     
+    def to_energy_group(self, energy_group : int) -> "TransportOperatorMultipleAngles":
+        return eqx.tree_at(lambda t_operator : t_operator.transport_operator.energy_group, self, energy_group)
+    
     @property
     def solution_domain_data(self):
         return self.transport_operator.solution_domain_data
