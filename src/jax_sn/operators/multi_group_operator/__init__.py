@@ -1,6 +1,6 @@
-from .multi_group_operator_imp import MultiGroupOperator, MultiGroupOperatorFori
+from .multi_group_operator_imp import MultiGroupOperator, MultiGroupOperatorScan
 
 __all__ = [
     'MultiGroupOperator',
-    "MultiGroupOperatorFori"
+    "MultiGroupOperatorScan"
 ]

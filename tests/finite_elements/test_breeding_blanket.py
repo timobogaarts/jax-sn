@@ -344,7 +344,7 @@ def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_o
     from jax_sn.operators.mass_operator import MassOperator
     from jax_sn.operators.moment_operator import MomentOperator
     from jax_sn.domain.geometric_domain import TopologicalSortedAngle
-    from jax_sn.operators.multi_group_operator import MultiGroupOperatorFori
+    from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan
     from jax_sn.operators.scatter_operator.total_scatter_operator import TotalGroupScatterOperator        
 
     solution_domain, sources, quadrature_set = setup_bb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order) 
@@ -363,7 +363,7 @@ def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_o
                                                                                                  groups_elements_basis_shape=jax.ShapeDtypeStruct(groups_elements_basis_shape, dtype=solution_domain.elements_basis_shape.dtype))
 
     source_total              = jnp.broadcast_to(sources[None, :, :], (topological_sorted_angles.angle.shape[0],) + sources.shape) # source for all angles
-    Aop                       = MultiGroupOperatorFori(moment_operator, transport_operator, mass_operator, scatter_op, n_energy_groups)
+    Aop                       = MultiGroupOperatorScan(moment_operator, transport_operator, mass_operator, scatter_op, n_energy_groups)
     return Aop, source_total, solution_domain
 
 def _get_bb_args(dim, degree):

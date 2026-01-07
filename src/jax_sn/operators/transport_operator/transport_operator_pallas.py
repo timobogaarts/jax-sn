@@ -26,6 +26,9 @@ from jax.experimental import pallas as pl
 # This padding can add significant overhead, especially as the number of basis functions in simplices does not map nicely to power of two.
 # Therefore, the Pallas versions are best suited for low-order elements with a number of basis functions close to a power of two.
 # 
+# One issue is that due to the padding, we have to allocate large temporary arrays for each sweep. This is not re-used in the output, as 
+# we need to copy and allocate a new, not padded array, to return the result.
+# If it is exactly a power of two, this is not an issue, but for other sizes this can lead to significant memory overhead.
 
 # Some timings (RTX3080) [auto generated from examples/time_pallas.py]:
 # Timings for a degree 0 tetrahedron domain with 60000 elements and batch size 1000

@@ -50,6 +50,37 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
             shape=(self.n_energy_groups,) + self.moment_operator.out_structure().shape,
             dtype  =self.moment_operator.out_structure().dtype            
         )
+    
+    def to_single_group_operator(self, g_i : int) -> SingleGroupOperator:
+        r'''
+        Convert to single group operator for energy group g_i.
+
+        Parameters
+        ----------
+        g_i : int
+            Energy group index.
+        Returns
+        -------
+        SingleGroupOperator
+            The single group operator for energy group g_i.
+        ''' 
+        return SingleGroupOperator(self.moment_operator, self.transport_operator.to_energy_group(g_i), self.mass_operator, self.scatter_operator.to_inscatter(g_i))
+    
+    @property 
+    def n_elements(self):
+        return self.transport_operator.solution_domain_data.domain.n_elements
+    
+    @property 
+    def n_angles(self):
+        return self.transport_operator.n_angles
+    
+    @property 
+    def n_moments(self):
+        return self.moment_operator.n_moments
+    
+    @property 
+    def n_basis(self):
+        return self.transport_operator.solution_domain_data.n_basis
 
 @lx.is_symmetric.register(MultiGroupOperator)
 def _(operator : MultiGroupOperator):
@@ -61,31 +92,39 @@ def _(operator : MultiGroupOperator):
 
 
 @eqx.filter_jit
-def _multi_group_operator_fori(n_energy_groups : int, moment_operator    : MomentOperator, transport_operator : TransportOperatorMultipleAngles,  mass_operator      : MassOperator,  scatter_operator   : TotalGroupScatterOperator, x : jnp.ndarray) -> jnp.ndarray:
+def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : MomentOperator, transport_operator : TransportOperatorMultipleAngles,  mass_operator      : MassOperator,  scatter_operator   : TotalGroupScatterOperator, x : jnp.ndarray) -> jnp.ndarray:
 
     in_structure_shape = (n_energy_groups,) + moment_operator.out_structure().shape
 
     assert x.shape == in_structure_shape, f"Input x shape {x.shape} does not match expected in_structure shape {in_structure_shape}."
     result = jnp.zeros(in_structure_shape, dtype=moment_operator.in_structure().dtype)
-    
-    def _single_energy_group(g_i : int, result):
+        
+    def _single_energy_group(_, g_i):
         scatter_source = scatter_operator.to_energy_group(g_i).mv(x)
-        return result.at[g_i].set(x[g_i] - moment_operator.mv(transport_operator.to_energy_group(g_i).inv(mass_operator.mv(scatter_source))))
+        y_g = (x[g_i] - moment_operator.mv(transport_operator.to_energy_group(g_i).inv(mass_operator.mv(scatter_source))))
+        return None, y_g
+    
+    _, result = jax.lax.scan(
+        _single_energy_group,
+        init=None,
+        xs=jnp.arange(n_energy_groups),
+    )
 
-    return jax.lax.fori_loop(0, n_energy_groups, _single_energy_group, result)
+    return result
 
 
-class MultiGroupOperatorFori(MultiGroupOperator):
+
+class MultiGroupOperatorScan(MultiGroupOperator):
     r'''
     Multi energy group linear operator implementation using fori_loop over energy groups.
     This saves considerable memory compared to vmap implementation.
 
     '''    
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        return _multi_group_operator_fori(self.n_energy_groups, self.moment_operator, self.transport_operator, self.mass_operator, self.scatter_operator, x)
+        return _multi_group_operator_scan(self.n_energy_groups, self.moment_operator, self.transport_operator, self.mass_operator, self.scatter_operator, x)
     
     def transpose(self):
-        raise ValueError("Transpose not implemented for MultiGroupOperatorFori yet")
+        raise ValueError("Transpose not implemented for MultiGroupOperatorScan yet")
    
 
 
@@ -114,7 +153,7 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver, rhs : jnp.ndarray)
         top_i = mgop.transport_operator.to_energy_group(i)
         sgop = SingleGroupOperator(mgop.moment_operator, mgop.transport_operator.to_energy_group(i), mgop.mass_operator, mgop.scatter_operator.to_inscatter(i))
         rhs_i = rhs[i] + mgop.moment_operator.mv(top_i.inv(mgop.mass_operator.mv(mgop.scatter_operator.to_energy_group(i).mv(solution))))        
-        return solution.at[i].set(lx.linear_solve(sgop, rhs_i, solver).value)
+        return solution.at[i].set(lx.linear_solve(sgop, rhs_i, solver, throw = False).value)
     return jax.lax.fori_loop(0, n_groups, body_fun, solution) 
 
 @eqx.filter_jit

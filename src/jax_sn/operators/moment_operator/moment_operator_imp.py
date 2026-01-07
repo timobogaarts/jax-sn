@@ -74,6 +74,10 @@ class MomentOperator(AbstractLinearOperator_sn):
         return jax.ShapeDtypeStruct(
             shape=(self.wk_yklm.shape[1],) + self.elements_basis_shape.shape, 
             dtype=self.wk_yklm.dtype)
+    
+    @property 
+    def n_moments(self):
+        return self.wk_yklm.shape[1]
 
 
 @lx.is_symmetric.register(MomentOperator)

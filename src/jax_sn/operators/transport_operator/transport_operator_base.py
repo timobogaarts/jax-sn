@@ -119,6 +119,10 @@ class TransportOperator(AbstractLinearOperator_sn):
     def _vmap_for_inv_multiple_angles(self):
         return (None, None, None, None, 0,0)
     
+    @property 
+    def n_angles(self):
+        return 1
+    
 
     
 @lx.is_symmetric.register(TransportOperator)
@@ -267,6 +271,9 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
         n_basis    = self.transport_operator.solution_domain_data.fem_matrices.n_basis        
         return jax.ShapeDtypeStruct((n_angles, n_elements, n_basis), self.transport_operator.solution_domain_data.fem_matrices.mass_matrix.dtype)
     
+    @property
+    def n_angles(self):
+        return self.transport_operator.topological_sorted_angle.angle.shape[0]
 
 @lx.is_symmetric.register(TransportOperatorMultipleAngles)
 def _(operator : TransportOperator):
@@ -283,5 +290,7 @@ class TransportOperatorMultipleAnglesVmap(TransportOperatorMultipleAngles):
     
     def _invert_internal(self, b : jnp.ndarray) -> jnp.ndarray:
         return vmap_multiple_angles_inv(self.transport_operator, b)
+    
+
 
         
