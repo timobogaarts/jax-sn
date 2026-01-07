@@ -69,7 +69,7 @@ class TransportOperator(AbstractLinearOperator_sn):
     
     def inv(self, b : jnp.ndarray) -> jnp.ndarray:
         solver = TransportOperatorSolver()
-        return lx.linear_solve(self, b, solver).value
+        return lx.linear_solve(self, b, solver, throw=False).value
     
     def as_matrix(self):
         assert False, "Not desired for TransportOperator due to large size"
@@ -225,7 +225,7 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
 
     def inv(self, b : jnp.ndarray) -> jnp.ndarray:
         solver = TransportOperatorSolver()
-        return lx.linear_solve(self, b, solver).value
+        return lx.linear_solve(self, b, solver, throw=False).value
     
     def transpose(self):
         return eqx.tree_at(lambda t_operator : t_operator.transport_operator.topological_sorted_angle, self, self.transport_operator.topological_sorted_angle.reverse)    
