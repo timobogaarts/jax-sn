@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
-from jax_sn.operators.single_group_operator import SingleGroupOperator
+from jax_sn.operators.single_group_operator import SingleGroupOperator, SingleGroupOperatorTranspose
 from jax_sn.operators.moment_operator import MomentOperator
 from jax_sn.operators.scatter_operator.total_scatter_operator import TotalGroupScatterOperator
 from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles
@@ -89,6 +89,34 @@ def _(operator : MultiGroupOperator):
 @lx.linearise.register(MultiGroupOperator)
 def _(operator : MultiGroupOperator):
     return operator
+
+class MultiGroupOperatorTranspose(MultiGroupOperator):
+    r'''
+    Multi energy group linear operator transpose implementation.
+    ''' 
+    @abstractmethod   
+    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
+        ...
+    
+    @abstractmethod
+    def transpose(self):
+        ...
+
+    def to_single_group_operator(self, g_i : int) -> SingleGroupOperatorTranspose:
+        r'''
+        Convert to single group operator (transpose) for energy group g_i.
+
+        Parameters
+        ----------
+        g_i : int
+            Energy group index.
+        Returns
+        -------
+        SingleGroupOperatorTranspose
+            The single group operator for energy group g_i.
+        ''' 
+        return SingleGroupOperatorTranspose(self.moment_operator, self.transport_operator.to_energy_group(g_i), self.mass_operator, self.scatter_operator.to_inscatter(g_i))
+    
 
 
 @eqx.filter_jit

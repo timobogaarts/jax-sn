@@ -30,6 +30,18 @@ from jax_sn.tools.memory_analysis import _filter_jit_f_to_memory
 # %%
 from breeding_blanket_setup import bb_data_dict, base_region_sizes, base_resolutions,  _get_bb_args, _setup_bb_args, _get_bb_args
 
+def n_timings(dim):
+    if dim ==2 or dim == 1:
+        return {"n_samples" : 30, "ignore_n" : 8}
+    elif dim ==3:
+        return {"n_samples" : 3, "ignore_n" : 1}
+    
+def n_timings_solve(dim):
+    if dim ==2 or dim == 1:
+        return {"number" : 3, "ignore_n" : 1}
+    elif dim ==3:
+        return {"number" : 1, "ignore_n" : 0}
+    
 def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
 
     def setup_mgop(dim, degree):
@@ -119,18 +131,18 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
 
     def analyse_timings(MGOP):
         print("TransportOperator")
-        _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP.transport_operator, "inv", n_samples=3, ignore_n=1))
+        _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP.transport_operator, "inv", **n_timings(dim)))
         print("MassOperator")
-        _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP.mass_operator, "mv", n_samples=3, ignore_n=1))
+        _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP.mass_operator, "mv",        **n_timings(dim)))
         print("MomentOperator")
-        _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP.moment_operator, "mv", n_samples=3, ignore_n=1))
+        _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP.moment_operator, "mv",      **n_timings(dim)))
         print("ScatterOperator")
-        _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP.scatter_operator, "mv", n_samples=3, ignore_n=1))
+        _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP.scatter_operator, "mv",     **n_timings(dim)))
         print("Single Group Operator")
         sgop = MGOP.to_single_group_operator(0)
-        _pprint_timing_analysis(OperatorAnalysis.analyze_timing(sgop, "mv", n_samples=3, ignore_n=1))
+        _pprint_timing_analysis(OperatorAnalysis.analyze_timing(sgop, "mv", **n_timings(dim)))
         print("Multi Group Operator")
-        _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP, "mv", n_samples=3, ignore_n=1))
+        _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP, "mv",**n_timings(dim)))
 
     print("Timing Analysis for MV of Operators")
     analyse_timings(MGOP)
@@ -178,10 +190,10 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
     def analyse_solve_timing(mgop):
         def solve_lower_triangular_part():
             return solve_lower_triangular(mgop, bicgstab_solver, rhs_total)
-        time, std_time = custom_timeit(solve_lower_triangular_part, number = 1)
+        time, std_time = custom_timeit(solve_lower_triangular_part, **n_timings_solve(dim))
         
         print(f"Lower triangular solve time: {time     * 1000:.2f} ms ")
-        time_d_n_mv = time / (mgop.n_energy_groups * bicgstab_solver.max_steps * 2)
+        time_d_n_mv = time / (mgop.n_energy_groups * (bicgstab_solver.max_steps * 2 + 1))  # each step has 2 MVs + 1 initial MV
         print(f"\t Total time divided by number of single group MV: {time_d_n_mv * 1000:.2f} ms ")
 
     analyse_solve_timing(MGOP)
@@ -193,6 +205,9 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
 
 run_all_for_particular_operator(3,2, TransportOperatorBatched, batch_size=100)
 run_all_for_particular_operator(3,2, TransportOperatorBatchedPallas, batch_size=100)
+
+run_all_for_particular_operator(2,2, TransportOperatorBatched, batch_size=100)
+run_all_for_particular_operator(2,2, TransportOperatorBatchedPallas, batch_size=100)
 
 # Sample Output RTx3080:
 # ================================
@@ -255,20 +270,19 @@ run_all_for_particular_operator(3,2, TransportOperatorBatchedPallas, batch_size=
 # temp           : 622.23 MB
 # Timing Analysis for MV of Operators
 # TransportOperator
-#         mv time      : 494.56 ms
+#         mv time      : 878.44 ms
 # MassOperator
-#         mv time      : 3.87 ms
+#         mv time      : 4.14 ms
 # MomentOperator
-#         mv time      : 5.04 ms
+#         mv time      : 4.92 ms
 # ScatterOperator
-#         mv time      : 4.93 ms
+#         mv time      : 5.09 ms
 # Single Group Operator
-#         mv time      : 496.37 ms
+#         mv time      : 959.57 ms
 # Multi Group Operator
-#         mv time      : 1938.63 ms
-# Lower triangular solve time: 22974.68 ms
-#          Total time divided by number of single group MV: 574.37 ms
-#
+#         mv time      : 3576.66 ms
+# Lower triangular solve time: 41574.71 ms
+#          Total time divided by number of single group MV: 944.88 ms
 # ================================
 # Analyzing operator: TransportOperatorBatchedPallas with params {'batch_size': 100}
 #  and problem_size:
@@ -329,16 +343,162 @@ run_all_for_particular_operator(3,2, TransportOperatorBatchedPallas, batch_size=
 # temp           : 721.11 MB
 # Timing Analysis for MV of Operators
 # TransportOperator
-#         mv time      : 186.12 ms
+#         mv time      : 529.51 ms
 # MassOperator
-#         mv time      : 3.86 ms
+#         mv time      : 3.82 ms
 # MomentOperator
-#         mv time      : 4.90 ms
+#         mv time      : 4.96 ms
 # ScatterOperator
-#         mv time      : 4.91 ms
+#         mv time      : 4.89 ms
 # Single Group Operator
-#         mv time      : 195.77 ms
+#         mv time      : 539.22 ms
 # Multi Group Operator
-#         mv time      : 783.78 ms
-# Lower triangular solve time: 9585.49 ms
-#          Total time divided by number of single group MV: 239.64 ms
+#         mv time      : 2253.96 ms
+# Lower triangular solve time: 26749.41 ms
+#          Total time divided by number of single group MV: 607.94 ms
+# ================================
+# Analyzing operator: TransportOperatorBatched with params {'batch_size': 100}
+#  and problem_size:
+#  n_energy_groups    : 4
+#  n_angles           : 72
+#  n_moments          : 36
+#  n_elements         : 500
+#  n_basis            : 6
+#  dim                : 2
+#  degree             : 2
+#  Total dofs         : 432000
+# ================================
+# Memory Analysis for MV of Operators
+# TransportOperator
+# peak           : 12.21 MB
+# argument       : 2.35 MB
+# output         : 1.65 MB
+# temp           : 8.22 MB
+# MassOperator
+# peak           : 6.60 MB
+# argument       : 1.65 MB
+# output         : 1.65 MB
+# temp           : 3.30 MB
+# MomentOperator
+# peak           : 4.16 MB
+# argument       : 1.67 MB
+# output         : 0.82 MB
+# temp           : 1.67 MB
+# ScatterOperator
+# peak           : 6.64 MB
+# argument       : 3.33 MB
+# output         : 1.65 MB
+# temp           : 1.67 MB
+# Single Group Operator
+# peak           : 13.74 MB
+# argument       : 1.58 MB
+# output         : 0.82 MB
+# temp           : 11.35 MB
+# Multi Group Operator
+# peak           : 18.87 MB
+# argument       : 4.05 MB
+# output         : 3.30 MB
+# temp           : 11.53 MB
+# Single Group Operator Solve
+# peak           : 19.04 MB
+# argument       : 1.63 MB
+# output         : 0.82 MB
+# temp           : 17.13 MB
+# Multi Group Operator Total Solve
+# peak           : 38.68 MB
+# argument       : 4.10 MB
+# output         : 3.30 MB
+# temp           : 32.31 MB
+# Multi Group Operator Group-wise Solve
+# peak           : 24.81 MB
+# argument       : 4.10 MB
+# output         : 3.30 MB
+# temp           : 17.43 MB
+# Timing Analysis for MV of Operators
+# TransportOperator
+#         mv time      : 20.12 ms
+# MassOperator
+#         mv time      : 0.46 ms
+# MomentOperator
+#         mv time      : 0.48 ms
+# ScatterOperator
+#         mv time      : 0.44 ms
+# Single Group Operator
+#         mv time      : 19.39 ms
+# Multi Group Operator
+#         mv time      : 69.77 ms
+# Lower triangular solve time: 834.20 ms
+#          Total time divided by number of single group MV: 18.96 ms
+# ================================
+# Analyzing operator: TransportOperatorBatchedPallas with params {'batch_size': 100}
+#  and problem_size:
+#  n_energy_groups    : 4
+#  n_angles           : 72
+#  n_moments          : 36
+#  n_elements         : 500
+#  n_basis            : 6
+#  dim                : 2
+#  degree             : 2
+#  Total dofs         : 432000
+# ================================
+# Memory Analysis for MV of Operators
+# TransportOperator
+# peak           : 24.06 MB
+# argument       : 2.35 MB
+# output         : 1.65 MB
+# temp           : 20.07 MB
+# MassOperator
+# peak           : 6.60 MB
+# argument       : 1.65 MB
+# output         : 1.65 MB
+# temp           : 3.30 MB
+# MomentOperator
+# peak           : 4.16 MB
+# argument       : 1.67 MB
+# output         : 0.82 MB
+# temp           : 1.67 MB
+# ScatterOperator
+# peak           : 6.64 MB
+# argument       : 3.33 MB
+# output         : 1.65 MB
+# temp           : 1.67 MB
+# Single Group Operator
+# peak           : 24.12 MB
+# argument       : 1.58 MB
+# output         : 0.82 MB
+# temp           : 21.72 MB
+# Multi Group Operator
+# peak           : 29.60 MB
+# argument       : 4.05 MB
+# output         : 3.30 MB
+# temp           : 22.26 MB
+# Single Group Operator Solve
+# peak           : 30.40 MB
+# argument       : 1.63 MB
+# output         : 0.82 MB
+# temp           : 27.96 MB
+# Multi Group Operator Total Solve
+# peak           : 49.42 MB
+# argument       : 4.10 MB
+# output         : 3.30 MB
+# temp           : 43.96 MB
+# Multi Group Operator Group-wise Solve
+# peak           : 36.17 MB
+# argument       : 4.10 MB
+# output         : 3.30 MB
+# temp           : 28.79 MB
+# Timing Analysis for MV of Operators
+# TransportOperator
+#         mv time      : 3.79 ms
+# MassOperator
+#         mv time      : 0.57 ms
+# MomentOperator
+#         mv time      : 0.56 ms
+# ScatterOperator
+#         mv time      : 0.44 ms
+# Single Group Operator
+#         mv time      : 3.56 ms
+# Multi Group Operator
+#         mv time      : 11.45 ms
+# Lower triangular solve time: 122.77 ms
+#          Total time divided by number of single group MV: 2.79 ms
