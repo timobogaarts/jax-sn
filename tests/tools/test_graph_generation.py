@@ -87,9 +87,9 @@ def test_levels(domain):
     angle = jax_sn.quadrature_set.tn.create_tn_quadrature_set(4)[100][0]
     
     networks_graph = create_networkx_graph(domain, angle)
-    generations = jax_sn.domain.compute_levels_domain(domain, angle, 15000, while_loop=True)
+    generations = jax_sn.domain.graph_generation.compute_levels_domain(domain, angle, 15000, while_loop=True)
 
-    generations_2 = jax_sn.domain.compute_levels_domain(domain, angle, 1500, while_loop=False)
+    generations_2 = jax_sn.domain.graph_generation.compute_levels_domain(domain, angle, 1500, while_loop=False)
 
     generations_3 = jax_sn.domain.graph_generation.compute_levels_domain_safe(domain , angle, n_iterations_per_loop=50)
     onp.testing.assert_array_equal(generations, generations_2)

@@ -1,3 +1,7 @@
+'''Module for graph generation utilities in the context of geometric domains.
+This contains internal functions to compute inflow faces and element levels based on angles.
+
+'''
 import jax
 import jax.numpy as jnp
 from .geometric_domain import GeometricDomain

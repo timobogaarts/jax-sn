@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import jax 
 from typing import List, Tuple  
 from .cross_sections import CrossSectionData
-from .geometric_domain import CrossSectionIndexed
+from .cross_sections import CrossSectionIndexed
 from .geometric_domain import Domain
 
 def create_cartesian_setup(dimension : int, region_size_res : List[List[Tuple]], cross_sections_regions : List[CrossSectionData], source_regions : List[float], inhomogeneity_direction : int):

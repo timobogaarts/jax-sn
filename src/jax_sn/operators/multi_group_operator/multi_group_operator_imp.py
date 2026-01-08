@@ -26,23 +26,39 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     transport_operator : TransportOperatorMultipleAngles
     mass_operator      : MassOperator
     scatter_operator   : TotalGroupScatterOperator    
-    n_energy_groups : int    
+    n_energy_groups    : int    
+    transpose_bool     : bool = False
 
     def __check_init__(self):
         self.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data.assert_n_energy_groups(self.n_energy_groups)
     
-    @abstractmethod
+    @eqx.filter_jit
     def mv(self, x):
+        if self.transpose_bool:
+            return self._mv_transpose(x)
+        else:   
+            return self._mv_forward(x)
+        
+    @abstractmethod
+    def _mv_forward(self,x):
         ...
 
     @abstractmethod
-    def transpose(self):
+    def _mv_transpose(self,x):
         ...
+    
+    def transpose(self):
+        return MultiGroupOperator(self.moment_operator,
+                                  self.transport_operator,
+                                  self.mass_operator,
+                                  self.scatter_operator,
+                                  self.n_energy_groups, 
+                                    not self.transpose_bool)        
 
     def in_structure(self):
         return jax.ShapeDtypeStruct(
             shape=(self.n_energy_groups,) + self.moment_operator.out_structure().shape,
-            dtype=self.moment_operator.out_structure().dtype
+            dtype=self.moment_operator.out_structure().dtype # in out struture same as transpose
         )
     
     def out_structure(self):
@@ -51,6 +67,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
             dtype  =self.moment_operator.out_structure().dtype            
         )
     
+    @eqx.filter_jit
     def to_single_group_operator(self, g_i : int) -> SingleGroupOperator:
         r'''
         Convert to single group operator for energy group g_i.
@@ -61,10 +78,16 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
             Energy group index.
         Returns
         -------
-        SingleGroupOperator
+        Singl   eGroupOperator
             The single group operator for energy group g_i.
         ''' 
-        return SingleGroupOperator(self.moment_operator, self.transport_operator.to_energy_group(g_i), self.mass_operator, self.scatter_operator.to_inscatter(g_i))
+        if self.transpose_bool:
+            return SingleGroupOperatorTranspose(self.moment_operator,
+                                                self.transport_operator.to_energy_group(g_i),
+                                                self.mass_operator,
+                                                self.scatter_operator.to_inscatter(g_i))
+        else:
+            return SingleGroupOperator(self.moment_operator, self.transport_operator.to_energy_group(g_i), self.mass_operator, self.scatter_operator.to_inscatter(g_i))
     
     @property 
     def n_elements(self):
@@ -90,37 +113,19 @@ def _(operator : MultiGroupOperator):
 def _(operator : MultiGroupOperator):
     return operator
 
-class MultiGroupOperatorTranspose(MultiGroupOperator):
-    r'''
-    Multi energy group linear operator transpose implementation.
-    ''' 
-    @abstractmethod   
-    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        ...
-    
-    @abstractmethod
-    def transpose(self):
-        ...
-
-    def to_single_group_operator(self, g_i : int) -> SingleGroupOperatorTranspose:
-        r'''
-        Convert to single group operator (transpose) for energy group g_i.
-
-        Parameters
-        ----------
-        g_i : int
-            Energy group index.
-        Returns
-        -------
-        SingleGroupOperatorTranspose
-            The single group operator for energy group g_i.
-        ''' 
-        return SingleGroupOperatorTranspose(self.moment_operator, self.transport_operator.to_energy_group(g_i), self.mass_operator, self.scatter_operator.to_inscatter(g_i))
-    
 
 
 @eqx.filter_jit
 def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : MomentOperator, transport_operator : TransportOperatorMultipleAngles,  mass_operator      : MassOperator,  scatter_operator   : TotalGroupScatterOperator, x : jnp.ndarray) -> jnp.ndarray:
+    '''
+    This computes the multi-group operator mv using a scan over energy groups.
+    Recall that the structure is like 
+
+    .. math::
+        \mathbf{A} = \\begin{bmatrix} \mathbf{A}_0 & D_{01} & D_{02} & ... & D_{0G} \\\\ 0 & \mathbf{A}_1 & D_{12} & ... & D_{1G} \\\\ ... & ... & ... & ... & ... \\\\ 0 & 0 & 0 & ... & \mathbf{A}_G \\end{bmatrix}
+
+    
+    '''
 
     in_structure_shape = (n_energy_groups,) + moment_operator.out_structure().shape
 
@@ -148,11 +153,13 @@ class MultiGroupOperatorScan(MultiGroupOperator):
     This saves considerable memory compared to vmap implementation.
 
     '''    
-    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
+    def _mv_forward(self, x : jnp.ndarray) -> jnp.ndarray:
         return _multi_group_operator_scan(self.n_energy_groups, self.moment_operator, self.transport_operator, self.mass_operator, self.scatter_operator, x)
     
-    def transpose(self):
-        raise ValueError("Transpose not implemented for MultiGroupOperatorScan yet")
+    def _mv_transpose(self, x):
+        raise NotImplementedError("Transpose multi-group operator using scan is not implemented yet.")
+    
+    
    
 
 

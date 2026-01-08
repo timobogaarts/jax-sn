@@ -3,7 +3,7 @@ import jax.numpy as jnp
 
 from .scatter_operator_util import _scatter_kernel_xs_indexed_discrete, _scatter_kernel_xs_indexed_discrete_transposed
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
-from jax_sn.domain.geometric_domain import CrossSectionIndexed
+from jax_sn.domain.cross_sections import CrossSectionIndexed
 
 from jax_sn.quadrature_set import QuadratureSet
 
@@ -18,20 +18,37 @@ class InScatterOperator(AbstractLinearOperator_sn):
     Implements:
 
     .. math::
-        \mathbf{S} = \mathbf{S}_1 \otimes \mathbf{I}_F : \mathcal{M} \otimes F \to \mathcal{D} \otimes F
+        \mathbf{S} = \mathbf{S}_b  \otimes \mathbf{I}_{\mathcal{B}} : \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B} \to \mathcal{D} \otimes F
 
-    where :math:`\mathbf{S}_1` is the single-element in-scattering operator defined as:
+    where :math:`F = \mathcal{E}\otimes \mathcal{B}` is the space of elements and basis functions, and :math:`\mathbf{S}_b` is the single-element in-scattering operator defined as:
 
     .. math::
-        s_{ki} = \sum_{lm} Y_{klm} \sigma_{l, g_{out}\from g_{in}}^{(e)} \psi_{lm, i}^{ g_{in})} =\sum_{lm} S_{klm}^{g_{out}\from g_{in}} \psi_{lm, i}^{ g_{in})}
+        \mathbf{S}_b [\psi_{lm, e}^{ g_{in}}] =
+        s_{ke} = \sum_{lm} Y_{klm} \sigma_{l, g_{out}\leftarrow g_{in}}^{e} \psi_{lm,e}^{ g_{in}} =\sum_{lm} S_{klme}^{g_{out}\leftarrow g_{in}} \psi_{lm, e}^{ g_{in}}
+
+    where :math:`\sigma_{l, g_{out}\leftarrow g_{in}}^{e}` are the indexed scattering cross sections for element :math:`e`, from energy group :math:`g_{in}` to :math:`g_{out}`, :math:`Y_{klm}` are the spherical harmonics evaluated at angle :math:`k`, and :math:`\psi_{lm, i}^{ g_{in}}` are the angular flux moments for moment :math:`(l,m)` and basis function index :math:`i` in energy group :math:`g_{in}`.
+    (it acts trivially on the basis function in each element)
+
 
     Tranpose is thus:
 
     .. math::
-        \mathbf{S}^T = \mathbf{S}_1^T \otimes \mathbf{I}_F : \mathcal{D} \otimes F \to \mathcal{M} \otimes F
+        \mathbf{S}^T = \mathbf{S}_b^T \otimes \mathbf{I}_{\mathcal{B}} : \mathcal{D} \otimes \mathcal{E}\otimes \mathcal{B} \to \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B}
 
     .. math::
-        \psi_{lm, i}^{ g_{in})} = \sum_{k} Y_{klm} \sigma_{l, g_{out}\from g_{in}}^{(e)} s_{ki}
+        \psi_{lm, ei}^{ g_{in}} = \sum_{k} Y_{klm} \sigma_{l, g_{out}\leftarrow g_{in}}^{e} s_{kei}
+
+
+    Note that this operator basically has a structure of two operators: one that simply scales, let's say :math:`\mathbf{\mathcal{S}}`:
+
+    .. math::
+        &\mathbf{\mathcal{S}} : \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B} \to \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B}\\
+        &\mathbf{\mathcal{S}} = \mathcal{S}_b \otimes \mathbf{I}_{\mathcal{B}}
+
+
+    with
+    .. math::
+        \mathbf{\mathcal{S}}_b[\psi_{lm, ei}^{ g_{in}}] = \sigma_{l, g_{out}\leftarrow g_{in}}^{e} \psi_{lm, i}^{ g_{in}}
 
     '''
 

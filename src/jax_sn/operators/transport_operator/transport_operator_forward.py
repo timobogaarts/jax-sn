@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp 
 from jax_sn.domain.geometric_domain import GeometricDomain, CrossSectionDataSingleGroup, Domain
-from jax_sn.solution_domain.base_fem import PrecomputedGeometricData, FEMMatrices
+from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from jax_sn.source import Source
 from .transport_operator_imp import gij_kernel_idx_in_precomp, dij_f_p_fm_kernel_idx_in_precomp, _compute_omega_dot_n_Je_inflow_vmap, _compute_omega_dot_n_Je_inflow
 from functools import partial

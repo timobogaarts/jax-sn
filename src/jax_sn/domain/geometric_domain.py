@@ -6,9 +6,10 @@ from functools import lru_cache
 from typing import Tuple
 from .cross_sections import CrossSectionDataSingleGroup
 from jax_sn.quadrature_set import QuadratureSet
+from typing import Tuple 
 
 @jax.jit
-def compute_domain_setup_from_mesh(mesh, face_template):
+def _compute_domain_setup_from_mesh(mesh : Tuple[jnp.ndarray, jnp.ndarray], face_template : jnp.ndarray):
     '''
     Computes the setup for a geometric domain from a mesh and a face template (see `jax_sn.tools.mesh_tools._face_template` for an example template).
 
@@ -17,7 +18,7 @@ def compute_domain_setup_from_mesh(mesh, face_template):
     Parameters
     ----------
     mesh : tuple
-        A tuple containing vertices and connectivity of the mesh.
+        A tuple containing vertices and connectivity of the mesh. vertices is a jnp.ndarray of shape [n_vertices, n_dim] and connectivity is a jnp.ndarray of shape [n_elements, n_vertices_per_element].
     face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
         A 2D array representing the face template.
     '''
@@ -35,26 +36,63 @@ def compute_domain_setup_from_mesh(mesh, face_template):
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True, eq=False) # we use eq=False to use default (id-based) hashing.
 class GeometricDomain:
+    '''
+    Dataclass representing a geometric domain. 
+    These contain precomputed connectivity, face normals, and adjacency information. 
+    We use id-based hasing to be able to cache BVH structures based on the domain. 
+
+    '''
+    
     vertices      : jnp.ndarray
+    '''Vertices of the domain. Shape is [n_vertices, n_dim]'''
+
     connectivity  : jnp.ndarray
+    '''Connectivity of the domain. Shape is [n_elements, n_vertices_per_element]'''
+
     face_normals  : jnp.ndarray    
+    '''Face normals of the domain. Shape is [n_elements, n_faces_per_element, n_dim]'''
+    
     etoe          : jnp.ndarray
+    '''Element-to-element adjacency. Shape is [n_elements, n_faces_per_element]. -1 indicates a boundary face (unconnected to another element).'''
+
     etof          : jnp.ndarray
+    '''Element-to-face adjacency. Shape is [n_elements, n_faces_per_element]. Each face has a unique index in the domain.'''
+
     face_perm_idx : jnp.ndarray
+    '''Face permutation indices. Shape is [n_elements, n_faces_per_element]. Indicates how the face vertices are permuted between adjacent elements.'''
+
     face_template : jnp.ndarray
+    '''Face template used to define faces of elements. Shape is [n_faces_per_element, n_vertices_per_face].'''
 
     @classmethod 
-    def from_mesh(cls, mesh, face_template):
+    def from_mesh(cls, mesh : Tuple[jnp.ndarray, jnp.ndarray], face_template : jnp.ndarray):
+        '''
+        Constructs a GeometricDomain from a mesh and a face template (see `jax_sn.tools.mesh_tools._face_template` for an example template).
+        
+        Parameters
+        ----------
+        mesh : tuple
+            A tuple containing vertices and connectivity of the mesh. vertices is a jnp.ndarray of shape [n_vertices, n_dim] and connectivity is a jnp.ndarray of shape [n_elements, n_vertices_per_element].
+        face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
+            A 2D array representing the face template.
+        Returns
+        -------
+        domain : GeometricDomain
+            The constructed GeometricDomain.
+        '''
+
         return cls(
-            *compute_domain_setup_from_mesh(mesh, face_template),
+            *_compute_domain_setup_from_mesh(mesh, face_template),
             face_template=face_template
         )
     @property
     def n_elements(self):
+        '''Number of elements in the domain'''
         return self.connectivity.shape[0]
     
     @property
     def n_faces_per_element(self):
+        '''Number of faces per element in the domain'''
         return self.face_template.shape[0]
     
     def containing_cell(self, points : jnp.ndarray):
@@ -73,29 +111,8 @@ class GeometricDomain:
         '''
         return _containing_cell(self, points)
 
-from .cross_sections import CrossSectionData
+from .cross_sections import CrossSectionData, CrossSectionDataSingleGroup, CrossSectionIndexed
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class CrossSectionIndexed:
-    indices            : jnp.ndarray      #[n_elements]
-    cross_section_data : CrossSectionData #[batched over n_cross_sections (where it should hold that n_cross_sections >= max(indices)+1])]
-
-    def map_to_full_array(self, energy_group : int) -> CrossSectionDataSingleGroup:
-        return _map_cross_sections_to_full_array(self, energy_group)
-    
-    @property 
-    def n_energy_groups(self):
-        return self.cross_section_data.total.shape[-1]
-    
-    @property
-    def l_max(self):
-        return self.cross_section_data.scattering.shape[-3] - 1
-
-@jax.jit
-def _map_cross_sections_to_full_array(cross_sections : CrossSectionIndexed, energy_group : int) -> CrossSectionDataSingleGroup:
-    return CrossSectionDataSingleGroup(cross_sections.cross_section_data.total[cross_sections.indices,energy_group], cross_sections.cross_section_data.scattering[cross_sections.indices, : , energy_group, energy_group])
-    
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True, eq=False)
 class Domain(GeometricDomain):
@@ -103,19 +120,55 @@ class Domain(GeometricDomain):
     Geometric domain with indexed cross sections.
     This is seperated from GeometricDomain because many algorithms do not depend on cross sections and therefore we want to keep the cross sections distinct.
     '''
+
+    
     cross_sections_indexed : CrossSectionIndexed
+    '''Indexed cross sections for the domain.'''
+
     
     @classmethod
     def from_mesh_and_cross_sections(cls, mesh : Tuple[jnp.ndarray, jnp.ndarray], face_template : jnp.ndarray, cross_sections_indexed : CrossSectionIndexed):
+        '''
+        Constructs a Domain from a mesh, face template, and indexed cross sections. Checks compatibility between the mesh and cross sections.
+        
+        Parameters
+        ----------
+        mesh : tuple
+            A tuple containing vertices and connectivity of the mesh. vertices is a jnp.ndarray of shape [n_vertices, n_dim] and connectivity is a jnp.ndarray of shape [n_elements, n_vertices_per_element].
+        face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
+            A 2D array representing the face template.
+        cross_sections_indexed : CrossSectionIndexed
+            Indexed cross sections for the domain.
+        Returns
+        -------
+        domain : Domain
+            The constructed Domain.
+        '''
         
         _check_cross_section_compatibility(mesh[1].shape[0], cross_sections_indexed)
         return cls(
-            *compute_domain_setup_from_mesh(mesh, face_template),
+            *_compute_domain_setup_from_mesh(mesh, face_template),
             face_template         = face_template,
             cross_sections_indexed = cross_sections_indexed
         )    
     @classmethod 
     def from_geometric_domain_and_cross_sections(cls, geometric_domain : GeometricDomain, cross_sections_indexed : CrossSectionIndexed):        
+        '''
+        Constructs a Domain from a GeometricDomain and indexed cross sections. Checks compatibility between the geometric domain and cross sections.
+
+        Parameters
+        ----------
+        geometric_domain : GeometricDomain
+            The geometric domain.
+        cross_sections_indexed : CrossSectionIndexed
+            Indexed cross sections for the domain.
+        Returns
+        -------
+        domain : Domain
+            The constructed Domain.
+        '''
+        assert isinstance(geometric_domain, GeometricDomain), f"geometric_domain must be an instance of GeometricDomain. Provided type: {type(geometric_domain)}"
+        _check_cross_section_compatibility(geometric_domain.connectivity.shape[0], cross_sections_indexed)
         return cls(geometric_domain.vertices, 
                    geometric_domain.connectivity, 
                    geometric_domain.face_normals, 
@@ -139,9 +192,25 @@ def _check_cross_section_compatibility(n_elements : int, cross_sections : CrossS
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class TopologicalSortedAngle:
+    '''
+    Topologically sorted angle for a geometric domain. Contains information on the topological sort of elements for a given angle.    
+    
+    '''
+    
     levels         : jnp.ndarray #[n_elements]
+    '''
+    Levels of the elements in the topological sort. Shape is [n_elements]. Each level can be computed in parallel.
+    '''
+
     angle          : jnp.ndarray #[n_dim]
+    '''
+    The angle for which the topological sort is computed. Shape is [n_dim].
+    '''
+
     levels_argsort : jnp.ndarray #[n_elements]
+    '''
+    The indices that sort the elements by their levels. Shape is [n_elements].
+    '''
     
     @classmethod 
     def from_domain_angle(cls, geometric_domain : GeometricDomain, angle : jnp.ndarray, n_iterations_per_loop : int = 100):
@@ -170,6 +239,23 @@ class TopologicalSortedAngle:
     
     @classmethod
     def from_domain_quadrature_set(cls, geometric_domain : GeometricDomain, quadrature_set : QuadratureSet, n_iterations_per_loop : int = 100):
+        '''
+        Computes topological sorts for all angles in the given quadrature set and geometric domain.
+        This function is not jittable because it uses Python control flow to safely compute levels, which can throw if there is a cycle in the graph.
+
+        Parameters
+        ----------
+        geometric_domain : GeometricDomain
+            The geometric domain for which to compute the topological sorts.
+        quadrature_set : QuadratureSet
+            The quadrature set containing the angles for which to compute the topological sorts.
+        n_iterations_per_loop : int, optional
+            The number of iterations per loop for the level computation. The default is 100.
+        Returns
+        -------
+        toposorts : TopologicalSortedAngle
+            The computed topological sorts for all angles in the quadrature set. Batched over angles.
+        '''
         from .graph_generation import compute_levels_domain_safe
         levels = [compute_levels_domain_safe(geometric_domain, angle, n_iterations_per_loop) for angle in quadrature_set.angles]
 
@@ -178,7 +264,20 @@ class TopologicalSortedAngle:
         return cls(levels=levels, angle=quadrature_set.angles, levels_argsort=levels_argsort)
 
     
-    def __getitem__(self, idx):
+    def __getitem__(self, idx : int) -> "TopologicalSortedAngle":
+        '''
+        Indexing for batched TopologicalSortedAngle instances.
+        Allows to get a single TopologicalSortedAngle from a batched instance.
+
+        Parameters
+        ----------
+        idx : int
+            The index of the angle to get.
+        Returns
+        -------
+        toposort : TopologicalSortedAngle
+            The TopologicalSortedAngle instance for the given index.
+        '''
         assert self.levels.ndim == 2, "Indexing is only supported for batched TopologicalSortedAngle instances."
         return TopologicalSortedAngle(
             levels         = self.levels[idx],
@@ -189,9 +288,7 @@ class TopologicalSortedAngle:
     @property
     def reverse(self):
         '''
-        Reverses the angle and topological sort
-        Correct for batched angles as well.
-        Topological sort can be directly reversed. 
+        Reverses the angle and topological sort. This is also correct for batched angles.        
         The levels are reversed by subtracting from the maximum level. This is non-optimal, but produces a valid topological sort.
 
         Returns
@@ -226,6 +323,21 @@ def _build_bvh(geometric_domain : GeometricDomain):
     return create_bvh(geometric_domain.vertices, geometric_domain.connectivity)
 
 def _containing_cell(geometric_domain : GeometricDomain, points : jnp.ndarray):    
+    '''
+    Containing cell for each point in points.
+    Uses a cached BVH, so cannot be used in a jitted function
+
+    Parameters
+    ----------
+    geometric_domain : GeometricDomain
+        The geometric domain for which to find the containing cells.
+    points : jnp.ndarray [n_points, n_dim]
+        The points for which to find the containing cell.
+    Returns
+    -------
+    element_indices : jnp.ndarray [n_points]
+        The indices of the containing cell for each point. -1 if no containing cell is found    
+    '''
     if isinstance(points, jax.core.Tracer):
         raise RuntimeError("The function 'containing_cell' cannot be used inside jitted functions because it relies on a cached BVH.")    
         

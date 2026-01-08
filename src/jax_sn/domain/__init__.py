@@ -1,12 +1,12 @@
+from .cross_sections import CrossSectionData, CrossSectionDataSingleGroup, CrossSectionIndexed
 from .geometric_domain import GeometricDomain, Domain
-from .graph_generation import compute_levels_domain, compute_levels_domain_safe
-from . import domain_generation
+from . import domain_generation, graph_generation
 from .cross_sections import CrossSectionData, CrossSectionDataSingleGroup
 from .geometric_domain import TopologicalSortedAngle
 __all__ = [
-    "Domain",
-    "GeometricDomain", "compute_levels_domain", "compute_levels_domain_safe",
-    "domain_generation",
-    "CrossSectionData", "CrossSectionDataSingleGroup",
-    "TopologicalSortedAngle"
+    "CrossSectionData", "CrossSectionDataSingleGroup", "CrossSectionIndexed",
+    "GeometricDomain",     
+    "Domain",    
+    "TopologicalSortedAngle",
+    "domain_generation",  "graph_generation"
 ]

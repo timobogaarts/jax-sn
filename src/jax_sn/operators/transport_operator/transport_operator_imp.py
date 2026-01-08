@@ -1,7 +1,7 @@
 import jax 
 import jax.numpy as jnp 
 from jax_sn.domain.geometric_domain import GeometricDomain, TopologicalSortedAngle, CrossSectionDataSingleGroup, Domain
-from jax_sn.solution_domain.base_fem import PrecomputedGeometricData, FEMMatrices
+from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from jax_sn.solution_domain import FEMMatrices
 from jax_sn.source import Source
 from functools import partial

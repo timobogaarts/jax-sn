@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from jax_sn.operators.moment_operator.moment_operator_imp import MomentOperator
 from jax_sn.quadrature_set import QuadratureSet
 from jax_sn.quadrature_set.quadrature_set_base import _lm_real_expansion
-from jax_sn.domain.geometric_domain import CrossSectionIndexed
+from jax_sn.domain.cross_sections import CrossSectionIndexed
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 import lineax as lx
 import equinox as eqx

@@ -17,6 +17,11 @@ def psi_isotropic_box(points : onp.ndarray, box_size : float, omega : onp.ndarra
         The absorption cross section.
     q : float
         The isotropic source strength.
+
+    Returns
+    -------
+    psi : onp.ndarray [n_points]
+        The angular flux at the given points.
     '''
     
     ndim = points.shape[1]
