@@ -16,28 +16,34 @@ class MomentOperator(AbstractLinearOperator_sn):
     (moment operator sums over the angles, which is the leading dimension and thus not contiguous in memory)
     it is more convenient for the sweep operation, which requires the angles to be the leading dimension (since each angular sweep is independent, we want contiguous memory for the trailing n_elements, n_basis dimensions).
 
+    Mathematical description
+    ---------------------------
+
     Implements the following operation (the tensor dot indicates that it operates on the leading dimension, with no coupling in the trailing dimensions):
 
     .. math::
-        M  = \mathbf{M}_b \otimes \mathbf{I}_F: \mathcal{D}\otimes F \rightarrow \mathcal{M}\otimes F
+        M  = \overline{\mathbf{M}} \otimes \mathbf{I}_F: \mathcal{D}\otimes \mathcal{F} \rightarrow \mathcal{M}\otimes \mathcal{F}
 
     with 
 
     .. math::
-        \mathbf{M}_b[\{a_k\}] = \sum_{k=1}^{N_{angles}} a_k w_k Y_{lm}(\Omega_k)
+        \overline{\mathbf{M}}[\{a_k\}] = \sum_{k=1}^{N_{angles}} a_k w_k Y_{lm}(\Omega_k)
 
     where :math:`\mathcal{D}` is the discrete angular space of size :math:`N_{angles}`, :math:`\mathcal{M}` is the moment space of size :math:`(L+1)^2` (for moment order L), :math:`F` is the FEM basis function space of size :math:`N_{elements} \times N_{basis}`,
     :math:`a_k` is the angular flux for angle :math:`k`, :math:`w_k` is the weight for angle :math:`k` and :math:`Y_{lm}(\Omega_k)` is the spherical harmonic of order :math:`(l,m)` evaluated at direction :math:`\Omega_k`. For the latter definition, see :attr:`jax_sn.quadrature_set.QuadratureSet.wk_ylm_real`.
 
+    Transposition
+    ---------------------------
+
     Its transposition is defined as (tranpose again does not act on the :math:`F` space):
 
     .. math::
-        M^T  = \mathbf{M}_1^T \otimes \mathbf{I}_F: \mathcal{M}\otimes F \rightarrow \mathcal{D}\otimes F   
+        M^T  = \overline{\mathbf{M}}^T \otimes \mathbf{I}_F: \mathcal{M}\otimes \mathcal{F} \rightarrow \mathcal{D}\otimes \mathcal{F}   
 
     with 
 
     .. math::
-        \mathbf{M}_1^T[\{ b_{lm} \}] = \sum_{lm} b_{lm} w_k Y_{lm}(\Omega_k)    
+        \overline{\mathbf{M}}^T[\{ b_{lm} \}] = \sum_{lm} b_{lm} w_k Y_{lm}(\Omega_k)    
 
     This is *not*  the same as the discrete-to-moment operator, which is defined without the weights. Mathematically, the transpose of this operator is w.r.t to the standard inner product, while the discrete-to-moment operator is defined w.r.t. a weighted inner product (with weights being the quadrature weights).    
     

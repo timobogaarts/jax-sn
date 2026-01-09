@@ -330,10 +330,16 @@ def _scattering_kernel_xs_indexed_multigroup_discrete(
 @eqx.filter_jit
 def total_scattering_kernel_xs_indexed_multigroup_discrete(g_out : int,  cross_section_indexed : CrossSectionIndexed, group_moments_array : jnp.ndarray, yklm : jnp.ndarray) -> jnp.ndarray:
     r'''
-    Computes from a given outgoing group, incoming groups, indexed cross sections and moments array the corresponding total scattering source in discrete angles:
+    Implements:
 
     .. math::
-        s_{ki}^{g_{out}} = \sum_{g_{in}}\sum_{lm} Y_{klm} \sigma_{l, g_{out}\from g_{in}}^{(e)} \psi_{lm, i}^{ g_{in})} =\sum_{lm} S_{klm}^{g_{out}\from g_{in}} \psi_{lm, i}^{ g_{in})}
+        \mathbf{S}_{g} = \overline{\mathbf{S}}_g \otimes \mathbf{I}_F : \mathcal{G}\otimes\mathcal{M} \otimes \mathcal{F} \to  \mathcal{D} \otimes \mathcal{F}
+
+    where :math:`\overline{\mathbf{S}}_g` is the single-element gathering scattering operator defined as:
+    
+    .. math::
+        \overline{\mathbf{S}}_g[\psi_{\overline{g}\ell e}] = s_{ke} = \sum_{\overline{g}}\sum_{\ell} Y_{k \ell } \sigma_{\ell g \overline{g}e} \psi_{\overline{g}\ell e}
+    
     Parameters
     ----------  
     g_out : int

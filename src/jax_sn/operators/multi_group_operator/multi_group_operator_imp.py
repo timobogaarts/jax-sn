@@ -19,7 +19,9 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     Mathematically, this operator maps:
 
     .. math::
-        \mathbf{A} : \mathcal{G} \otimes \mathcal{M} \otimes F  \rightarrow \mathcal{G}\otimes \mathcal{M} \otimes F         
+        \mathbf{A} : \mathcal{G} \otimes \mathcal{M} \otimes \mathcal{F}  \rightarrow \mathcal{G}\otimes \mathcal{M} \otimes \mathcal{F}         
+    
+        
 
     '''
     moment_operator    : MomentOperator

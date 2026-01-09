@@ -13,42 +13,73 @@ from .scatter_operator_util import total_scattering_kernel_xs_indexed_discrete, 
 
 class InScatterOperator(AbstractLinearOperator_sn):
     r'''
-    InScatterOperator represents the in-scattering operator that maps angular flux moments to discrete angles using indexed cross sections.
+    InScatterOperator represents the in-scattering operator that maps angular flux moments to discrete angles using indexed cross sections for a specific energy group
 
-    Implements:
+    Implements (in this case :math:`g_{out}` is equal to :math:`g_{in} = g`):
+
+    .. math::        
+        s_{kei} = \sum_{lm} Y_{klm} \sigma_{l, g\leftarrow g}^{e} \psi_{lm,ei}^{ g} 
+    where :math:`\sigma_{l, g\leftarrow g}^{e}` are the indexed scattering cross sections for element :math:`e`, 
+    from energy group :math:`g` to :math:`g`, :math:`Y_{klm}` are the spherical harmonics evaluated at angle :math:`k`, and :math:`\psi_{lm, i}^{ g}` 
+    are the angular flux moments for moment :math:`(l,m)` and basis function index :math:`i` in energy group :math:`g`.
+
+    Note that it acts trivially on the basis function in each element.
+
+    Mathematical description
+    ---------------------------
+
+    Mathematically, this operator maps as 
 
     .. math::
-        \mathbf{S} = \mathbf{S}_b  \otimes \mathbf{I}_{\mathcal{B}} : \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B} \to \mathcal{D} \otimes F
+        \mathbf{S}_{gg} = \overline{\mathbf{S}}_{gg}  \otimes \mathbf{I}_{\mathcal{B}} : \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B} \to \mathcal{D} \otimes \mathcal{F}
 
-    where :math:`F = \mathcal{E}\otimes \mathcal{B}` is the space of elements and basis functions, and :math:`\mathbf{S}_b` is the single-element in-scattering operator defined as:
+    where :math:`\mathcal{F} = \mathcal{E}\otimes \mathcal{B}` is the space of elements and basis functions, and :math:`\mathbf{S}_b` is the single-element in-scattering operator defined as:
 
     .. math::
-        \mathbf{S}_b [\psi_{lm, e}^{ g_{in}}] =
-        s_{ke} = \sum_{lm} Y_{klm} \sigma_{l, g_{out}\leftarrow g_{in}}^{e} \psi_{lm,e}^{ g_{in}} =\sum_{lm} S_{klme}^{g_{out}\leftarrow g_{in}} \psi_{lm, e}^{ g_{in}}
+        \overline{\mathbf{S}}_{gg} [\psi_{g\ell e}] =
+        s_{ke} = \sum_{\ell} Y_{k\ell} \sigma_{\ell gge} \psi_{g\ell e}
 
-    where :math:`\sigma_{l, g_{out}\leftarrow g_{in}}^{e}` are the indexed scattering cross sections for element :math:`e`, from energy group :math:`g_{in}` to :math:`g_{out}`, :math:`Y_{klm}` are the spherical harmonics evaluated at angle :math:`k`, and :math:`\psi_{lm, i}^{ g_{in}}` are the angular flux moments for moment :math:`(l,m)` and basis function index :math:`i` in energy group :math:`g_{in}`.
-    (it acts trivially on the basis function in each element)
+    (we use :math:`\ell` to denote :math:`(l,m)` moment index for brevity; for :math:`\sigma_{\ell}` this just equals :math:`\sigma_{l}` for all :math:`m`).
 
+    Transposition
+    ---------------------------
 
     Tranpose is thus:
 
     .. math::
-        \mathbf{S}^T = \mathbf{S}_b^T \otimes \mathbf{I}_{\mathcal{B}} : \mathcal{D} \otimes \mathcal{E}\otimes \mathcal{B} \to \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B}
+        \mathbf{S}_{gg}^T = \overline{\mathbf{S}}_{gg}^T \otimes \mathbf{I}_{\mathcal{B}} : \ \  \mathcal{D} \otimes \mathcal{E}\otimes \mathcal{B} \to \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B}
+
+    with
 
     .. math::
-        \psi_{lm, ei}^{ g_{in}} = \sum_{k} Y_{klm} \sigma_{l, g_{out}\leftarrow g_{in}}^{e} s_{kei}
+        \overline{\mathbf{S}}_{gg}^T [s_{ke}] = \psi_{g\ell e} = \sum_{k} Y_{k\ell} \sigma_{\ell gge} s_{ke}        
 
+    Structure
+    ---------------------------
 
     Note that this operator basically has a structure of two operators: one that simply scales, let's say :math:`\mathbf{\mathcal{S}}`:
 
     .. math::
         &\mathbf{\mathcal{S}} : \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B} \to \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B}\\
-        &\mathbf{\mathcal{S}} = \mathcal{S}_b \otimes \mathbf{I}_{\mathcal{B}}
-
+        &\mathbf{\mathcal{S}} = \overline{\mathcal{S}} \otimes \mathbf{I}_{\mathcal{B}}
 
     with
+
     .. math::
-        \mathbf{\mathcal{S}}_b[\psi_{lm, ei}^{ g_{in}}] = \sigma_{l, g_{out}\leftarrow g_{in}}^{e} \psi_{lm, i}^{ g_{in}}
+        \overline{\mathbf{\mathcal{S}}}[\psi_{g\ell e}] = \sigma_{\ell gg} \psi_{g\ell e}
+
+    and a moment-to-discrete operator :math:`\mathbf{D}`:
+
+    .. math::
+        &\mathbf{D} : \mathcal{M} \otimes \mathcal{F} \to \mathcal{D} \otimes \mathcal{F}\\
+        &\mathbf{D} = \overline{\mathbf{D}} \otimes \mathbf{I}_{\mathcal{F}}
+
+    with
+
+    .. math::
+        \overline{\mathbf{D}}[\psi_{\ell i}] = s_{k} = \sum_{\ell} Y_{k\ell} \psi_{\ell i}
+
+    They are combined in one operator here however.
 
     '''
 

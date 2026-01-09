@@ -17,19 +17,26 @@ class TotalGroupScatterOperator(AbstractLinearOperator_sn):
     Implements:
 
     .. math::
-        \mathbf{S} = \mathbf{S}_G \otimes \mathbf{I}_F : \mathcal{G}\otimes\mathcal{M} \otimes F \to  \mathcal{D} \otimes F
+        \mathbf{S}_{g} = \overline{\mathbf{S}}_g \otimes \mathbf{I}_F : \mathcal{G}\otimes\mathcal{M} \otimes \mathcal{F} \to  \mathcal{D} \otimes \mathcal{F}
 
-    where :math:`\mathbf{S}_G` is the single-element in-scattering operator defined as:
+    where :math:`\overline{\mathbf{S}}_g` is the single-element gathering scattering operator defined as:
+    
     .. math::
-        s_{ki} = \sum_{g_{in}}\sum_{lm} Y_{klm} \sigma_{l, g_{out}\from g_{in}}^{(e)} \psi_{lm, i}^{ g_{in})} =\sum_{lm} S_{klm}^{g_{out}\from g_{in}} \psi_{lm, i}^{ g_{in})}        
+        \overline{\mathbf{S}}_g[\psi_{\overline{g}\ell e}] = s_{ke} = \sum_{\overline{g}}\sum_{\ell} Y_{k \ell } \sigma_{\ell g \overline{g}e} \psi_{\overline{g}\ell e}
     
         
     Transpose does not make sense since this operator is merely a convenience operator to gather scattering from all groups into one group efficiently.
     '''
+    
     yklm                         : jnp.ndarray           # [n_angles, n_moments]
+    '''Matrix of [n_angles, n_moments] containing :math:`Y_{l,m}(\Omega_k)` values for each angle :math:`k` and moment :math:`(l,m)` (collapsed into a single index).'''
+
     cross_section_indexed        : CrossSectionIndexed
+    '''The indexed cross sections to use.'''
     energy_group                 : int
+    '''The energy group to gather scattering into.'''
     groups_elements_basis_shape  : jax.ShapeDtypeStruct  #[n_groups, n_elements, n_basis]
+    '''The shape of the groups, elements and basis functions over which this operator is batched. Identified with :math:`\mathcal{G}\otimes \mathcal{F}` in the documentation above. However, note that the input and output are as [n_groups, n_moments, n_elements, n_basis] and [n_angles, n_elements, n_basis] respectively.'''
     
     @classmethod 
     def from_quadrature_set_and_cross_sections(cls, quadrature_set : QuadratureSet, cross_sections : CrossSectionIndexed, energy_group : int, l_max : int, groups_elements_basis_shape : jax.ShapeDtypeStruct) -> "TotalGroupScatterOperator":
@@ -77,15 +84,33 @@ class TotalGroupScatterOperator(AbstractLinearOperator_sn):
         return TotalGroupScatterOperator(self.yklm, self.cross_section_indexed, energy_group, self.groups_elements_basis_shape)
     
     def in_structure(self):
+        '''
+        Input structure is [n_groups, n_moments, n_elements, n_basis]
+        '''
         return jax.ShapeDtypeStruct(
             shape=(self.groups_elements_basis_shape.shape[0], ) + (self.yklm.shape[1],) + self.groups_elements_basis_shape.shape[1:],
             dtype=self.yklm.dtype)
     def out_structure(self):
+        '''
+        Output structure is [n_angles, n_elements, n_basis]
+        '''
         return jax.ShapeDtypeStruct(
             shape=(self.yklm.shape[0],) + self.groups_elements_basis_shape.shape[1:],
             dtype=self.yklm.dtype)
     
     def to_inscatter(self, energy_group : int):
+        '''
+        Convert to single group InScatterOperator for energy group.
+
+        Parameters
+        ----------
+        energy_group : int
+            Energy group index.
+        Returns
+        -------
+        InScatterOperator
+            The single group InScatterOperator for energy group.
+        '''
         from jax_sn.operators.scatter_operator.inscatter_operator import InScatterOperator
         return InScatterOperator(self.yklm, self.cross_section_indexed, energy_group, jax.ShapeDtypeStruct(self.groups_elements_basis_shape.shape[1:], dtype=self.groups_elements_basis_shape.dtype))
 

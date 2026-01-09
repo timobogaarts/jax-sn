@@ -12,37 +12,130 @@ import lineax as lx
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 
 class TransportOperatorSolver(lx.AbstractLinearSolver):
+    '''
+    Class that implements a linear solver for TransportOperator and TransportOperatorMultipleAngles using the internal sweep inversion.
+    Serves as an interface between Lineax and the internal inversion methods of the TransportOperator classes.
+
+    Has no members or state.
+
+    '''
     def __init__(self):
+        '''
+        Initializes the TransportOperatorSolver, does nothing.
+        '''
         pass
 
     def init(self, operator : "TransportOperator", options):
+        '''
+        Initializes the solver state for a given TransportOperator. Does nothing except check that the operator is of the correct type.
+        The solver state is simply the operator.
+        '''
+        assert isinstance(operator, (TransportOperator, TransportOperatorMultipleAngles)), "TransportOperatorSolver can only be used with TransportOperator or TransportOperatorMultipleAngles"
         return operator
         
     def compute(self, solver_state, rhs, options):
+        '''
+        Computes the solution to the linear system for the given rhs using the internal inversion method of the TransportOperator. Is always by definition succesfull.
+        '''
         return solver_state._invert_internal(rhs), lx.RESULTS.successful, {}
 
     def allow_dependent_columns(self, operator):
+        '''
+        Dependent columns are not allowed (and not possible with a transport operator).
+        '''
         return False
     
     def allow_dependent_rows(self, operator):
+        '''
+        Dependent rows are not allowed (and not possible with a transport operator).
+        '''
         return False
     
     def transpose(self, solver_state, options):
+        '''
+        Returns the transposed solver state and options. (the solver_state is simply the operator here, so that is what is transposed).
+        '''
         return solver_state.transpose(), options
     
     def conj(self, solver_state, options):
+        '''
+        Returns the conjugated solver state and options. (the solver_state is simply the operator here, so that is what is conjugated).
+        '''
         return solver_state.conj(), options
 
 
 class TransportOperator(AbstractLinearOperator_sn):
-    '''
+    r'''
     Base class for transport operators.
     Since the implementation of the transport operator can vary (e.g., vmap-based, batched, Pallas, etc.), this is an abstract base class that defines the interface for transport operators.
+
+    Mathematical description
+    ---------------------------
+
+    The transport operator maps angular fluxes to transported angular fluxes for a specific energy group :math:`g` and angle :math:`\Omega_k`:
+
+    .. math::
+        \mathbf{T}_{gk} : \mathcal{F} \to \mathcal{F}
+
+    where :math:`\mathcal{F} = \mathcal{E}\otimes \mathcal{B}` is the space of elements and basis functions.
+
+    Its definition is:
+
+    .. math::
+        \mathbf{T}_{gk}[\psi_{gk, ej}] = \sum_j \psi_j \int \Omega_k \cdot \nabla (H_j) H_i  + \sigma^t_{ge} H_j H_i dV
+    
+    This is then implemented using discontinuous Galerkin elements, where the surface terms are handled through upwinding based on the angle direction:
+
+    .. math::
+        \mathbf{T}_{gk}[\psi_{gk, ej}] &= \sum_j \psi_{ej} \left[ \int_{e} -  \Omega_k \cdot \nabla (H_i) H_j  + \sigma^t_{ge} H_i H_j dV + \sum_{\gamma^+} |\Omega_k \cdot n_{\gamma}| \int_{\gamma} H_i H_j dA \right] \\ 
+                                       & - \sum_{\gamma^-} |\Omega_k \cdot n_{\gamma}| \sum_{p} \psi_{gk, e(\gamma),p } \int_{\gamma} H_i  H_p^{(e(\gamma))}dA
+    where :math:`\gamma` denotes a face of element :math:`e`, with :math:`n_{\gamma}` the outward normal of that face, and :math:`e(\gamma)` the neighboring element on the other side of face :math:`\gamma`. 
+    :math:`\gamma^+` and :math:`\gamma^-` denote the faces where the dot product with the angle direction is positive (outflow) and negative (inflow) respectively.
+
+    The required geometric factors and finite elements are provided through the :class:`SolutionDomainData` object.
+
+    Inversion
+    ---------------------------
+
+    The inverse can be computed through a so-called sweep. Since a topological ordering can be computed for the elements based on the angle direction, the transport equation can be solved element by element in that order. For each element, one then computes:
+
+    .. math::
+        G_{e, ij} &= \int_{e} -  \Omega_k \cdot \nabla (H_i) H_j  + \sigma^t_{ge} H_i H_j dV + \sum_{\gamma^+} |\Omega_k \cdot n_{\gamma}| \int_{\gamma} H_i H_j dA \\ 
+        G^{-1}_{e, ij} &= \left( G_{e, ij} \right)^{-1} \\
+        D_{e \gamma, ij} &= |\Omega_k \cdot n_{\gamma}|  \int_{\gamma} H_i  H_j^{(e(\gamma))}dA \\
+        
+    These can be computed in parallel since they do not depend on the angular fluxes, or even stored a priori (although this is expensive in memory).
+
+    The 'sweep' then consists of iterating over the elements in topological order, and for each element collapsing (:math:`b_{ej}` is the right-hand side for element :math:`e`, :math:`a_{ej}` the unknown angular fluxes for element `e`):
+
+    .. math::
+        a_{ei} = \sum_j G_{e,ij}^{-1} \left( b_{ej} + \sum_{\gamma^-} \sum_{p} D_{e \gamma,jp} a_{e(\gamma),p}  \right)
+
+    This is the only truly sequential part of the transport operator inversion.
+        
+    This inversion can be implemented in various ways, e.g., using vmap over angles, batched over angles, using Pallas, etc. These are implemented in subclasses.
+
+    Transposition
+    ---------------------------
+
+    The transpose of the transport operator is obtained by simply reversing the angle (including the topological sort information). This is implemented in :meth:`transpose`.
+    See :ref:`here <transport_operator_transposition>` for a detailed proof of this fact.
+
+    The transpose of the inverse is obtained by the inverse of the transpose, i.e., by performing a sweep in reverse topological order with reversed angles.
+
+    
+
         
     '''
+
     solution_domain_data      : SolutionDomainData 
+    '''Data for the solution domain, including geometric factors, finite element matrices, cross sections, etc.'''
+
     topological_sorted_angle  : TopologicalSortedAngle    #[this does not *require* a topological sorted angle for the forward operator. however, since the inverse does require it, we just require it here.]
+    '''Angle directions along with topological sorting information for the elements.'''
+
     energy_group              : int
+    '''Energy group index for which this transport operator is defined.'''
 
     def _assert_shape_base(self):
         assert self.topological_sorted_angle.ndim==1, "topological_sorted_angle must be 1D for base TransportOperator"
@@ -68,16 +161,21 @@ class TransportOperator(AbstractLinearOperator_sn):
         return eqx.tree_at(lambda t_operator : t_operator.topological_sorted_angle, self, self.topological_sorted_angle.reverse)
     
     def inv(self, b : jnp.ndarray) -> jnp.ndarray:
+        '''
+        Solves the system :math:`\mathbf{T} x = b` for `x` using the internal sweep inversion.
+
+        Parameters
+        ----------
+        b : jnp.ndarray
+            Right-hand side array.
+        Returns
+        -------
+        jnp.ndarray
+            Solution array `x`.
+        '''
         solver = TransportOperatorSolver()
         return lx.linear_solve(self, b, solver, throw=False).value
-    
-    def as_matrix(self):
-        assert False, "Not desired for TransportOperator due to large size"
-        return jnp.array([[]])
-    
-    def conj(self):
-        return self  #real operator
-    
+  
     def in_structure(self):        
         return self._shape_inout
     
@@ -121,6 +219,9 @@ class TransportOperator(AbstractLinearOperator_sn):
     
     @property 
     def n_angles(self):
+        '''
+        Number of angles in the transport operator. Here is just one.
+        '''
         return 1
     
 
@@ -234,12 +335,6 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
     def transpose(self):
         return eqx.tree_at(lambda t_operator : t_operator.transport_operator.topological_sorted_angle, self, self.transport_operator.topological_sorted_angle.reverse)    
     
-    def as_matrix(self):
-        assert False, "Not desired for TransportOperator due to large size"
-        return jnp.array([[]])
-    
-    def conj(self):
-        return self  #real operator
     
     def in_structure(self):        
         return self._shape_inout

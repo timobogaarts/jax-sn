@@ -24,7 +24,7 @@ class SingleGroupOperator(AbstractLinearOperator_sn):
     Mathematically, this operator maps:
 
     .. math::
-        \mathbf{A}_g : \mathcal{M} \otimes F \rightarrow \mathcal{M} \otimes F
+        \mathbf{A}_g : \mathcal{M} \otimes \mathcal{F} \rightarrow \mathcal{M} \otimes \mathcal{F}
 
     '''
 

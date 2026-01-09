@@ -22,10 +22,13 @@ class MassOperator(AbstractLinearOperator_sn):
 
     Is arbitrarily batched over additional leading dimensions.
 
+    Mathematical description
+    ---------------------------
+
     The non-batched version computes the mass matrix for each element and basis function:
 
     .. math::
-        \mathbf{H}_b : F \to F
+        \overline{\mathbf{H}} : F \to F
 
     where in this case:
 
@@ -37,18 +40,24 @@ class MassOperator(AbstractLinearOperator_sn):
     Its definition is (:math:`e,p` is  element index, `i,j` basis function index):
 
     .. math::
-        \mathbf{H}_b[\{ v_{ei} \}] = a_{ej} = \sum_{i}  J_{vq} \int_{B} H_i H_j dV v_{ei}
+        \overline{\mathbf{H}}[\{ v_{ei} \}] = a_{ej} = \sum_{i}  J_{vq} \int_{B} H_i H_j dV v_{ei}
 
     where :math:`J_{vq}` is the volume Jacobian determinant for element :math:`e`, and :math:`B` is the reference element.
     Note this integral is already computed in :attr:`jax_sn.solution_domain.FEMMatrices.mass_matrix`, and the Jacobian determinants are precomputed and stored  :attr:`jax_sn.solution_domain.PrecomputedGeometricData.vol_jacobians_det`.
 
-    This operator is symmetric since the mass matrix is symmetric.
+    Transposition
+    ---------------------------
+
+    This operator is symmetric since the mass matrix is symmetric. Transposition thus returns itself.
+
+    Structure
+    ---------------------------
 
     Batched versions operate over additional leading dimensions, e.g.: 
     
     .. math::
-        &\mathbf{H} :   \mathcal{K} \otimes F \to \mathcal{K} \otimes F\\
-        &\mathbf{H} = \mathbf{I}_{\mathcal{K}} \otimes \mathbf{H}_b
+        &\mathbf{H} :   \mathcal{K} \otimes \mathcal{F} \to \mathcal{K} \otimes \mathcal{F}\\
+        &\mathbf{H} = \mathbf{I}_{\mathcal{K}} \otimes \overline{\mathbf{H}}
     
     where :math:`\mathcal{K}` is an arbitrary additional space (e.g. angles).
 
