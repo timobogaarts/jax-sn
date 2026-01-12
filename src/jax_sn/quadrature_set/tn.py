@@ -79,7 +79,10 @@ def create_tn_quadrature_set(N : int):
     '''
     Creates a TN quadrature set with N levels per octant. See [1].
 
-    Number of angles is 8 * N**2.
+    Number of angles is:
+    
+    .. math::
+        8 N^2.
 
     [1] Thurgood, C. P., Pollard, A., & Becker, H. A. (1995). The TN quadrature set for the discrete ordinates method.
 

@@ -238,6 +238,14 @@ from .transport_operator_imp import transport_inverse_sweep_batched, transport_i
 from .transport_operator_forward import forward_transport_operator_vmap, forward_transport_operator_multiple_angles_vmap, forward_transport_operator_batch, forward_transport_operator_multiple_angles_batch
 
 class TransportOperatorVmap(TransportOperator):
+    '''
+    Transport operator using vmap over all elements. This computes the :math:`G_{ij}^{-1}` and :math:`D_{e \gamma, ij}` for all elements using vmap, and then computes the sweep using a fori loop.
+
+    Takes significant memory for large problems due to storing all :math:`G_{ij}^{-1}` and :math:`D_{e \gamma, ij}` matrices.
+
+    Is not significantly faster than the batched version for batch sizes > 1000 (since parallelisation is limited).
+
+    '''
 
     @property
     def _mv_op_args(self):
@@ -249,10 +257,13 @@ class TransportOperatorVmap(TransportOperator):
 
 class TransportOperatorBatched(TransportOperator):
     '''
-    Transport operator using batched sweeps.
+    Transport operator using batched sweeps. This computes the :math:`G_{ij}^{-1}` and :math:`D_{e \gamma, ij}` for a batch of elements, performs the sweep over that batch, and then moves to the next batch.
 
     '''
     batch_size : int = None
+    '''
+    Batch size for the batched sweeps. If None, this reproduces the non-batched version.
+    '''
     
     @property
     def _mv_op_args(self):
@@ -280,7 +291,7 @@ from .transport_operator_pallas import transport_inverse_sweep_batched_pallas, t
 
 class TransportOperatorVmapPallas(TransportOperatorVmap):
     '''
-    Transport operator using vmap sweeps with Pallas.
+    Transport operator using vmap sweeps with Pallas. Similar to :class:`TransportOperatorVmap`, but uses Pallas for the matrix operations. This can be significantly faster on GPUs that support it.
 
     '''  
     @property 
@@ -290,7 +301,7 @@ class TransportOperatorVmapPallas(TransportOperatorVmap):
 
 class TransportOperatorBatchedPallas(TransportOperatorBatched):
     '''
-    Transport operator using batched sweeps with Pallas.
+    Transport operator using batched sweeps with Pallas. Similar to :class:`TransportOperatorBatched`, but uses Pallas for the matrix operations. This can be significantly faster on GPUs that support it.
 
     '''    
     
@@ -304,18 +315,70 @@ class TransportOperatorBatchedPallas(TransportOperatorBatched):
 #===============================================================================================================================================
 @eqx.filter_jit
 def vmap_multiple_angles_forward(transport_operator : TransportOperator, x : jnp.ndarray) -> jnp.ndarray:
+    '''
+    Computes the forward operation of the transport operator for multiple angles using vmap.
+    In other words, computes
+
+    .. math::
+        \mathbf{T}_{gk}[\psi_{gk, ej}] 
+    for multiple angles :math:`k` using vmap.
+    '''
     args = transport_operator._forward_args(x)
     f_vmap = jax.vmap(transport_operator._mv_op_args, in_axes=transport_operator._vmap_for_forward_multiple_angles)
     return f_vmap(*args)
 
 @eqx.filter_jit
 def vmap_multiple_angles_inv(transport_operator : TransportOperator, b : jnp.ndarray) -> jnp.ndarray:
+    '''
+    Computes the forward operation of the transport operator for multiple angles using vmap.
+    In other words, computes
+
+    .. math::
+        \mathbf{T}^{-1}_{gk}[\psi_{gk, ej}] 
+    for multiple angles :math:`k` using vmap.
+    '''
     args = transport_operator._inv_args(b)
     f_vmap = jax.vmap(transport_operator._inv_op_args, in_axes=transport_operator._vmap_for_inv_multiple_angles)
     return f_vmap(*args)
 
 class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):    
+    r'''
+    Transport operator for multiple angles. Wraps a :class:`TransportOperator` and extends it to multiple angles by batching or vmapping over the angles.
+
+    Mathematical description
+    --------------------------- 
+    The transport operator for multiple angles maps angular fluxes to transported angular fluxes for a specific energy group :math:`g` and multiple angles :math:`\Omega_k`:
+
+    .. math::
+        &\mathbf{T}_{g} : \mathcal{D} \otimes \mathcal{F} \to \mathcal{D} \otimes \mathcal{F} \\ 
+        &\mathbf{T}_g = \bigoplus_{k} \mathbf{T}_{gk}
+
+    where :math:`\mathcal{F} = \mathcal{E}\otimes \mathcal{B}` is the space of elements and basis functions, and :math:`\mathcal{D}` is the space of discrete angles.
+    The :math:`\mathbf{T}_{gk}` are the single-angle transport operators defined in :class:`TransportOperator`.
+    
+    Therefore, we have for an angular flux :math:`\psi_g \in \mathcal{D} \otimes \mathcal{F}` with components :math:`\psi_{gk} \in \mathcal{F}` for each angle :math:`k`:
+
+    .. math::
+        (\mathbf{T}_{g}[\psi_{g}])_k = T_{gk}[\psi_{gk}]
+
+    Inversion
+    ---------------------------
+    The inverse can be computed by inverting each single-angle transport operator independently due to the block-diagonal structure:
+
+    .. math::
+        \mathbf{T}_g^{-1} = \bigoplus_{k} \mathbf{T}_{gk}^{-1}
+    
+    Transpose
+    ---------------------------
+    The transpose of the multiple-angle transport operator is obtained by transposing each single-angle transport operator, as in :class:`TransportOperator`.
+
+    Structure
+    ---------------------------
+    Since this is by definition a block-diagonal operator with the single-angle transport operators on the diagonal, this operator does not couple angles and can be computed independently for each angle (and thus in parallel)
+    '''
+
     transport_operator : TransportOperator
+    '''Single-angle transport operator that is extended to multiple angles.'''
 
     def _assert_shape_base(self):
         assert self.transport_operator.topological_sorted_angle.angle.ndim==2, "topological_sorted_angle must be 2D for base TransportOperatorMultipleAngles"
@@ -329,6 +392,9 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
         ...
 
     def inv(self, b : jnp.ndarray) -> jnp.ndarray:
+        '''
+        Solves the system :math:`\mathbf{T}_g x = b` for `x` using the internal sweep inversion for multiple angles.
+        '''
         solver = TransportOperatorSolver()
         return lx.linear_solve(self, b, solver, throw=False).value
     
@@ -343,18 +409,30 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
         return self._shape_inout
     
     def to_energy_group(self, energy_group : int) -> "TransportOperatorMultipleAngles":
+        '''
+        Converts this operator to a different energy group by changing the energy group of the underlying transport operator. Since this is just a integer (no recomputation required), this is a cheap operation.
+        '''
         return eqx.tree_at(lambda t_operator : t_operator.transport_operator.energy_group, self, energy_group)
     
     @property
     def solution_domain_data(self):
+        '''
+        Solution domain data used by this transport operator.
+        '''
         return self.transport_operator.solution_domain_data
     
     @property 
     def energy_group(self):
+        '''
+        Energy group index for which this transport operator is defined.
+        '''
         return self.transport_operator.energy_group
 
     @property 
     def topological_sorted_angle(self):
+        '''
+        Topological sorted angle information used by this transport operator.
+        '''
         return self.transport_operator.topological_sorted_angle
         
     
@@ -368,6 +446,9 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
     
     @property
     def n_angles(self):
+        '''
+        Number of angles in the transport operator.
+        '''
         return self.transport_operator.topological_sorted_angle.angle.shape[0]
 
 @lx.is_symmetric.register(TransportOperatorMultipleAngles)
@@ -379,6 +460,9 @@ def _(operator : TransportOperator):
     return operator
 
 class TransportOperatorMultipleAnglesVmap(TransportOperatorMultipleAngles):
+    '''
+    Transport operator for multiple angles using vmap over angles.
+    '''
 
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:
         return vmap_multiple_angles_forward(self.transport_operator, x)

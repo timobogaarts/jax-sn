@@ -42,7 +42,7 @@ def setup_base_case(dim, degree):
 
 
 
-from jax_sn.tools.memory_analysis import pytree_nbytes, array_bytes, TransportOperatorSigmaParametrised
+from jax_sn.tools.memory_analysis import pytree_nbytes, _array_bytes, TransportOperatorSigmaParametrised
 
 
 def _run_single_angle_operators(dim, degree):

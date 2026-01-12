@@ -170,7 +170,7 @@ def _solve_single_group(dim, degree, pallas = True):
         
         mem_solve , mem_grad_solve = TotalOperatorSigmaParametrised.analyze_grad_memory(anew, method=solve_bicgstab)
         
-        time_solve, time_grad_solve = TotalOperatorSigmaParametrised.analyze_grad_timing(anew, method=solve_bicgstab, n_samples = 3, ignore_n = 1)
+        #time_solve, time_grad_solve = TotalOperatorSigmaParametrised.analyze_grad_timing(anew, method=solve_bicgstab, n_samples = 3, ignore_n = 1)
 
         print("Total operator solve times:")
         print(f"{operator_cls.__name__} single angle for a dimension {dim} degree {degree} operator with {solution_domain.domain.n_elements} elements and {n_angles} angles:")
@@ -180,8 +180,8 @@ def _solve_single_group(dim, degree, pallas = True):
         print(f"\tSolve time      : {time_solve       * 1000:.2f} ms")
         print(f"\tGrad solve time : {time_grad_solve  * 1000:.2f} ms")
         
-_run_multi_angle_operators(3,2, True)
-_solve_single_group(3,2,True)
+#_run_multi_angle_operators(3,2, True)
+_solve_single_group(3,2,False)
 
 # Example output [RTx 3080]:
 # Note that these numbers make sense:

@@ -146,6 +146,13 @@ def create_all_combined_face_quadratures(element : basix.finite_element.FiniteEl
 
 
 class BasixLagrangianSimplex(Element):
+    '''
+    Finite element based on Basix Lagrangian elements on simplices (interval, triangle, tetrahedron).
+
+    This has a linear jacobian mapping between reference and real coordinates. Basix is used for the basis functions and quadrature generation.
+    These do not change during the simulation, so non-jittable Basix functions can be used during setup and precomputation.
+
+    '''
     
     def __init__(self, degree : int, dimension : int):
         from basix import ElementFamily, LagrangeVariant, CellType
@@ -307,7 +314,7 @@ _real_coordinate_simplex_vec = jax.jit(jnp.vectorize(_real_coordinate_simplex, e
     
     
 def _jacobian_simplex(vertices : onp.ndarray) -> onp.ndarray:
-    '''
+    r'''
     Compute the Jacobian matrix for a simplex defined by its vertices.
     
     From the standard simplex coordinate system to physical coordinates:
@@ -339,6 +346,18 @@ def _jacobian_simplex(vertices : onp.ndarray) -> onp.ndarray:
 
 
 def _precompute_jacobians_simplex(domain : GeometricDomain) -> PrecomputedGeometricData:
+    '''
+    Precomputes the Jacobian matrices, their inverses, and determinants for a simplex domain.
+
+    Parameters
+    ----------
+    domain : GeometricDomain
+        The geometric domain consisting of simplex elements.    
+    Returns
+    -------
+    PrecomputedGeometricData
+        The precomputed geometric data including Jacobians, their inverses, and determinants.
+    '''
     vertices           = domain.vertices[domain.connectivity]
     volume_J_total     = _jacobian_simplex(vertices)
     volume_J_det_total = jnp.abs(jnp.linalg.det(volume_J_total))

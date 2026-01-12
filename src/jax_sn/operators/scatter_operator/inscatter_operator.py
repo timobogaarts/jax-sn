@@ -85,7 +85,7 @@ class InScatterOperator(AbstractLinearOperator_sn):
 
 
     yklm                  : jnp.ndarray           # [n_angles, n_moments]
-    cross_section_indexed : CrossSectionIndexed
+    cross_sections_indexed : CrossSectionIndexed
     energy_group          : int
     elements_basis_shape  : jax.ShapeDtypeStruct  #[n_elements, n_basis]
     
@@ -117,10 +117,10 @@ class InScatterOperator(AbstractLinearOperator_sn):
         return cls(yklm, cross_sections, energy_group, elements_basis_shape)
     
     def __check_init__(self):
-       # assert self.energy_group >=0 and self.energy_group < self.cross_section_indexed.n_energy_groups, f"Energy group {self.energy_group} out of bounds for cross sections with {self.cross_section_indexed.n_energy_groups} energy groups."
+       # assert self.energy_group >=0 and self.energy_group < self.cross_sections_indexed.n_energy_groups, f"Energy group {self.energy_group} out of bounds for cross sections with {self.cross_sections_indexed.n_energy_groups} energy groups."
         assert self.yklm.ndim    == 2, f"yklm must be 2D [n_angles, n_moments], but has shape {self.yklm.shape}."
         assert self.elements_basis_shape.ndim == 2, f"elements_basis_shape must be 2D [n_elements, n_basis], but has shape {self.elements_basis_shape.shape}."
-        assert self.elements_basis_shape.shape[0] == self.cross_section_indexed.indices.shape[0], f"Number of elements in elements_basis_shape {self.elements_basis_shape.shape[0]} must match number of elements in cross_section_indexed {self.cross_section_indexed.indices.shape[0]}."
+        assert self.elements_basis_shape.shape[0] == self.cross_sections_indexed.indices.shape[0], f"Number of elements in elements_basis_shape {self.elements_basis_shape.shape[0]} must match number of elements in cross_sections_indexed {self.cross_sections_indexed.indices.shape[0]}."
 
     
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:
@@ -128,14 +128,14 @@ class InScatterOperator(AbstractLinearOperator_sn):
         return total_scattering_kernel_xs_indexed_discrete(
                                                     self.energy_group,  # g_out = self energy group
                                                     self.energy_group,  # g_in  = self energy group
-                                                    self.cross_section_indexed,
+                                                    self.cross_sections_indexed,
                                                     x,
                                                     self.yklm)
     def transpose(self) -> "InScatterOperatorTransposed":
-        return InScatterOperatorTransposed(self.yklm, self.cross_section_indexed, self.energy_group, self.elements_basis_shape)
+        return InScatterOperatorTransposed(self.yklm, self.cross_sections_indexed, self.energy_group, self.elements_basis_shape)
     
     def to_energy_group(self, energy_group : int) -> "InScatterOperator":
-        return InScatterOperator(self.yklm, self.cross_section_indexed, energy_group, self.elements_basis_shape)
+        return InScatterOperator(self.yklm, self.cross_sections_indexed, energy_group, self.elements_basis_shape)
     
     def in_structure(self):
         return jax.ShapeDtypeStruct(
@@ -164,11 +164,11 @@ class InScatterOperatorTransposed(InScatterOperator):
         return total_scattering_kernel_xs_indexed_discrete_transpose(
                                                     self.energy_group,  # g_out = self energy group
                                                     self.energy_group,  # g_in  = self energy group
-                                                    self.cross_section_indexed,
+                                                    self.cross_sections_indexed,
                                                     x,
                                                     self.yklm)
     def transpose(self) -> "InScatterOperator":
-        return InScatterOperator(self.yklm, self.cross_section_indexed, self.energy_group, self.elements_basis_shape)
+        return InScatterOperator(self.yklm, self.cross_sections_indexed, self.energy_group, self.elements_basis_shape)
     
     def in_structure(self):
         return InScatterOperator.out_structure(self)

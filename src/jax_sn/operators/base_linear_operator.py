@@ -16,8 +16,14 @@ class AbstractLinearOperator_sn(lx.AbstractLinearOperator):
         return super().__repr__() +' maps '+ str(self.in_structure().shape) + ' -> ' + str(self.out_structure().shape)
     
     def as_matrix(self):    
-        assert False, "In JAX-SN, as_matrix is not implemented for linear operators due to potentially extremely large size. Prefer throwing to silently materializing."
+        '''
+        In jax-snj, as_matrix is not implemented for linear operators due to potentially extremely large size. Prefer throwing to silently materializing.
+        '''
+        assert False, "In jax-sn, as_matrix is not implemented for linear operators due to potentially extremely large size. Prefer throwing to silently materializing."
         return jnp.array([[]])
     
     def conj(self):
+        '''
+        All operators in jax-sn are real, so the conjugate is the operator itself.
+        '''
         return self  #real opera

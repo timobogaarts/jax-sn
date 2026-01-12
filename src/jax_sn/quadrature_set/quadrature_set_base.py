@@ -8,18 +8,14 @@ from functools import partial
 @dataclass(frozen=True)
 class QuadratureSet:
     r'''
-    Represents a quadrature set with angles and weights.
-
-    Attributes:
-    ----------
-    angles : jnp.ndarray [n_angles, dimension]
-        The angles of the quadrature set in Cartesian coordinates.
-    weights : jnp.ndarray [n_angles]
-        The weights associated with each angle. Should sum to 4pi (such that :math:`\sum_{i} w_i 1 = \int d\Omega = 4 \pi`).
-
+    Represents a quadrature set with angles and weights. This class provides methods to compute spherical harmonics expansions based on the quadrature set.    
     '''
+    
     angles : jnp.ndarray
+    '''        The angles of the quadrature set in Cartesian coordinates. Shape [n_angles, dimension].'''
+
     weights : jnp.ndarray
+    '''        The weights associated with each angle. Shape [n_angles]. Should sum to 4pi (such that :math:`\sum_{i} w_i 1 = \int d\Omega = 4 \pi`).'''
 
     @property 
     def n_angles(self) -> int:
@@ -29,6 +25,10 @@ class QuadratureSet:
         return self.angles[idx], self.weights[idx]
     
     def wk_ylm_real(self, l_max : int) -> jnp.ndarray:
+        '''
+        Compute the weighted real spherical harmonic expansion coefficients :math:`\sqrt{w_k} Y_{lm}(\Omega_k)` for this quadrature set up to degree l_max.
+        See :func:`compute_3d_wk_yklm_real_from_quadrature_set` for details.
+        '''
         if self.angles.shape[1] == 3:
             return compute_3d_wk_yklm_real_from_quadrature_set(self, l_max)
         else:
@@ -48,23 +48,20 @@ def compute_3d_yklm_real_from_quadrature_set(quadrature_set : QuadratureSet, l_m
     r'''
     Compute the real spherical harmonic expansion coefficients :math:`Y_{lm}` for a given quadrature set up to degree l_max.
 
-    See `_ylm_real` for the definition of the real spherical harmonics used.
+    See `_ylm_real` for the definition of the real spherical harmonics used. Computes
+
+    .. math::
+        Y_{lm}(\Omega_k)
+
+    for all angles :math:`\Omega_k` in the quadrature set.
 
     This uses a three-dimensional quadrature set, i.e., the angles are given as (x,y,z) coordinates on the unit sphere.
-    For lower-dimensional quadrature sets, the symmetry on the unit sphere can be taken into account to reduce the number of angles.
-    This 
+    For lower-dimensional quadrature sets, the symmetry on the unit sphere could be taken into account to reduce the number of angles.
 
-    Parameters:
-    ----------
-    qset : QuadratureSet
-        The quadrature set containing angles and weights.
-    l_max : int
-        Maximum degree of the spherical harmonics.
+    :param quadrature_set: The quadrature set containing angles and weights.
+    :param l_max: Maximum degree of the spherical harmonics.
 
-    Returns:
-    -------
-    Yklm : jnp.ndarray [n_angles, n_coefficients]
-        Real spherical harmonics evaluated at the quadrature set angles.
+
     
     '''
     assert quadrature_set.angles.shape[1] == 3, "Quadrature set must be three-dimensional."
@@ -81,20 +78,18 @@ def compute_3d_wk_yklm_real_from_quadrature_set(quadrature_set : QuadratureSet, 
 
     See `_ylm_real` for the definition of the real spherical harmonics used.
 
+    Computes
+
+    .. math::
+        w_k Y_{lm}(\Omega_k)
+
+    for all angles :math:`\Omega_k` in the quadrature set with weights :math:`w_k`.
+
     This uses a three-dimensional quadrature set, i.e., the angles are given as (x,y,z) coordinates on the unit sphere.
     For lower-dimensional quadrature sets, the symmetry on the unit sphere can be taken into account to reduce the number of angles.
-    This 
-
-    Parameters:
-    ----------
-    qset : QuadratureSet
-        The quadrature set containing angles and weights.
-    l_max : int
-        Maximum degree of the spherical harmonics.  
-    Returns:
-    -------
-    wk_yklm : jnp.ndarray [n_angles, n_coefficients]
-        Weighted real spherical harmonics evaluated at the quadrature set angles multiplied by weights
+    
+    :param quadrature_set: The quadrature set containing angles and weights.
+    :param l_max: Maximum degree of the spherical harmonics.
     '''
     Yklm = compute_3d_yklm_real_from_quadrature_set(quadrature_set, l_max) #[n_angles, n_coefficients]
     wk_yklm = quadrature_set.weights[:, None] * Yklm

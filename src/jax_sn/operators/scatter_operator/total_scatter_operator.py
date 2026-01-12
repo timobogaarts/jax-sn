@@ -31,7 +31,7 @@ class TotalGroupScatterOperator(AbstractLinearOperator_sn):
     yklm                         : jnp.ndarray           # [n_angles, n_moments]
     '''Matrix of [n_angles, n_moments] containing :math:`Y_{l,m}(\Omega_k)` values for each angle :math:`k` and moment :math:`(l,m)` (collapsed into a single index).'''
 
-    cross_section_indexed        : CrossSectionIndexed
+    cross_sections_indexed        : CrossSectionIndexed
     '''The indexed cross sections to use.'''
     energy_group                 : int
     '''The energy group to gather scattering into.'''
@@ -67,21 +67,21 @@ class TotalGroupScatterOperator(AbstractLinearOperator_sn):
     
     def __check_init__(self):
         
-        # assert self.energy_group >=0 and self.energy_group < self.cross_section_indexed.n_energy_groups, f"Energy group {self.energy_group} out of bounds for cross sections with {self.cross_section_indexed.n_energy_groups} energy groups."
+        # assert self.energy_group >=0 and self.energy_group < self.cross_sections_indexed.n_energy_groups, f"Energy group {self.energy_group} out of bounds for cross sections with {self.cross_sections_indexed.n_energy_groups} energy groups."
         # assert self.energy_group < self.groups_elements_basis_shape.shape[0], f"Energy group {self.energy_group} out of bounds for groups_elements_basis_shape with {self.groups_elements_basis_shape.shape[0]} energy groups."
         assert self.yklm.ndim    == 2, f"yklm must be 2D [n_angles, n_moments], but has shape {self.yklm.shape}."
         assert self.groups_elements_basis_shape.ndim == 3, f"groups_elements_basis_shape must be 3D [n_elements, n_basis], but has shape {self.groups_elements_basis_shape.shape}."
-        assert self.groups_elements_basis_shape.shape[1] == self.cross_section_indexed.indices.shape[0], f"Number of elements in elements_basis_shape {self.groups_elements_basis_shape.shape[1]} must match number of elements in cross_section_indexed {self.cross_section_indexed.indices.shape[0]}."
-        self.cross_section_indexed.cross_section_data.assert_n_energy_groups(self.groups_elements_basis_shape.shape[0]), f"Number of energy groups in cross_section_indexed {self.cross_section_indexed.n_energy_groups} must match number of groups in groups_elements_basis_shape {self.groups_elements_basis_shape.shape[0]}."
+        assert self.groups_elements_basis_shape.shape[1] == self.cross_sections_indexed.indices.shape[0], f"Number of elements in elements_basis_shape {self.groups_elements_basis_shape.shape[1]} must match number of elements in cross_sections_indexed {self.cross_sections_indexed.indices.shape[0]}."
+        self.cross_sections_indexed.cross_section_data.assert_n_energy_groups(self.groups_elements_basis_shape.shape[0]), f"Number of energy groups in cross_sections_indexed {self.cross_sections_indexed.n_energy_groups} must match number of groups in groups_elements_basis_shape {self.groups_elements_basis_shape.shape[0]}."
     
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:
         assert x.shape == self.in_structure().shape, f"Input x shape {x.shape} does not match expected in_structure shape {self.in_structure().shape}."
-        return total_scattering_kernel_xs_indexed_multigroup_discrete(self.energy_group, self.cross_section_indexed, x, self.yklm)
+        return total_scattering_kernel_xs_indexed_multigroup_discrete(self.energy_group, self.cross_sections_indexed, x, self.yklm)
     def transpose(self):
         raise ValueError("Transpose not implemented for TotalGroupScatterOperator because it is ill-defined")        
     
     def to_energy_group(self, energy_group : int) -> "TotalGroupScatterOperator":
-        return TotalGroupScatterOperator(self.yklm, self.cross_section_indexed, energy_group, self.groups_elements_basis_shape)
+        return TotalGroupScatterOperator(self.yklm, self.cross_sections_indexed, energy_group, self.groups_elements_basis_shape)
     
     def in_structure(self):
         '''
@@ -112,7 +112,7 @@ class TotalGroupScatterOperator(AbstractLinearOperator_sn):
             The single group InScatterOperator for energy group.
         '''
         from jax_sn.operators.scatter_operator.inscatter_operator import InScatterOperator
-        return InScatterOperator(self.yklm, self.cross_section_indexed, energy_group, jax.ShapeDtypeStruct(self.groups_elements_basis_shape.shape[1:], dtype=self.groups_elements_basis_shape.dtype))
+        return InScatterOperator(self.yklm, self.cross_sections_indexed, energy_group, jax.ShapeDtypeStruct(self.groups_elements_basis_shape.shape[1:], dtype=self.groups_elements_basis_shape.dtype))
 
 @lx.is_symmetric.register(TotalGroupScatterOperator)
 def _(operator):

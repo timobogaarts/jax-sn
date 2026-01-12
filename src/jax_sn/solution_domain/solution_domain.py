@@ -11,6 +11,23 @@ from .base_fem import Element
 from jax_sn.domain import Domain
 
 def compute_setup_for_solution_domain(element : Element, domain : GeometricDomain) -> Tuple[FEMMatrices, PrecomputedGeometricData]:
+    '''
+    Computes the FEM matrices and precomputed geometric data for the given element and domain.
+
+    Parameters
+    ----------
+    element : Element
+        The finite element to use.
+    domain : GeometricDomain
+        The geometric domain to use.    
+
+    Returns
+    -------
+    fem_matrices : FEMMatrices  
+        The finite element matrices for the given element.
+    precomputed_data : PrecomputedGeometricData
+        The precomputed geometric data for the given element and domain.
+    '''
     fem_matrices     = FEMMatrices.from_element(element)
     precomputed_data = element.precompute_geometric_data(domain)
     return fem_matrices, precomputed_data
@@ -18,10 +35,23 @@ def compute_setup_for_solution_domain(element : Element, domain : GeometricDomai
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
 class SolutionDomainData:
-    domain                       : Domain        # JIT-compatible (frozen dataclass)
-    fem_matrices                 : FEMMatrices   # JIT-compatible (frozen dataclass)
-    precomputed_geometric_data   : PrecomputedGeometricData # JIT-compatible (frozen dataclass)
+    '''
+    Bundles all data required to solve the transport equation on a domain in a JIT-compatible way.
+    Is a frozen dataclass to allow JIT-compilation.
+    '''
 
+    domain                       : Domain        # JIT-compatible (frozen dataclass)
+    '''
+        The geometric domain on which to solve the transport equation. 
+    '''
+    fem_matrices                 : FEMMatrices   # JIT-compatible (frozen dataclass)
+    '''
+        The finite element matrices for the domain.
+    '''
+    precomputed_geometric_data   : PrecomputedGeometricData # JIT-compatible (frozen dataclass)
+    '''
+        The precomputed geometric data for the domain.
+    '''
 
     def __iter__(self):        
         yield self.domain

@@ -53,7 +53,7 @@ def _moment_to_discrete_kernel_transposed(discrete_array : jnp.ndarray, yklm : j
     assert discrete_array.shape[0] == yklm.shape[0], f"Discrete array first dimension {discrete_array.shape} must match yklm first dimension {yklm.shape}."
     return jnp.einsum('k...,kl->l...', discrete_array, yklm)  # [n_angles, ...] x [n_angles, n_moments] -> [n_moments, ...]
 
-def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, cross_section_indexed : CrossSectionIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
+def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, cross_sections_indexed : CrossSectionIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
     r'''
     Computes from a given element index, outgoing group, incoming group, indexed cross section object and buffer for the specific incoming group, the corresponding scattering scattering source:
 
@@ -70,7 +70,7 @@ def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, c
         The outgoing energy group index.
     g_in : int
         The incoming energy group index.
-    cross_section_indexed : CrossSectionIndexed
+    cross_sections_indexed : CrossSectionIndexed
         The indexed cross section data structure.
     moments_array : jnp.ndarray [n_elements, n_basis, n_moments]
         The moments array containing angular flux moments.
@@ -82,9 +82,9 @@ def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, c
     '''
     assert moments_array.ndim == 3, f"moments_array must be 3D [n_moments, n_elements, n_basis], but has shape {moments_array.shape}."    
     
-    xs_idx = cross_section_indexed.indices[elem_idx]
+    xs_idx = cross_sections_indexed.indices[elem_idx]
 
-    sigma_l_gg = cross_section_indexed.cross_section_data.scattering[xs_idx, :, g_out, g_in] # [lmax + 1]
+    sigma_l_gg = cross_sections_indexed.cross_section_data.scattering[xs_idx, :, g_out, g_in] # [lmax + 1]
     
     # Since this is a l expansion, not in terms of lm, we expand it locally to the full n_moments                                                                                            
     extended_sigma_lm_gg = sigma_l_gg[_lm_real_expansion(sigma_l_gg.shape[0] - 1)[0]] # [n_moments]
@@ -97,7 +97,7 @@ def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, c
     return extended_sigma_lm_gg[:, None] * moments_array[:, elem_idx, :]  # [n_moments, None] * [n_moments, n_basis] -> [n_moments, n_basis]
 
 
-def _scatter_kernel_xs_indexed_discrete(elem_idx : int, g_out : int, g_in : int, cross_section_indexed : CrossSectionIndexed, moments_array : jnp.ndarray, yklm : jnp.ndarray) -> jnp.ndarray:
+def _scatter_kernel_xs_indexed_discrete(elem_idx : int, g_out : int, g_in : int, cross_sections_indexed : CrossSectionIndexed, moments_array : jnp.ndarray, yklm : jnp.ndarray) -> jnp.ndarray:
     r'''
       Computes from a given element index, outgoing group, incoming group, indexed cross section object, buffer for the specific incoming group, and the real expansion coefficients, the corresponding scattering scattering source:
 
@@ -114,7 +114,7 @@ def _scatter_kernel_xs_indexed_discrete(elem_idx : int, g_out : int, g_in : int,
         The outgoing energy group index.
     g_in : int
         The incoming energy group index.
-    cross_section_indexed : CrossSectionIndexed
+    cross_sections_indexed : CrossSectionIndexed
         The indexed cross section data structure.
     moments_array : jnp.ndarray [n_elements, n_basis, n_moments]
         The moments array containing angular flux moments.
@@ -124,10 +124,10 @@ def _scatter_kernel_xs_indexed_discrete(elem_idx : int, g_out : int, g_in : int,
     jnp.ndarray [n_basis, n_angles]
         The scattering source moments for the specified element and energy groups.
     '''    
-    moment_array = _scatter_kernel_xs_indexed_kernel(elem_idx, g_out, g_in, cross_section_indexed, moments_array)  # [n_basis, n_moments]
+    moment_array = _scatter_kernel_xs_indexed_kernel(elem_idx, g_out, g_in, cross_sections_indexed, moments_array)  # [n_basis, n_moments]
     return _moment_to_discrete_kernel(moment_array, yklm)  # [n_basis, n_angles]
 
-def _scatter_kernel_xs_indexed_discrete_transposed(elem_idx : int, g_out : int, g_in : int, cross_section_indexed : CrossSectionIndexed, discrete_array : jnp.ndarray, yklm : jnp.ndarray) -> jnp.ndarray:
+def _scatter_kernel_xs_indexed_discrete_transposed(elem_idx : int, g_out : int, g_in : int, cross_sections_indexed : CrossSectionIndexed, discrete_array : jnp.ndarray, yklm : jnp.ndarray) -> jnp.ndarray:
     r'''
       Computes from a given element index, outgoing group, incoming group, indexed cross section object, buffer for the specific incoming group in discrete angles, and the real expansion coefficients, the corresponding scattering scattering source in moments:
 
@@ -145,7 +145,7 @@ def _scatter_kernel_xs_indexed_discrete_transposed(elem_idx : int, g_out : int, 
         The outgoing energy group index.
     g_in : int
         The incoming energy group index.
-    cross_section_indexed : CrossSectionIndexed
+    cross_sections_indexed : CrossSectionIndexed
         The indexed cross section data structure.
     discrete_array : jnp.ndarray [n_basis, n_angles]
         The discrete angular flux for the specified element and energy group.
@@ -153,13 +153,13 @@ def _scatter_kernel_xs_indexed_discrete_transposed(elem_idx : int, g_out : int, 
         The yklm matrix for the quadrature set.
     '''
     moment_array = _moment_to_discrete_kernel_transposed(discrete_array, yklm)  # [n_moments, n_basis]
-    return _scatter_kernel_xs_indexed_kernel(elem_idx, g_out, g_in, cross_section_indexed, moment_array)  # [n_basis, n_moments]
+    return _scatter_kernel_xs_indexed_kernel(elem_idx, g_out, g_in, cross_sections_indexed, moment_array)  # [n_basis, n_moments]
 
 @jax.jit
 def total_scattering_kernel_xs_indexed_discrete(        
         g_out                       : int,
         g_in                        : int,
-        cross_section_indexed       : CrossSectionIndexed,
+        cross_sections_indexed       : CrossSectionIndexed,
         moments_array               : jnp.ndarray,
         yklm                        : jnp.ndarray
     ) -> jnp.ndarray:
@@ -181,7 +181,7 @@ def total_scattering_kernel_xs_indexed_discrete(
         The outgoing energy group index.
     g_in : int
         The incoming energy group index.
-    cross_section_indexed : CrossSectionIndexed
+    cross_sections_indexed : CrossSectionIndexed
         The indexed cross section data structure.
     moments_array : jnp.ndarray [n_moments, n_elements, n_basis]
         The moments array containing angular flux moments.
@@ -198,13 +198,13 @@ def total_scattering_kernel_xs_indexed_discrete(
         _scatter_kernel_xs_indexed_discrete,
         in_axes=(0, None, None, None, None, None),
         out_axes=1
-    )(jnp.arange(cross_section_indexed.indices.shape[0]), g_out, g_in, cross_section_indexed, moments_array, yklm)
+    )(jnp.arange(cross_sections_indexed.indices.shape[0]), g_out, g_in, cross_sections_indexed, moments_array, yklm)
 
 @jax.jit
 def total_scattering_kernel_xs_indexed_discrete_transpose(        
         g_out                       : int,
         g_in                        : int,
-        cross_section_indexed       : CrossSectionIndexed,
+        cross_sections_indexed       : CrossSectionIndexed,
         moments_array               : jnp.ndarray,
         yklm                        : jnp.ndarray
     ) -> jnp.ndarray:
@@ -226,7 +226,7 @@ def total_scattering_kernel_xs_indexed_discrete_transpose(
         The outgoing energy group index.
     g_in : int
         The incoming energy group index.
-    cross_section_indexed : CrossSectionIndexed
+    cross_sections_indexed : CrossSectionIndexed
         The indexed cross section data structure.
     moments_array : jnp.ndarray [n_moments, n_elements, n_basis]
         The moments array containing angular flux moments.
@@ -243,14 +243,14 @@ def total_scattering_kernel_xs_indexed_discrete_transpose(
         _scatter_kernel_xs_indexed_discrete_transposed,
         in_axes=(0, None, None, None, None, None),
         out_axes=1
-    )(jnp.arange(cross_section_indexed.indices.shape[0]), g_out, g_in, cross_section_indexed, moments_array, yklm)
+    )(jnp.arange(cross_sections_indexed.indices.shape[0]), g_out, g_in, cross_sections_indexed, moments_array, yklm)
 
 
 #============================================================================================#
 # Multigroup versions
 #============================================================================================#
 
-def _scatter_kernel_xs_indexed_kernel_multigroup(elem_idx : int, g_out : int, cross_section_indexed : CrossSectionIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
+def _scatter_kernel_xs_indexed_kernel_multigroup(elem_idx : int, g_out : int, cross_sections_indexed : CrossSectionIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
     r'''
     Computes from a given element index, outgoing group, incoming group, indexed cross section object and buffer for the specific incoming group, the corresponding scattering scattering source:
 
@@ -267,7 +267,7 @@ def _scatter_kernel_xs_indexed_kernel_multigroup(elem_idx : int, g_out : int, cr
         The outgoing energy group index.
     g_in : int
         The incoming energy group index.
-    cross_section_indexed : CrossSectionIndexed
+    cross_sections_indexed : CrossSectionIndexed
         The indexed cross section data structure.
     moments_array : jnp.ndarray [n_elements, n_basis, n_moments]
         The moments array containing angular flux moments.
@@ -278,11 +278,11 @@ def _scatter_kernel_xs_indexed_kernel_multigroup(elem_idx : int, g_out : int, cr
         The scattering source moments for the specified element and energy groups.
     '''
     assert moments_array.ndim == 4, f"moments_array must be 4D [n_groups, n_moments, n_elements, n_basis], but has shape {moments_array.shape}."    
-    assert moments_array.shape[0] == cross_section_indexed.n_energy_groups, f"moments_array first dimension {moments_array.shape[0]} must match number of energy groups in cross_section_indexed {cross_section_indexed.n_energy_groups}."
+    assert moments_array.shape[0] == cross_sections_indexed.n_energy_groups, f"moments_array first dimension {moments_array.shape[0]} must match number of energy groups in cross_sections_indexed {cross_sections_indexed.n_energy_groups}."
     
-    xs_idx = cross_section_indexed.indices[elem_idx]
+    xs_idx = cross_sections_indexed.indices[elem_idx]
 
-    sigma_l_gg = cross_section_indexed.cross_section_data.scattering[xs_idx, :, g_out, :] # [lmax + 1, n_groups]
+    sigma_l_gg = cross_sections_indexed.cross_section_data.scattering[xs_idx, :, g_out, :] # [lmax + 1, n_groups]
 
     # Since this is a l expansion, not in terms of lm, we expand it locally to the full n_moments                                                                                            
     extended_sigma_lm_gg = sigma_l_gg[_lm_real_expansion(sigma_l_gg.shape[0] - 1)[0], :] # [n_moments, n_groups]
@@ -297,7 +297,7 @@ def _scatter_kernel_xs_indexed_kernel_multigroup(elem_idx : int, g_out : int, cr
 
 @eqx.filter_jit
 def _scattering_kernel_xs_indexed_multigroup_discrete(
-        elem_idx : int, g_out : int, cross_section_indexed : CrossSectionIndexed, group_moments_array : jnp.ndarray, yklm : jnp.ndarray) -> jnp.ndarray:
+        elem_idx : int, g_out : int, cross_sections_indexed : CrossSectionIndexed, group_moments_array : jnp.ndarray, yklm : jnp.ndarray) -> jnp.ndarray:
     r'''
     Computes from a given element index, outgoing group, incoming groups, indexed cross section object and moments array the corresponding total scattering source in discrete angles:
     .. math::
@@ -313,7 +313,7 @@ def _scattering_kernel_xs_indexed_multigroup_discrete(
         The outgoing energy group index.
     g_in : jnp.ndarray [n_in_groups]
         The incoming energy group indices.
-    cross_section_indexed : CrossSectionIndexed 
+    cross_sections_indexed : CrossSectionIndexed 
         The indexed cross section data structure.
     group_moments_array : jnp.ndarray [n_in_groups, n_moments, n_elements, n_basis]
         The moments array containing angular flux moments for multiple energy groups.   
@@ -324,11 +324,11 @@ def _scattering_kernel_xs_indexed_multigroup_discrete(
     jnp.ndarray [n_angles, n_basis]
         The total scattering source in discrete angles for the specified outgoing energy group.'''
 
-    moment_array = _scatter_kernel_xs_indexed_kernel_multigroup(elem_idx, g_out, cross_section_indexed, group_moments_array)  # [n_basis, n_moments]
+    moment_array = _scatter_kernel_xs_indexed_kernel_multigroup(elem_idx, g_out, cross_sections_indexed, group_moments_array)  # [n_basis, n_moments]
     return _moment_to_discrete_kernel(moment_array, yklm)  # [n_angles, n_basis]
 
 @eqx.filter_jit
-def total_scattering_kernel_xs_indexed_multigroup_discrete(g_out : int,  cross_section_indexed : CrossSectionIndexed, group_moments_array : jnp.ndarray, yklm : jnp.ndarray) -> jnp.ndarray:
+def total_scattering_kernel_xs_indexed_multigroup_discrete(g_out : int,  cross_sections_indexed : CrossSectionIndexed, group_moments_array : jnp.ndarray, yklm : jnp.ndarray) -> jnp.ndarray:
     r'''
     Implements:
 
@@ -346,7 +346,7 @@ def total_scattering_kernel_xs_indexed_multigroup_discrete(g_out : int,  cross_s
         The outgoing energy group index.
     g_in : jnp.ndarray [n_in_groups]
         The incoming energy group indices.
-    cross_section_indexed : CrossSectionIndexed 
+    cross_sections_indexed : CrossSectionIndexed 
         The indexed cross section data structure.
     group_moments_array : jnp.ndarray [n_in_groups, n_moments, n_elements, n_basis]
         The moments array containing angular flux moments for multiple energy groups.   
@@ -362,4 +362,4 @@ def total_scattering_kernel_xs_indexed_multigroup_discrete(g_out : int,  cross_s
         _scattering_kernel_xs_indexed_multigroup_discrete,
         in_axes=(0, None, None, None, None),
         out_axes=1
-    )(jnp.arange(cross_section_indexed.indices.shape[0]), g_out, cross_section_indexed, group_moments_array, yklm)
+    )(jnp.arange(cross_sections_indexed.indices.shape[0]), g_out, cross_sections_indexed, group_moments_array, yklm)

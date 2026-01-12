@@ -1,3 +1,6 @@
+'''
+Tools for analyzing memory usage and timing of JAX functions, particularly for linear operators parameterized by certain variables.
+'''
 import jax
 import jax.numpy as jnp
 import equinox as eqx
@@ -9,7 +12,7 @@ from abc import ABC, abstractmethod
 
 
 
-def compiled_to_dict_mb(compiled):
+def _compiled_to_dict_mb(compiled):
     return {
         "peak" : compiled.memory_analysis().peak_memory_in_bytes / 1024**2,
         "argument" : compiled.memory_analysis().argument_size_in_bytes / 1024**2,
@@ -20,21 +23,35 @@ def compiled_to_dict_mb(compiled):
 def _filter_jit_f_to_memory(f, *args):
     lowered     = f.lower(*args)  # warm up    
     compiled    = lowered.compile()
-    dict_memory = compiled_to_dict_mb(compiled.compiled)
+    dict_memory = _compiled_to_dict_mb(compiled.compiled)
     return dict_memory
 
-def array_bytes(x):
+def _array_bytes(x):
     if hasattr(x, "dtype") and hasattr(x, "shape"):
         return onp.prod(x.shape) * x.dtype.itemsize
     else:
         return 0
 
 def pytree_nbytes(pytree):
+    '''
+    Computes the total number of bytes used by all array leaves in a pytree.
+
+
+    Parameters:
+    ----------
+    pytree : Any
+        A pytree containing arrays. 
+
+    Returns:
+    -------
+    int 
+        The total number of bytes used by all array leaves in the pytree.
+    '''
     leaves, _ = jax.tree_util.tree_flatten(pytree)
     total = 0
     for leaf in leaves:
         if hasattr(leaf, "dtype") and hasattr(leaf, "shape"):
-            total += array_bytes(leaf)
+            total += _array_bytes(leaf)
     return total
 
 #============================================================================================================
@@ -135,6 +152,10 @@ from abc import ABC, abstractmethod
 
 
 class OperatorAnalysis(ABC):
+    '''
+    Class to simplify analysis of memory usage and timing of linear operators.
+    Provides static methods to analyze memory and timing for operator methods (e.g. mv, inv).
+    '''
 
     @staticmethod
     def analyze_memory(operator : lx.AbstractLinearOperator, method : Union[str, Callable]):
@@ -146,17 +167,9 @@ class OperatorAnalysis(ABC):
 
         This function is then lowered and compiled and its memory usage is analyzed using _filter_jit_f_to_memory.
 
-        Parameters:
-        ----------
-        operator : lx.AbstractLinearOperator
-            The linear operator to analyze.
-        method : str
-            The method of the operator to use, e.g. "mv" or "inv".
-        
-        Returns:
-        -------
-        mem_mv : Dict[str, float]
-            Memory usage statistics for the operator method [in MB].
+        :param operator: The linear operator to analyze.
+        :param method: The method of the operator to use, e.g. "mv" or "inv".        
+        :return: mem_mv 
         '''        
         x_in = jnp.ones_like(operator.in_structure()) 
         
@@ -183,21 +196,12 @@ class OperatorAnalysis(ABC):
 
         The function is then timed using custom_timeit, and the result is returned.
 
-        Parameters:
-        ----------
-        operator : lx.AbstractLinearOperator
-            The linear operator to analyze.
-        method : str
-            The method of the operator to use, e.g. "mv" or "inv".
-        n_samples : int, optional
-            The number of samples to use for timing, by default 100.
-        ignore_n : int, optional
-            The number of initial runs to ignore for timing (e.g. for compilation caching), by default 1.
+        :param operator: The linear operator to analyze.
+        :param method: The method of the operator to use, e.g. "mv" or "inv".        
+        :param n_samples: The number of samples to use for timing, by default 100.
+        :param ignore_n: The number of initial runs to ignore for timing (e.g. for compilation caching), by default 1.
+        :return: duration_mv    
 
-        Returns:
-        -------
-        duration_mv : float
-            The average time taken for the operator method.
         '''
         
         x_in = jnp.ones_like(operator.in_structure()) 
@@ -216,14 +220,20 @@ class OperatorAnalysis(ABC):
         return duration_mv
 
 class OperatorThetaParametrised(ABC):
+    '''
+    Class to simplify analysis of memory usage and timing of linear operators parameterized by certain variables (theta).
+    This is useful to analyze how memory and timing change when computing gradients with respect to these parameters.    
+    '''
     @staticmethod
     @abstractmethod
     def theta_base(operator ):
+        '''Has to provide the theta parameter for this operator.'''
         ...
 
     @staticmethod
     @abstractmethod
     def reconstruct_operator(operator, theta):
+        '''Has to provide a function to reconstruct the operator with the new theta parameter.'''
         ...
 
     @classmethod
@@ -237,19 +247,14 @@ class OperatorThetaParametrised(ABC):
 
         This function is then lowered and compiled and its memory usage is analyzed using _filter_jit_f_to_memory. This is finally printed.
 
-        Parameters:
-        ----------
-        operator : lx.AbstractLinearOperator
-            The linear operator to analyze.
-        method : str
-            The method of the operator to use, e.g. "mv" or "inv".
-        
-        Returns:
-        -------
-        mem_mv : Dict[str, float]
-            Memory usage statistics for the operator method [in MB].
-        mem_grad_mv : Dict[str, float]
-            Memory usage statistics for the gradient of the operator method [in MB].
+        :param cls: The parametrisation case class, providing theta_base and reconstruct_operator methods.
+        :param operator: The linear operator to analyze.
+        :param method: The method of the operator to use, e.g. "mv" or "inv".        
+        :return: mem_mv, mem_grad_mv
+            mem_mv : Dict[str, float]
+                Memory usage statistics for the operator method [in MB].
+            mem_grad_mv : Dict[str, float]
+                Memory usage statistics for the gradient of the operator method [in MB].
         '''        
         mem_mv, mem_grad_mv  = make_memory_parametrised_grad(method)(operator, cls)
 
@@ -266,25 +271,18 @@ class OperatorThetaParametrised(ABC):
 
         The function and its gradient are then timed using custom_timeit, and the results are returned.
 
-        Parameters:
-        ----------
-        operator : lx.AbstractLinearOperator
-            The linear operator to analyze.
-        method : str
-            The method of the operator to use, e.g. "mv" or "inv".
-        n_samples : int, optional
-            The number of samples to use for timing, by default 100.
-        ignore_n : int, optional
-            The number of initial runs to ignore for timing (e.g. for compilation caching), by default 1.
-
-        Returns:
-        -------
-        duration_mv : float
-            The average time taken for the operator method.
-        duration_grad_mv : float
-            The average time taken for the gradient of the operator method.
+        :param cls: The parametrisation case class, providing theta_base and reconstruct_operator methods.
+        :param operator: The linear operator to analyze.
+        :param method: The method of the operator to use, e.g. "mv" or "inv".        
+        :param n_samples: The number of samples to use for timing, by default 100.
+        :param ignore_n: The number of initial runs to ignore for timing (e.g. for compilation caching), by default 1.
+        :return: duration_mv, duration_grad_mv
+            duration_mv : float
+                The average time taken for the operator method.
+            duration_grad_mv : float
+                The average time taken for the gradient of the operator method.
         '''
-        
+
         x_in = jnp.ones_like(operator.in_structure()) 
 
         args_method = (operator, cls.theta_base(operator), x_in, cls.reconstruct_operator)
@@ -307,6 +305,9 @@ class OperatorThetaParametrised(ABC):
 #============================================================================================================
 
 class TransportOperatorSigmaParametrised(OperatorThetaParametrised):
+    '''
+    Parametrisation case for transport operators parameterised by the total cross section.
+    '''
     @staticmethod
     def theta_base(operator ):
         return operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data.total
@@ -318,10 +319,29 @@ class TransportOperatorSigmaParametrised(OperatorThetaParametrised):
 
 
 class TotalOperatorSigmaParametrised(OperatorThetaParametrised):
+    '''
+    Parametrisation case for total operators parameterised by the total cross section.
+    '''
+    @staticmethod
+    def theta_base(operator ):
+        # We just replace the entire cross section data. this does not matter for the scattering data; it is not used in the transport operator...
+        return operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data
+    
+    @staticmethod
+    def reconstruct_operator(operator, theta):
+        return eqx.tree_at(lambda op : op.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data, operator, replace = theta)
+    
+    
+
+
+class TotalOperatorSigmaAllParametrised(OperatorThetaParametrised):
+    '''
+    Parametrisation case for total operators parameterised by the total and scattering cross section.
+    '''
     @staticmethod
     def theta_base(operator ):
         return operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data
     
     @staticmethod
     def reconstruct_operator(operator, theta):
-        return eqx.tree_at(lambda op : op.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data, operator, replace = theta)
+        return eqx.tree_at(lambda op : [op.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data, op.inscatter_operator.cross_sections_indexed.cross_section_data], operator, replace = [theta,theta])

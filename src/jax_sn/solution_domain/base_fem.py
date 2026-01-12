@@ -17,14 +17,83 @@ from dataclasses import dataclass
 class FEMMatrices:
     '''
     Convenience class to bundle all FEM matrices required for the solution of the transport equation on a domain
-    This is static wrt the domain geometry (i.e. assumes linear Jacobians)
-    Therefore, it is separate from the 
+    This is static wrt the domain geometry since it is only a function of the element type and basis functions.s
     '''
+
     mass_matrix       : jnp.ndarray  #[n_basis, n_basis]
-    integration_coeff : jnp.ndarray  #[n_basis]
+    r'''
+    Mass matrix of the reference element:
+
+    .. math:: 
+        H_{ij}=  \int_R H_i H_j dV
+
+    The mass matrix of a non-reference element with linear Jacobian can be obtained by scaling this matrix with the determinant of the Jacobian:
+
+    .. math::
+        H_{e,ij} = |J_e| H_{ij}
+    '''
+    
+    integration_coeff : jnp.ndarray  #[n_basis]    
+    r'''
+    Integration coefficient vector of the reference element:
+    
+    .. math:: 
+        I_{i}=  \int_R H_i dV
+
+    The integration coefficient vector of a non-reference element with linear Jacobian can be obtained by scaling this vector with the determinant of the Jacobian:
+
+    .. math::
+        I_{e,i} = |J_e| I_{i}
+    '''
+
     derivative_matrix : jnp.ndarray  #[n_dim, n_basis, n_basis]
+    r'''
+    Derivative matrix of the reference element:
+
+    .. math:: 
+        B_{\alpha, ij}=  \int_R \frac{\partial H_i}{\partial r_\alpha} H_j dV
+
+    where :math:`r_\alpha` is the reference coordinate in dimension :math:`\alpha`.
+
+    The derivative matrix of a non-reference element with linear Jacobian can be obtained by transforming this matrix with the inverse of the Jacobian:
+
+    .. math::
+        B_{e,\beta, ij} = \sum_{\alpha}  |J_e| (\mathbf{J}_e^{-1})_{\alpha, \beta} B_{\alpha, ij}
+
+    such that the required finite element integral in real coordinates can be computed as:
+
+    .. math::
+        \int_e H_j \Omega \cdot \nabla H_i = \sum_{\beta} \Omega_{\beta} \sum_{\alpha}  |J_e| (\mathbf{J}_e^{-1})_{\alpha, \beta} B_{\alpha, ij}
+    '''
+
     outflow_matrices  : jnp.ndarray  #[n_faces_per_element, n_basis, n_basis]
+    r'''
+    Outflow face matrices of the reference element:
+
+    .. math::
+        C_{\gamma ij}=  \int_{\gamma} H_i H_j dS
+
+    The outflow face matrices of a non-reference element with linear Jacobian can be obtained by scaling this matrix with the determinant of the face Jacobian:
+
+    .. math::
+        \Omega \cdot n_{\gamma} \int_\gamma H_i H_j dA = |J_{e,\gamma}| C_{\gamma ij} \Omega \cdot n_{\gamma}        
+    '''
+
     inflow_matrices   : jnp.ndarray  #[n_faces_per_element, n_permutations, n_faces_per_element, n_basis, n_basis]
+    r'''
+    Inflow face connection matrices of the reference element:
+
+    .. math::
+        D_{\gamma_1, p, \gamma_2, ij}=  \int_{\gamma_1} H_i \overline{H}_j dS
+
+    where :p: indicates the permutation of the face :math:`\gamma_2` to match face :math:`\gamma_1`.
+
+    The inflow face connection matrices of a non-reference element with linear Jacobian can be obtained by scaling this matrix with the determinant of the face Jacobian:
+
+    .. math::
+        \Omega \cdot n_{\gamma_1} \int_{\gamma_1} H_i \overline{H}_j dA = |J_{e,\gamma_1}| D_{\gamma_1, p, \gamma_2, ij} \Omega \cdot n_{\gamma_1}
+
+    '''
 
     @classmethod 
     def from_element(cls, element : "Element"):
@@ -41,10 +110,33 @@ class PrecomputedGeometricData:
     Convenience class to bundle all precomputed geometric data required for the solution of the transport equation on a domain
     This is specific to a given domain geometry. Therefore, it is separate from FEMMatrices.
     '''
+
     vol_jacobians         : jnp.ndarray #[n_elements, n_dim, n_dim]
+    r'''
+    Volume Jacobians for all elements. Computed as:
+
+    .. math::
+        \mathbf{J}_{e,ij} = \frac{\partial x_i}{\partial r_j}
+
+    where :math:`\mathbf{x}` are the real coordinates in the element :math:`e`, and :math:`\mathbf{r}` are the reference element coordinates.
+
+    Shape [n_elements, n_dim, n_dim].
+    '''
+
     vol_jacobians_inv     : jnp.ndarray #[n_elements, n_dim, n_dim]
+    '''
+    Inverse of the volume Jacobians for all elements. Shape [n_elements, n_dim, n_dim].
+    '''
+
     vol_jacobians_det     : jnp.ndarray #[n_elements]
+    '''
+    Determinant of the volume Jacobians for all elements. Shape [n_elements].
+    '''
+
     face_jacobians_det    : jnp.ndarray #[n_elements, n_faces_per_element]
+    '''
+    Determinant of the face Jacobians for all elements and faces. Shape [n_elements, n_faces_per_element].
+    '''
 
     @property 
     def n_elements(self) -> int:
@@ -56,6 +148,13 @@ class PrecomputedGeometricData:
 #=======================================================================================================================================================================    
 
 class Element(ABC):    
+    '''
+    Base class for finite elements in jax-sn. This provides functions for computing the finite element matrices, as well as for mapping between local and real coordinates.
+
+    Methods to tabulate basis functions, get quadrature points and weights, and other element-specific operations are defined here as abstract methods to be implemented by concrete element classes.
+    These do not necessarily need to be jittable, since they are typically only called during setup and precomputation. They can thus use non-jittable libraries such as basix.
+    The only exception is the :ref:`precompute_geometric_data` method; this needs to be jittable and traceable to allow for derivative computations with respect to the geometry.
+    '''
     
     @property
     @abstractmethod        
@@ -134,6 +233,11 @@ class Element(ABC):
     def n_vertices_per_face(self, face_idx : int) -> int:
         '''
         Returns the number of vertices per face of the element.
+
+        Parameters  
+        ----------
+        face_idx : int
+            The index of the face.
         '''
         ...
 
@@ -419,7 +523,7 @@ def _compute_face_outflow_matrices(element : Element) -> jnp.ndarray:
     '''
     Computes the face outflow matrices for the given element.
 
-    i.e. C_{ij}^e = \\int_e h_i h_j dA
+    i.e. C_{ij}^{\gamma} = \\int_{\gamma} h_i h_j dA
 
     Parameters
     ----------
@@ -445,7 +549,7 @@ def _compute_face_inflow_matrices(element : Element) -> jnp.ndarray:
     '''
     Computes the face inflow matrices for the given element.
 
-    i.e. D_{ij}^{e_1,p, e_2} = \\int_e h_i \\overline{h}_j dA
+    i.e. D_{ij}^{\gamma_1,p, \gamma_2} = \\int_{\gamma_1} h_i \\overline{h}_j dA
 
     Parameters
     ----------

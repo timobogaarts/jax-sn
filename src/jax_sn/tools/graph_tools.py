@@ -127,17 +127,11 @@ def compute_levels_iterative(dependency_matrix : jnp.ndarray, n_iterations_per_l
     For large enough graphs and n_iterations_per_loop, the Python overhead is insignificant compared to the JAX computation time.
     Since this function is safer than the other two level computation functions, it is recommended to use this function when possible.
     
-    Parameters:
-    -----------
-    dependency_matrix : jnp.ndarray
-        A (n_elements, n_faces_per_element) array where each row contains the indices of upstream elements for each element.
-        Use n_elements as a dummy index for faces that do not connect to any upstream element.
-    n_iterations_per_loop : int
-        The number of iterations to perform in each JAX-compiled step.  
-    Returns:
-    --------
-    jnp.ndarray
-        An array of shape (n_elements,) containing the computed levels for each element.    
+    :param dependency_matrix: A (n_elements, n_faces_per_element) array where each row contains the indices of upstream elements for each element.
+                              Use n_elements as a dummy index for faces that do not connect to any upstream element.
+    :param n_iterations_per_loop: The number of iterations to perform in each JAX-compiled step.  
+    :return: An array of shape (n_elements,) containing the computed levels for each element.    
+    
     '''
     levels = _setup_levels_including_dummy(dependency_matrix)
     n_elements = dependency_matrix.shape[0]
