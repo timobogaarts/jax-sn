@@ -358,8 +358,9 @@ def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_o
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)    
     
     groups_elements_basis_shape = (n_energy_groups, ) + solution_domain.elements_basis_shape.shape 
-    scatter_op                = TotalGroupScatterOperator.from_quadrature_set_and_cross_sections(quadrature_set, solution_domain.domain.cross_sections_indexed, 
-                                                                                                 energy_group=0, l_max = lmax,
+    scatter_op                = TotalGroupScatterOperator.from_quadrature_set_and_cross_sections(
+        quadrature_set, solution_domain.domain.cross_sections_indexed, 
+                                                                                                 l_max = lmax,
                                                                                                  groups_elements_basis_shape=jax.ShapeDtypeStruct(groups_elements_basis_shape, dtype=solution_domain.elements_basis_shape.dtype))
 
     source_total              = jnp.broadcast_to(sources[None, :, :], (topological_sorted_angles.angle.shape[0],) + sources.shape) # source for all angles

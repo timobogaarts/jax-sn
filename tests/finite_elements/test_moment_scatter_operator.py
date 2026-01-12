@@ -120,6 +120,16 @@ def test_moment_operator_transpose():
     
     _check_adjoint_of_operator(moment_operator)
 
+def test_discrete_operator_transpose():
+    
+    quadrature_set = jax_sn.quadrature_set.create_tn_quadrature_set(3)    
+    element_basis = jax.ShapeDtypeStruct(shape=(10, 15), dtype=quadrature_set.angles.dtype)
+    discrete_operator = jax_sn.operators.moment_operator.DiscreteOperator.from_quadrature_set(quadrature_set, 5, element_basis)
+    from .operator_util import _check_adjoint_of_operator
+    
+    _check_adjoint_of_operator(discrete_operator)
+
+
 
 
 def test_scatter_operator_transpose():

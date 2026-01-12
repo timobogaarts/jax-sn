@@ -18,13 +18,32 @@ class SingleGroupOperator(AbstractLinearOperator_sn):
     .. math::
         \mathbf{A}_g = \mathbf{I} - \mathbf{M}\mathbf{T}_g^{-1} \mathbf{H} \mathbf{S}
 
-    where :math:`\mathbf{T}` is the (multi-angle) transport operator, \mathbf{H} the batched (over angles) mass operator, :math:`\mathbf{M}` the batched (over element and basis function)
-    moment operator,  :math:`\mathbf{S}` the batched (over element and basis) scattering operator.
+    where :math:`\mathbf{T}` is the (multi-angle) transport operator (see :class:`TransportOperatorMultipleAngles`), :math:`\mathbf{H}` the batched (over angles) mass operator (see :class:`MassOperator`), :math:`\mathbf{M}` the batched (over element and basis function)
+    moment operator (see :class:`MomentOperator`),  :math:`\mathbf{S}` the batched (over element and basis) inscattering operator (see :class:`InScatterOperator`).
 
-    Mathematically, this operator maps:
+    Mathetmatical description
+    ---------------------------
+
+    This operator maps:
 
     .. math::
         \mathbf{A}_g : \mathcal{M} \otimes \mathcal{F} \rightarrow \mathcal{M} \otimes \mathcal{F}
+
+    
+    Transposition
+    ---------------------------
+
+    The transpose is implemented directly and follows from transposing the individual operators:
+
+    .. math::
+        \mathbf{A}_g^T = \mathbf{I} - \mathbf{S}^T \mathbf{H}^T (\mathbf{T}_g^{-1})^T \mathbf{M}^T
+
+    where the individual transposes are defined in their respective classes.
+
+    Solution
+    ---------------------------
+    Since this is a iteratively defined linear operator, the standard way to solve systems involving this operator is to use an iterative solver (e.g., GMRES, CG, etc.) with the mv() method defined here. This can 
+    be accomplished using e.g. lineax solvers. This allows for the propagation of the derivatives through the solver as well.
 
     '''
 

@@ -250,21 +250,42 @@ def total_scattering_kernel_xs_indexed_discrete_transpose(
 # Multigroup versions
 #============================================================================================#
 
+def _extend_sigma_lgg_match_moments(sigma_l_gg : jnp.ndarray, n_moments : int) -> jnp.ndarray:
+    r'''
+    For a given element index and indexed cross section object, extracts the scattering cross section data and extends it to match the number of moments.
+
+    Parameters
+    ----------
+    sigma_l_gg : jnp.ndarray [lmax + 1, n_energy_groups]
+        The scattering cross section data for the specified element.
+    n_moments : int
+        The number of moments to extend/truncate to.
+
+    Returns
+    -------
+    jnp.ndarray [n_moments, n_energy_groups, n_energy_groups]
+        The extended scattering cross section data for the specified element.
+    '''
+    # Since this is a l expansion, not in terms of lm, we expand it locally to the full n_moments                                                                                            
+    extended_sigma_lm_gg = sigma_l_gg[_lm_real_expansion(sigma_l_gg.shape[0] - 1)[0], :] # [n_moments, n_groups]    
+    # now we have to pad/truncate to match moments_array    
+    extended_sigma_lm_gg = extended_sigma_lm_gg[:n_moments, :]  #  first truncate if needed (if n_moments > extended_sigma_lm_gg.shape[0], this does nothing)
+    extended_sigma_lm_gg = jnp.pad(extended_sigma_lm_gg, ((0, n_moments - extended_sigma_lm_gg.shape[0]), (0,0)))  # pad if needed    #[n_moments, n_groups]
+    return extended_sigma_lm_gg  # [n_moments, n_groups]
+
 def _scatter_kernel_xs_indexed_kernel_multigroup(elem_idx : int, g_out : int, cross_sections_indexed : CrossSectionIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
     r'''
     Computes from a given element index, outgoing group, incoming group, indexed cross section object and buffer for the specific incoming group, the corresponding scattering scattering source:
 
     .. math::
-        s^{g_{out}}_{lm}=  \sigma_{l, g_{out}\from g_{in}}^{(e)} \psi_{lm}^{(e, g_{in})}
+        s^{g_{out}}_{lm}=  \sum_{g_{in}} \sigma_{l, g_{out}\from g_{in}}^{(e)} \psi_{lm}^{(e, g_{in})}
 
     Automatically pads or truncates the cross section data to match the number of moments in the moments_array.
         
     Parameters
     ----------
     elem_idx : int
-        The element index.
-    g_out : int
-        The outgoing energy group index.
+        The element index.    
     g_in : int
         The incoming energy group index.
     cross_sections_indexed : CrossSectionIndexed
@@ -280,19 +301,46 @@ def _scatter_kernel_xs_indexed_kernel_multigroup(elem_idx : int, g_out : int, cr
     assert moments_array.ndim == 4, f"moments_array must be 4D [n_groups, n_moments, n_elements, n_basis], but has shape {moments_array.shape}."    
     assert moments_array.shape[0] == cross_sections_indexed.n_energy_groups, f"moments_array first dimension {moments_array.shape[0]} must match number of energy groups in cross_sections_indexed {cross_sections_indexed.n_energy_groups}."
     
-    xs_idx = cross_sections_indexed.indices[elem_idx]
-
-    sigma_l_gg = cross_sections_indexed.cross_section_data.scattering[xs_idx, :, g_out, :] # [lmax + 1, n_groups]
-
-    # Since this is a l expansion, not in terms of lm, we expand it locally to the full n_moments                                                                                            
-    extended_sigma_lm_gg = sigma_l_gg[_lm_real_expansion(sigma_l_gg.shape[0] - 1)[0], :] # [n_moments, n_groups]
-    
-    # now we have to pad/truncate to match moments_array
-    n_moments = moments_array.shape[1]
-    extended_sigma_lm_gg = extended_sigma_lm_gg[:n_moments, :]  #  first truncate if needed (if n_moments > extended_sigma_lm_gg.shape[0], this does nothing)
-    extended_sigma_lm_gg = jnp.pad(extended_sigma_lm_gg, ((0, n_moments - extended_sigma_lm_gg.shape[0]), (0,0)))  # pad if needed    #[n_moments, n_groups]
-    
+    xs_idx               = cross_sections_indexed.indices[elem_idx]
+    sigma_l_gg           = cross_sections_indexed.cross_section_data.scattering[xs_idx, :, g_out, :] # [lmax + 1, n_groups]    
+    n_moments            = moments_array.shape[1]    
+    extended_sigma_lm_gg = _extend_sigma_lgg_match_moments(sigma_l_gg, n_moments)  # [n_moments, n_groups]    #
     return jnp.einsum("lg, gli->li", extended_sigma_lm_gg, moments_array[:, :, elem_idx, :])  # [n_moments, n_in_groups] * [n_in_groups, n_moments, n_basis] -> [n_moments, n_basis]    
+
+
+def _scatter_kernel_xs_indexed_kernel_multigroup_backwards(elem_idx : int, g_in : int, cross_sections_indexed : CrossSectionIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
+    r'''
+    Backwards gathering:
+
+    .. math::
+        s_{g_{in}} = \sum_{g_{out}} \sigma_{\ell g_{out} g_{in}} \zeta_{g_{out}\ell e}
+    '''
+    assert moments_array.ndim == 4, f"moments_array must be 4D [n_groups, n_moments, n_elements, n_basis], but has shape {moments_array.shape}."    
+    assert moments_array.shape[0] == cross_sections_indexed.n_energy_groups, f"moments_array first dimension {moments_array.shape[0]} must match number of energy groups in cross_sections_indexed {cross_sections_indexed.n_energy_groups}."
+    
+    xs_idx     = cross_sections_indexed.indices[elem_idx]
+    sigma_l_gg = cross_sections_indexed.cross_section_data.scattering[xs_idx, :, :, g_in] #[lmax+1, n_groups]
+
+    extended_sigma_lm_gg = _extend_sigma_lgg_match_moments(sigma_l_gg, moments_array.shape[1])  # [n_moments, n_groups]
+    return jnp.einsum("lg, gli->li", extended_sigma_lm_gg, moments_array[:, :, elem_idx, :])  # [n_moments, n_in_groups] * [n_in_groups, n_moments, n_basis] -> [n_moments, n_basis]
+
+@eqx.filter_jit
+def _total_scattering_kernel_xs_indexed_multigroup_backwards(        
+        g_in                        : int,
+        cross_sections_indexed       : CrossSectionIndexed,
+        moments_array               : jnp.ndarray
+    ) -> jnp.ndarray:
+    r'''
+    Backwards gathering:
+
+    .. math::
+        s_{g_{in}} = \sum_{g_{out}} \sigma_{\ell g_{out} g_{in}} \zeta_{g_{out}\ell e}
+    '''
+    return jax.vmap(
+        _scatter_kernel_xs_indexed_kernel_multigroup_backwards,
+        in_axes=(0, None, None, None),
+        out_axes=1
+    )(jnp.arange(cross_sections_indexed.indices.shape[0]), g_in, cross_sections_indexed, moments_array)
 
 
 @eqx.filter_jit
