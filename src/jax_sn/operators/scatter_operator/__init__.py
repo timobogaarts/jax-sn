@@ -1,5 +1,6 @@
-from .inscatter_operator import InScatterOperator
-from .total_scatter_operator import TotalGroupScatterOperator
+from .scatter_operator_imp import ScatterOperator
+
+from .gather_scatter_operator_imp import GatherScatterOperator, GatherScatterOperatorBroadcasted
 __all__ = [
-    'InScatterOperator', 'TotalGroupScatterOperator'
+    'ScatterOperator',  "GatherScatterOperator", "GatherScatterOperatorBroadcasted"
 ]

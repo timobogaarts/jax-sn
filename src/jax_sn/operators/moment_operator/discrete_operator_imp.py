@@ -13,6 +13,8 @@ class DiscreteOperator(AbstractLinearOperator_sn):
 
     Represents a discrete operator that maps moments to angular fluxes. Approximate inverse of :class:`MomentOperator`.
 
+    Mathematical description
+    ---------------------------
     Implements:
 
     .. math::
@@ -22,6 +24,23 @@ class DiscreteOperator(AbstractLinearOperator_sn):
 
     .. math::
         \overline{\mathbf{D}}[\{ b_{lm} \}] = \sum_{lm} b_{lm} Y_{lm}(\Omega_k)
+
+    where :math:`\mathcal{D}` is the space of discrete angles, :math:`\mathcal{M}` the space of moments, and :math:`\mathcal{F}` the space of elements and basis functions.
+
+    Transposition
+    ---------------------------
+    The transpose operator (:class:`DiscreteOperatorTransposed`) implements:
+
+    .. math::
+        D^T  = \overline{\mathbf{D}}^T \otimes \mathbf{I}_F: \mathcal{D}\otimes \mathcal{F} \rightarrow \mathcal{M}\otimes \mathcal{F}  
+
+    with
+    
+    .. math::
+        \overline{\mathbf{D}}^T[s_k] = \sum_{k} s_k Y_{lm}(\Omega_k)
+
+    This is not the same as the moment operator, since the weights :math:`w_k` are not included here.
+    
    
     '''
 
@@ -57,14 +76,17 @@ class DiscreteOperator(AbstractLinearOperator_sn):
         return _moment_to_discrete_mv(self.yklm, x)
     
     def transpose(self) -> "DiscreteOperatorTransposed":
+        '''Returns the transpose operator of type :class:`DiscreteOperatorTransposed`. There does not need to be any additional setup, so this operation is essentially free.'''
         return DiscreteOperatorTransposed(self.yklm, self.quadrature_set, self.elements_basis_shape)
                     
     def in_structure(self):
+        '''Input structure representing moments. Shape [n_moments, ...] where ... is the same as :attr:`elements_basis_shape`.'''
         return jax.ShapeDtypeStruct(
             shape=(self.yklm.shape[1],) + self.elements_basis_shape.shape, 
             dtype=self.yklm.dtype)
     
     def out_structure(self):
+        '''Output structure representing discrete angles. Shape [n_angles, ...] where ... is the same as :attr:`elements_basis_shape`.'''
         return jax.ShapeDtypeStruct(
             shape=(self.yklm.shape[0],) + self.elements_basis_shape.shape, 
             dtype=self.yklm.dtype)
@@ -73,6 +95,11 @@ class DiscreteOperator(AbstractLinearOperator_sn):
     def n_moments(self):
         '''Number of moments (= :math:`(L+1)^2` for moment order L)'''
         return self.yklm.shape[1]
+    
+    @property 
+    def n_angles(self):
+        '''Number of discrete angles'''
+        return self.yklm.shape[0]
 
 @lx.is_symmetric.register(DiscreteOperator)
 def _(operator):
@@ -86,17 +113,8 @@ def _(operator):
 class DiscreteOperatorTransposed(DiscreteOperator):
     r'''
 
-    Represents the transpose of the discrete operator that maps angular fluxes to moments. Approximate inverse of :class:`MomentOperatorTransposed`.
+    Represents the transpose of the discrete operator that maps angular fluxes to moments. Approximate inverse of :class:`MomentOperatorTransposed`. See :class:`DiscreteOperator` for details.
 
-    Implements:
-
-    .. math::
-        D^T  = \overline{\mathbf{D}}^T \otimes \mathbf{I}_F: \mathcal{D}\otimes \mathcal{F} \rightarrow \mathcal{M}\otimes \mathcal{F}   
-
-    with    
-
-    .. math::
-        \overline{\mathbf{D}}^T[s_k] = \sum_{k} s_k Y_{lm}(\Omega_k)
    
     '''
 

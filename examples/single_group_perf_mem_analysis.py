@@ -53,10 +53,10 @@ def setup_anisotropic(dim, degree, n_elem_regions, d_other_dim, n_other_dim, tn_
     return solution_domain, (sources_eg0, sources_eg1), create_tn_quadrature_set(tn_order)
 
 def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim, n_other_dim, tn_order):
-    from jax_sn.operators.scatter_operator import InScatterOperator
+    from jax_sn.operators.scatter_operator import ScatterOperator
     from jax_sn.operators.transport_operator import TransportOperatorMultipleAnglesVmap, TransportOperatorVmap
     from jax_sn.operators.mass_operator import MassOperator
-    from jax_sn.operators.moment_operator import MomentOperator
+    from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
     from jax_sn.domain.geometric_domain import TopologicalSortedAngle
     from jax_sn.operators.single_group_operator import SingleGroupOperator    
             
@@ -66,9 +66,10 @@ def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim,
     transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorVmap(solution_domain.solution_domain_data, topological_sorted_angles, 0))
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
-    scatter_op                = InScatterOperator.from_quadrature_set_and_cross_sections(quadrature_set, solution_domain.domain.cross_sections_indexed, energy_group = 0, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
+    scatter_op                = ScatterOperator(solution_domain.domain.cross_sections_indexed, moment_operator.out_structure(), energy_group_in=0, energy_group_out=0)
     source_total              = jnp.broadcast_to(sources[0][None, :, :], (topological_sorted_angles.angle.shape[0],) + sources[0].shape) # source for all angles
-    Aop = SingleGroupOperator(moment_operator, transport_operator, mass_operator, scatter_op)
+    discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
+    Aop = SingleGroupOperator(moment_operator, transport_operator, mass_operator, discrete_operator,  scatter_op)
     return Aop, source_total, solution_domain
 
 
@@ -100,7 +101,7 @@ def _run_multi_angle_operators(dim, degree, pallas = False):
         print(f"\tinv memory     : {mem_inv}")
         print(f"\tgrad inv memory: {mem_inv_grad}")           
         print("\tTotal Operator:")
-        anew = SingleGroupOperator(Aop.moment_operator, operator_instance, Aop.mass_operator,  Aop.inscatter_operator)
+        anew = SingleGroupOperator(Aop.moment_operator, operator_instance, Aop.mass_operator, Aop.discrete_operator, Aop.inscatter_operator)
         mem_mv, mem_mv_grad   = TotalOperatorSigmaParametrised.analyze_grad_memory(anew, method="mv")            
         print(f"\t\tmv memory      : {mem_mv}")
         print(f"\t\tgrad mv memory : {mem_mv_grad}")        
@@ -115,7 +116,7 @@ def _run_multi_angle_operators(dim, degree, pallas = False):
         print(f"\tinv time     : {time_inv      * 1000:.2f} ms")
         print(f"\tgrad inv time: {time_inv_grad * 1000:.2f} ms")
 
-        anew = SingleGroupOperator(Aop.moment_operator, operator_instance, Aop.mass_operator,  Aop.inscatter_operator)
+        anew = SingleGroupOperator(Aop.moment_operator, operator_instance, Aop.mass_operator,  Aop.discrete_operator,Aop.inscatter_operator)
         time_mv, time_mv_grad = TotalOperatorSigmaParametrised.analyze_grad_timing(anew, method="mv", n_samples = 3, ignore_n = 1)    
 
         print(f"\tTotal operator")        
@@ -166,11 +167,11 @@ def _solve_single_group(dim, degree, pallas = True):
 
         rhs = Aop.moment_operator.mv(operator_instance.inv(source_total))
         
-        anew                  = SingleGroupOperator(Aop.moment_operator, operator_instance, Aop.mass_operator,  Aop.inscatter_operator)
+        anew                  = SingleGroupOperator(Aop.moment_operator, operator_instance, Aop.mass_operator, Aop.discrete_operator, Aop.inscatter_operator)
         
         mem_solve , mem_grad_solve = TotalOperatorSigmaParametrised.analyze_grad_memory(anew, method=solve_bicgstab)
         
-        #time_solve, time_grad_solve = TotalOperatorSigmaParametrised.analyze_grad_timing(anew, method=solve_bicgstab, n_samples = 3, ignore_n = 1)
+        time_solve, time_grad_solve = TotalOperatorSigmaParametrised.analyze_grad_timing(anew, method=solve_bicgstab, n_samples = 3, ignore_n = 1)
 
         print("Total operator solve times:")
         print(f"{operator_cls.__name__} single angle for a dimension {dim} degree {degree} operator with {solution_domain.domain.n_elements} elements and {n_angles} angles:")
@@ -180,8 +181,8 @@ def _solve_single_group(dim, degree, pallas = True):
         print(f"\tSolve time      : {time_solve       * 1000:.2f} ms")
         print(f"\tGrad solve time : {time_grad_solve  * 1000:.2f} ms")
         
-#_run_multi_angle_operators(3,2, True)
-_solve_single_group(3,2,False)
+_run_multi_angle_operators(3,2, True)
+_solve_single_group(3,2,True)
 
 # Example output [RTx 3080]:
 # Note that these numbers make sense:
@@ -192,40 +193,40 @@ _solve_single_group(3,2,False)
 # TransportOperatorBatched multi angle for a dimension 3 degree 2 operator with 60000 elements and 72 angles:
 #         mv memory      : {'peak': 684.7307968139648, 'argument': 347.5237274169922, 'output': 3.0517578125e-05, 'temp': 337.20886993408203}
 #         grad mv memory : {'peak': 1338.8416290283203, 'argument': 347.5237274169922, 'output': 0.00014495849609375, 'temp': 991.3197631835938}
-#         inv memory     : {'peak': 1078.8526763916016, 'argument': 419.67293548583984, 'output': 3.0517578125e-05, 'temp': 659.183479309082}
-#         grad inv memory: {'peak': 1481.1562576293945, 'argument': 419.67293548583984, 'output': 0.00014495849609375, 'temp': 1061.491340637207}
+#         inv memory     : {'peak': 777.5167617797852, 'argument': 419.67293548583984, 'output': 3.0517578125e-05, 'temp': 357.84632110595703}
+#         grad inv memory: {'peak': 1469.6572036743164, 'argument': 419.67293548583984, 'output': 0.00014495849609375, 'temp': 1049.990608215332}
 #         Total Operator:
-#                 mv memory      : {'peak': 796.7484359741211, 'argument': 109.31475067138672, 'output': 3.0517578125e-05, 'temp': 687.438117980957}
-#                 grad mv memory : {'peak': 1170.7985162734985, 'argument': 109.31475067138672, 'output': 0.000579833984375, 'temp': 1061.492317199707}
+#                 mv memory      : {'peak': 796.7484359741211, 'argument': 109.31475067138672, 'output': 3.0517578125e-05, 'temp': 687.436897277832}
+#                 grad mv memory : {'peak': 1432.1332702636719, 'argument': 109.31475067138672, 'output': 0.000579833984375, 'temp': 1648.414924621582}
 # TransportOperatorBatchedPallas multi angle for a dimension 3 degree 2 operator with 60000 elements and 72 angles:
 #         mv memory      : {'peak': 684.7307968139648, 'argument': 347.5237274169922, 'output': 3.0517578125e-05, 'temp': 337.20886993408203}
 #         grad mv memory : {'peak': 1338.8416290283203, 'argument': 347.5237274169922, 'output': 0.00014495849609375, 'temp': 991.3197631835938}
-#         inv memory     : {'peak': 1276.6126708984375, 'argument': 419.67293548583984, 'output': 3.0517578125e-05, 'temp': 856.943000793457}
-#         grad inv memory: {'peak': 2041.5871200561523, 'argument': 419.67293548583984, 'output': 0.00014495849609375, 'temp': 1621.976692199707}
+#         inv memory     : {'peak': 1018.9413146972656, 'argument': 419.67293548583984, 'output': 3.0517578125e-05, 'temp': 599.270393371582}
+#         grad inv memory: {'peak': 1908.8356552124023, 'argument': 419.67293548583984, 'output': 0.00014495849609375, 'temp': 1489.168830871582}
 #         Total Operator:
-#                 mv memory      : {'peak': 1295.8443450927734, 'argument': 109.31475067138672, 'output': 3.0517578125e-05, 'temp': 1186.533576965332}
-#                 grad mv memory : {'peak': 1955.9401092529297, 'argument': 109.31475067138672, 'output': 0.000579833984375, 'temp': 1847.085578918457}
+#                 mv memory      : {'peak': 1038.1729888916016, 'argument': 109.31475067138672, 'output': 3.0517578125e-05, 'temp': 928.860969543457}
+#                 grad mv memory : {'peak': 1823.6471710205078, 'argument': 109.31475067138672, 'output': 0.000579833984375, 'temp': 1846.168586730957}
 # TransportOperatorBatched multi angle for a dimension 3 degree 2 operator with 60000 elements and 72 angles:
-#         mv time      : 126.96 ms
-#         grad mv time : 436.53 ms
-#         inv time     : 1915.19 ms
-#         grad inv time: 3835.60 ms
+#         mv time      : 126.09 ms
+#         grad mv time : 438.62 ms
+#         inv time     : 1924.20 ms
+#         grad inv time: 3881.54 ms
 #         Total operator
-#                 mv time      : 1923.93 ms
-#                 grad mv time : 3862.88 ms
+#                 mv time      : 1919.63 ms
+#                 grad mv time : 3822.78 ms
 # TransportOperatorBatchedPallas multi angle for a dimension 3 degree 2 operator with 60000 elements and 72 angles:
-#         mv time      : 121.62 ms
-#         grad mv time : 439.36 ms
-#         inv time     : 743.74 ms
-#         grad inv time: 1525.63 ms
+#         mv time      : 120.86 ms
+#         grad mv time : 438.67 ms
+#         inv time     : 735.39 ms
+#         grad inv time: 1520.03 ms
 #         Total operator
-#                 mv time      : 761.12 ms
-#                 grad mv time : 1552.51 ms
+#                 mv time      : 759.39 ms
+#                 grad mv time : 1549.29 ms
 # Total operator solve times:
 # TransportOperatorBatchedPallas single angle for a dimension 3 degree 2 operator with 60000 elements and 72 angles:
 #  with stats: {'max_steps': 20, 'num_steps': Array(14, dtype=int64)}
-#         Solve memory      : {'peak': 1669.1622104644775, 'argument': 119.46651458740234, 'output': 3.0517578125e-05, 'temp': 1626.451416015625}
-#         Grad solve memory : {'peak': 3382.4165840148926, 'argument': 119.46651458740234, 'output': 0.000579833984375, 'temp': 3262.98828125}
-#         Solve time      : 17606.60 ms
-#         Grad solve time : 36551.79 ms
+#         Solve memory      : {'peak': 1931.1783227920532, 'argument': 119.46871185302734, 'output': 3.0517578125e-05, 'temp': 2137.311279296875}
+#         Grad solve memory : {'peak': 3124.2888984680176, 'argument': 119.46871185302734, 'output': 0.000579833984375, 'temp': 3136.17138671875}
+#         Solve time      : 17520.24 ms
+#         Grad solve time : 36461.75 ms
 # ===============

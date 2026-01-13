@@ -87,8 +87,8 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
         _pprint_memory_analysis(OperatorAnalysis.analyze_memory(MGOP.mass_operator, "mv"))
         print("MomentOperator")
         _pprint_memory_analysis(OperatorAnalysis.analyze_memory(MGOP.moment_operator, "mv"))
-        print("ScatterOperator")
-        _pprint_memory_analysis(OperatorAnalysis.analyze_memory(MGOP.scatter_operator, "mv"))
+        print("DiscreteOperator")
+        _pprint_memory_analysis(OperatorAnalysis.analyze_memory(MGOP.discrete_operator, "mv"))
         print("Single Group Operator")
         sgop = MGOP.to_single_group_operator(0)
         _pprint_memory_analysis(OperatorAnalysis.analyze_memory(sgop, "mv"))
@@ -137,7 +137,7 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
         print("MomentOperator")
         _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP.moment_operator, "mv",      **n_timings(dim)))
         print("ScatterOperator")
-        _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP.scatter_operator, "mv",     **n_timings(dim)))
+        _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP.discrete_operator, "mv",     **n_timings(dim)))
         print("Single Group Operator")
         sgop = MGOP.to_single_group_operator(0)
         _pprint_timing_analysis(OperatorAnalysis.analyze_timing(sgop, "mv", **n_timings(dim)))
@@ -149,39 +149,6 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
 
     # %%
     bicgstab_solver = lx.BiCGStab(1e-10, 1e-10, max_steps = 5)
-
-    def solve_lower_triangular_with_stats(mgop, solver, rhs : jnp.ndarray) -> jnp.ndarray:
-        '''
-        Solve the linear system using a given solver, assuming the multi-group operator is lower triangular.
-        This is useful for e.g. downscattering only problems. 
-
-        Parameters
-        ----------
-        mgop : MultiGroupOperator
-            The multi group operator.
-        solver : lx.LinearSolver
-            The linear solver to use.
-        rhs : jnp.ndarray
-            The right-hand side.
-        Returns
-        -------
-        jnp.ndarray
-            The solution.   
-        '''
-        n_groups = mgop.n_energy_groups    
-        solution = jnp.zeros_like(rhs)
-        stats = [] 
-
-        for i in range(n_groups):
-            
-            sgop = mgop.to_single_group_operator(i)
-            rhs_i = rhs[i] + mgop.moment_operator.mv(sgop.transport_operator.inv(mgop.mass_operator.mv(mgop.scatter_operator.to_energy_group(i).mv(solution))))        
-            solution_i = lx.linear_solve(sgop, rhs_i, solver, throw = False)
-            solution = solution.at[i].set(solution_i.value)
-            print(solution_i.stats)
-            
-            stats.append(solution_i.stats)
-        return solution, stats
 
     #solution, stats = solve_lower_triangular_with_stats(MGOP, bicgstab_solver, rhs_total)
     # I know it is not going to converge in 5, so I can just /5 / 2 to get the time for a single MV expected / commented out for this reason
@@ -238,11 +205,11 @@ run_all_for_particular_operator(2,2, TransportOperatorBatchedPallas, batch_size=
 # argument       : 82.42 MB
 # output         : 41.20 MB
 # temp           : 4.00 MB
-# ScatterOperator
-# peak           : 292.53 MB
-# argument       : 164.93 MB
+# DiscreteOperator
+# peak           : 127.62 MB
+# argument       : 41.22 MB
 # output         : 82.40 MB
-# temp           : 45.20 MB
+# temp           : 4.00 MB
 # Single Group Operator
 # peak           : 281.60 MB
 # argument       : 64.06 MB
@@ -259,7 +226,7 @@ run_all_for_particular_operator(2,2, TransportOperatorBatchedPallas, batch_size=
 # output         : 41.20 MB
 # temp           : 581.03 MB
 # Multi Group Operator Total Solve
-# peak           : 1673.41 MB
+# peak           : 1673.42 MB
 # argument       : 190.26 MB
 # output         : 164.79 MB
 # temp           : 1318.37 MB
@@ -270,19 +237,19 @@ run_all_for_particular_operator(2,2, TransportOperatorBatchedPallas, batch_size=
 # temp           : 622.23 MB
 # Timing Analysis for MV of Operators
 # TransportOperator
-#         mv time      : 878.44 ms
+#         mv time      : 525.97 ms
 # MassOperator
-#         mv time      : 4.14 ms
+#         mv time      : 4.48 ms
 # MomentOperator
-#         mv time      : 4.92 ms
+#         mv time      : 5.13 ms
 # ScatterOperator
-#         mv time      : 5.09 ms
+#         mv time      : 3.88 ms
 # Single Group Operator
-#         mv time      : 959.57 ms
+#         mv time      : 531.66 ms
 # Multi Group Operator
-#         mv time      : 3576.66 ms
-# Lower triangular solve time: 41574.71 ms
-#          Total time divided by number of single group MV: 944.88 ms
+#         mv time      : 2109.50 ms
+# Lower triangular solve time: 24656.19 ms
+#          Total time divided by number of single group MV: 560.37 ms
 # ================================
 # Analyzing operator: TransportOperatorBatchedPallas with params {'batch_size': 100}
 #  and problem_size:
@@ -311,11 +278,11 @@ run_all_for_particular_operator(2,2, TransportOperatorBatchedPallas, batch_size=
 # argument       : 82.42 MB
 # output         : 41.20 MB
 # temp           : 4.00 MB
-# ScatterOperator
-# peak           : 292.53 MB
-# argument       : 164.93 MB
+# DiscreteOperator
+# peak           : 127.62 MB
+# argument       : 41.22 MB
 # output         : 82.40 MB
-# temp           : 45.20 MB
+# temp           : 4.00 MB
 # Single Group Operator
 # peak           : 387.42 MB
 # argument       : 64.06 MB
@@ -332,7 +299,7 @@ run_all_for_particular_operator(2,2, TransportOperatorBatchedPallas, batch_size=
 # output         : 41.20 MB
 # temp           : 679.90 MB
 # Multi Group Operator Total Solve
-# peak           : 1673.41 MB
+# peak           : 1673.42 MB
 # argument       : 190.26 MB
 # output         : 164.79 MB
 # temp           : 1318.37 MB
@@ -343,19 +310,19 @@ run_all_for_particular_operator(2,2, TransportOperatorBatchedPallas, batch_size=
 # temp           : 721.11 MB
 # Timing Analysis for MV of Operators
 # TransportOperator
-#         mv time      : 529.51 ms
+#         mv time      : 195.94 ms
 # MassOperator
-#         mv time      : 3.82 ms
+#         mv time      : 4.49 ms
 # MomentOperator
-#         mv time      : 4.96 ms
+#         mv time      : 5.11 ms
 # ScatterOperator
-#         mv time      : 4.89 ms
+#         mv time      : 4.06 ms
 # Single Group Operator
-#         mv time      : 539.22 ms
+#         mv time      : 205.93 ms
 # Multi Group Operator
-#         mv time      : 2253.96 ms
-# Lower triangular solve time: 26749.41 ms
-#          Total time divided by number of single group MV: 607.94 ms
+#         mv time      : 822.07 ms
+# Lower triangular solve time: 9945.69 ms
+#          Total time divided by number of single group MV: 226.04 ms
 # ================================
 # Analyzing operator: TransportOperatorBatched with params {'batch_size': 100}
 #  and problem_size:
@@ -384,11 +351,11 @@ run_all_for_particular_operator(2,2, TransportOperatorBatchedPallas, batch_size=
 # argument       : 1.67 MB
 # output         : 0.82 MB
 # temp           : 1.67 MB
-# ScatterOperator
-# peak           : 6.64 MB
-# argument       : 3.33 MB
+# DiscreteOperator
+# peak           : 3.34 MB
+# argument       : 0.84 MB
 # output         : 1.65 MB
-# temp           : 1.67 MB
+# temp           : 0.84 MB
 # Single Group Operator
 # peak           : 13.74 MB
 # argument       : 1.58 MB
@@ -416,19 +383,19 @@ run_all_for_particular_operator(2,2, TransportOperatorBatchedPallas, batch_size=
 # temp           : 17.43 MB
 # Timing Analysis for MV of Operators
 # TransportOperator
-#         mv time      : 20.12 ms
+#         mv time      : 20.10 ms
 # MassOperator
-#         mv time      : 0.46 ms
+#         mv time      : 0.58 ms
 # MomentOperator
-#         mv time      : 0.48 ms
+#         mv time      : 0.53 ms
 # ScatterOperator
-#         mv time      : 0.44 ms
+#         mv time      : 0.59 ms
 # Single Group Operator
-#         mv time      : 19.39 ms
+#         mv time      : 19.77 ms
 # Multi Group Operator
-#         mv time      : 69.77 ms
-# Lower triangular solve time: 834.20 ms
-#          Total time divided by number of single group MV: 18.96 ms
+#         mv time      : 76.01 ms
+# Lower triangular solve time: 885.46 ms
+#          Total time divided by number of single group MV: 20.12 ms
 # ================================
 # Analyzing operator: TransportOperatorBatchedPallas with params {'batch_size': 100}
 #  and problem_size:
@@ -457,11 +424,11 @@ run_all_for_particular_operator(2,2, TransportOperatorBatchedPallas, batch_size=
 # argument       : 1.67 MB
 # output         : 0.82 MB
 # temp           : 1.67 MB
-# ScatterOperator
-# peak           : 6.64 MB
-# argument       : 3.33 MB
+# DiscreteOperator
+# peak           : 3.34 MB
+# argument       : 0.84 MB
 # output         : 1.65 MB
-# temp           : 1.67 MB
+# temp           : 0.84 MB
 # Single Group Operator
 # peak           : 24.12 MB
 # argument       : 1.58 MB
@@ -489,16 +456,16 @@ run_all_for_particular_operator(2,2, TransportOperatorBatchedPallas, batch_size=
 # temp           : 28.79 MB
 # Timing Analysis for MV of Operators
 # TransportOperator
-#         mv time      : 3.79 ms
+#         mv time      : 10.97 ms
 # MassOperator
-#         mv time      : 0.57 ms
+#         mv time      : 0.70 ms
 # MomentOperator
-#         mv time      : 0.56 ms
+#         mv time      : 0.62 ms
 # ScatterOperator
-#         mv time      : 0.44 ms
+#         mv time      : 0.56 ms
 # Single Group Operator
-#         mv time      : 3.56 ms
+#         mv time      : 3.69 ms
 # Multi Group Operator
-#         mv time      : 11.45 ms
-# Lower triangular solve time: 122.77 ms
-#          Total time divided by number of single group MV: 2.79 ms
+#         mv time      : 12.01 ms
+# Lower triangular solve time: 129.16 ms
+#          Total time divided by number of single group MV: 2.94 ms

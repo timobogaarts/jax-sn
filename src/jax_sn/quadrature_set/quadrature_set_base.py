@@ -15,7 +15,7 @@ class QuadratureSet:
     '''        The angles of the quadrature set in Cartesian coordinates. Shape [n_angles, dimension].'''
 
     weights : jnp.ndarray
-    '''        The weights associated with each angle. Shape [n_angles]. Should sum to 4pi (such that :math:`\sum_{i} w_i 1 = \int d\Omega = 4 \pi`).'''
+    r'''        The weights associated with each angle. Shape [n_angles]. Should sum to 4pi (such that :math:`\sum_{i} w_i 1 = \int d\Omega = 4 \pi`).'''
 
     @property 
     def n_angles(self) -> int:
@@ -25,7 +25,7 @@ class QuadratureSet:
         return self.angles[idx], self.weights[idx]
     
     def wk_ylm_real(self, l_max : int) -> jnp.ndarray:
-        '''
+        r'''
         Compute the weighted real spherical harmonic expansion coefficients :math:`\sqrt{w_k} Y_{lm}(\Omega_k)` for this quadrature set up to degree l_max.
         See :func:`compute_3d_wk_yklm_real_from_quadrature_set` for details.
         '''
@@ -34,6 +34,10 @@ class QuadratureSet:
         else:
             raise NotImplementedError("Moment operator only implemented for 3D quadrature sets.")
     def ylm_real(self, l_max : int) -> jnp.ndarray:
+        '''
+        Compute the real spherical harmonic expansion coefficients :math:`Y_{lm}(\Omega_k)` for this quadrature set up to degree l_max.
+        See :func:`compute_3d_yklm_real_from_quadrature_set` for details.
+        '''
         if self.angles.shape[1] == 3:
             return compute_3d_yklm_real_from_quadrature_set(self, l_max)
         else:
@@ -74,7 +78,7 @@ def compute_3d_yklm_real_from_quadrature_set(quadrature_set : QuadratureSet, l_m
 @partial(jax.jit, static_argnums= 1)
 def compute_3d_wk_yklm_real_from_quadrature_set(quadrature_set : QuadratureSet, l_max : int) -> jnp.ndarray:
     r'''
-    Compute the weighted real spherical harmonic expansion coefficients :math:`\sqrt{w_k} Y_{lm}(\Omega_k)` for a given quadrature set up to degree l_max.
+    Compute the weighted real spherical harmonic expansion coefficients :math:`w_k Y_{lm}(\Omega_k)` for a given quadrature set up to degree l_max.
 
     See `_ylm_real` for the definition of the real spherical harmonics used.
 

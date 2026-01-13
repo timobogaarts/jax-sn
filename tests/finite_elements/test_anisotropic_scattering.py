@@ -118,13 +118,12 @@ def _interp_x():
     return jnp.linspace(0 + 1e-5, 1.3 - 1e-5, 1000)
 
 def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim, n_other_dim, tn_order):
-    from jax_sn.operators.scatter_operator import InScatterOperator
+    from jax_sn.operators.scatter_operator import ScatterOperator
     from jax_sn.operators.transport_operator import TransportOperatorMultipleAnglesVmap, TransportOperatorVmap
     from jax_sn.operators.mass_operator import MassOperator
-    from jax_sn.operators.moment_operator import MomentOperator
+    from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
     from jax_sn.domain.geometric_domain import TopologicalSortedAngle
-    from jax_sn.operators.single_group_operator import SingleGroupOperator
-
+    from jax_sn.operators.single_group_operator import SingleGroupOperator    
             
     solution_domain, sources, quadrature_set = setup_anisotropic(dim, degree, n_elem_regions, d_other_dim, n_other_dim, tn_order) 
 
@@ -132,9 +131,10 @@ def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim,
     transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorVmap(solution_domain.solution_domain_data, topological_sorted_angles, 0))
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
-    scatter_op                = InScatterOperator.from_quadrature_set_and_cross_sections(quadrature_set, solution_domain.domain.cross_sections_indexed, energy_group = 0, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
+    scatter_op                = ScatterOperator(solution_domain.domain.cross_sections_indexed, moment_operator.out_structure(), energy_group_in=0, energy_group_out=0)
     source_total              = jnp.broadcast_to(sources[0][None, :, :], (topological_sorted_angles.angle.shape[0],) + sources[0].shape) # source for all angles
-    Aop = SingleGroupOperator(moment_operator, transport_operator, mass_operator, scatter_op)
+    discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
+    Aop = SingleGroupOperator(moment_operator, transport_operator, mass_operator, discrete_operator,  scatter_op)
     return Aop, source_total, solution_domain
 
 @pytest.fixture(params=[1,2,3], scope='session')

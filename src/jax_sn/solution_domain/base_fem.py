@@ -452,7 +452,7 @@ def compute_volume_matrices_linear_jacobian(element : Element):
     return mass_matrix, integration_coeff, derivative_matrix
 
 def _compute_mass_matrix(hi, wi):
-    '''
+    r'''
     Integrates the mass matrix given basis function evaluations h_i at quadrature points and quadrature weights w_i.
 
     i.e. A_{ij} = \\int h_i h_j dV = \\sum_q h_i(q) h_j(q) w(q)
@@ -474,7 +474,7 @@ def _compute_mass_matrix(hi, wi):
     return mass_matrix
 
 def _compute_integration_coefficient(hi, wi):
-    '''
+    r'''
     Integrates the coefficient vector given basis function evaluations h_i at quadrature points and quadrature weights w_i.
 
     i.e. I_i = \\int h_i dV = \\sum_q h_i(q) w(q)
@@ -495,7 +495,7 @@ def _compute_integration_coefficient(hi, wi):
     return coeff_vector
 
 def _compute_derivative_matrix(hi, dhi_dr, wi):
-    '''
+    r'''
     Integrates the derivative matrix given basis function evaluations h_i at quadrature points, their derivatives dhi_dr, and quadrature weights w_i.
     Note that dhi_dr is the derivative with respect to some coordinate r (which depends on the dimensionality of the element).
 
@@ -520,7 +520,7 @@ def _compute_derivative_matrix(hi, dhi_dr, wi):
     return derivative_matrix
 
 def _compute_face_outflow_matrices(element : Element) -> jnp.ndarray:
-    '''
+    r'''
     Computes the face outflow matrices for the given element.
 
     i.e. C_{ij}^{\gamma} = \\int_{\gamma} h_i h_j dA
@@ -546,7 +546,7 @@ def _compute_face_outflow_matrices(element : Element) -> jnp.ndarray:
 
 
 def _compute_face_inflow_matrices(element : Element) -> jnp.ndarray:
-    '''
+    r'''
     Computes the face inflow matrices for the given element.
 
     i.e. D_{ij}^{\gamma_1,p, \gamma_2} = \\int_{\gamma_1} h_i \\overline{h}_j dA

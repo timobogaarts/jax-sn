@@ -72,7 +72,7 @@ class MassOperator(AbstractLinearOperator_sn):
     precomputed_geometric_data  : PrecomputedGeometricData
     '''Precomputed geometric data containing the Jacobian determinants.'''
 
-    addtional_shape             : Tuple[int] = ()
+    additional_shape             : Tuple[int] = ()
     '''Additional leading shape to batch over. Used for consistent in/out structure definitions.'''
 
     @classmethod 
@@ -106,6 +106,7 @@ class MassOperator(AbstractLinearOperator_sn):
     def from_transport_operator(cls, transport_operator : Union[TransportOperator, TransportOperatorMultipleAngles]) -> "MassOperator":
         r'''
         Construct a MassOperator from a transport operator.
+
         Parameters
         ----------
         transport_operator : Union[TransportOperator, TransportOperatorMultipleAngles]
@@ -131,19 +132,22 @@ class MassOperator(AbstractLinearOperator_sn):
                 x)
     
     def transpose(self) -> "MassOperator":
+        '''Returns the transpose operator, which is itself since the mass matrix is symmetric.'''
         return self  # Mass matrix is symmetric        
     
-    def in_structure(self):        
+    def in_structure(self):     
+        '''Input structure. Shape [..., n_elements, n_basis] where ... is the same as :attr:`additional_shape`.'''   
         return self._shape_inout
     
     def out_structure(self):
+        '''Output structure. Shape [..., n_elements, n_basis] where ... is the same as :attr:`additional_shape`.'''
         return self._shape_inout
     
     @property 
     def _shape_inout(self):
         n_elements = self.precomputed_geometric_data.n_elements
         n_basis = self.fem_matrices.n_basis        
-        return jax.ShapeDtypeStruct(self.addtional_shape + (n_elements, n_basis), self.fem_matrices.mass_matrix.dtype)
+        return jax.ShapeDtypeStruct(self.additional_shape + (n_elements, n_basis), self.fem_matrices.mass_matrix.dtype)
     
                 
 @lx.is_symmetric.register(MassOperator)

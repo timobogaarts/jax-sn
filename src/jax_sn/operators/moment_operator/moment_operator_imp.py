@@ -35,7 +35,7 @@ class MomentOperator(AbstractLinearOperator_sn):
     Transposition
     ---------------------------
 
-    Its transposition is defined as (tranpose again does not act on the :math:`F` space):
+    Its transposition is defined as (transpose again does not act on the :math:`F` space):
 
     .. math::
         M^T  = \overline{\mathbf{M}}^T \otimes \mathbf{I}_F: \mathcal{M}\otimes \mathcal{F} \rightarrow \mathcal{D}\otimes \mathcal{F}   
@@ -81,14 +81,17 @@ class MomentOperator(AbstractLinearOperator_sn):
         return _call_batched_moment_operator(x, self.wk_yklm)
     
     def transpose(self) -> "MomentOperator":
+        '''Returns the transpose operator of type :class:`MomentOperatorTransposed`. There does not need to be any additional setup, so this operation is essentially free.'''
         return MomentOperatorTransposed(self.wk_yklm, self.quadrature_set, self.elements_basis_shape)
                     
     def in_structure(self):
+        '''Input structure representing discrete angles. Shape [n_angles, ...] where ... is the same as :attr:`elements_basis_shape`.'''
         return jax.ShapeDtypeStruct(
             shape=(self.wk_yklm.shape[0],) + self.elements_basis_shape.shape, 
             dtype=self.wk_yklm.dtype)
     
     def out_structure(self):
+        '''Output structure representing moments. Shape [n_moments, ...] where ... is the same as :attr:`elements_basis_shape`.'''
         return jax.ShapeDtypeStruct(
             shape=(self.wk_yklm.shape[1],) + self.elements_basis_shape.shape, 
             dtype=self.wk_yklm.dtype)
@@ -98,6 +101,10 @@ class MomentOperator(AbstractLinearOperator_sn):
         '''Number of moments (= :math:`(L+1)^2` for moment order L)'''
         return self.wk_yklm.shape[1]
 
+    @property 
+    def n_angles(self):
+        '''Number of discrete angles'''
+        return self.wk_yklm.shape[0]
 
 @lx.is_symmetric.register(MomentOperator)
 def _(operator):

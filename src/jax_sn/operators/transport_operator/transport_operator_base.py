@@ -161,7 +161,7 @@ class TransportOperator(AbstractLinearOperator_sn):
         return eqx.tree_at(lambda t_operator : t_operator.topological_sorted_angle, self, self.topological_sorted_angle.reverse)
     
     def inv(self, b : jnp.ndarray) -> jnp.ndarray:
-        '''
+        r'''
         Solves the system :math:`\mathbf{T} x = b` for `x` using the internal sweep inversion.
 
         Parameters
@@ -238,7 +238,7 @@ from .transport_operator_imp import transport_inverse_sweep_batched, transport_i
 from .transport_operator_forward import forward_transport_operator_vmap, forward_transport_operator_multiple_angles_vmap, forward_transport_operator_batch, forward_transport_operator_multiple_angles_batch
 
 class TransportOperatorVmap(TransportOperator):
-    '''
+    r'''
     Transport operator using vmap over all elements. This computes the :math:`G_{ij}^{-1}` and :math:`D_{e \gamma, ij}` for all elements using vmap, and then computes the sweep using a fori loop.
 
     Takes significant memory for large problems due to storing all :math:`G_{ij}^{-1}` and :math:`D_{e \gamma, ij}` matrices.
@@ -256,7 +256,7 @@ class TransportOperatorVmap(TransportOperator):
         return transport_inverse_sweep_complete_vmap
 
 class TransportOperatorBatched(TransportOperator):
-    '''
+    r'''
     Transport operator using batched sweeps. This computes the :math:`G_{ij}^{-1}` and :math:`D_{e \gamma, ij}` for a batch of elements, performs the sweep over that batch, and then moves to the next batch.
 
     '''
@@ -315,7 +315,7 @@ class TransportOperatorBatchedPallas(TransportOperatorBatched):
 #===============================================================================================================================================
 @eqx.filter_jit
 def vmap_multiple_angles_forward(transport_operator : TransportOperator, x : jnp.ndarray) -> jnp.ndarray:
-    '''
+    r'''
     Computes the forward operation of the transport operator for multiple angles using vmap.
     In other words, computes
 
@@ -329,7 +329,7 @@ def vmap_multiple_angles_forward(transport_operator : TransportOperator, x : jnp
 
 @eqx.filter_jit
 def vmap_multiple_angles_inv(transport_operator : TransportOperator, b : jnp.ndarray) -> jnp.ndarray:
-    '''
+    r'''
     Computes the forward operation of the transport operator for multiple angles using vmap.
     In other words, computes
 
@@ -392,7 +392,7 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
         ...
 
     def inv(self, b : jnp.ndarray) -> jnp.ndarray:
-        '''
+        r'''
         Solves the system :math:`\mathbf{T}_g x = b` for `x` using the internal sweep inversion for multiple angles.
         '''
         solver = TransportOperatorSolver()
