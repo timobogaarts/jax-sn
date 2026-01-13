@@ -14,4 +14,3 @@ Submodules
 
    jax_sn.operators.scatter_operator.gather_scatter_operator_imp
    jax_sn.operators.scatter_operator.scatter_operator_imp
-   jax_sn.operators.scatter_operator.scatter_operator_util

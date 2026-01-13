@@ -1,15 +1,15 @@
 import jax
 import jax.numpy as jnp
-from .scatter_operator_util import _scatter_kernel_xs_indexed_discrete, _scatter_kernel_xs_indexed_discrete_transposed
+
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.operators.moment_operator import DiscreteOperator, DiscreteOperatorTransposed
 from jax_sn.domain.cross_sections import CrossSectionIndexed
 from jax_sn.quadrature_set import QuadratureSet
 import lineax as lx
-from .scatter_operator_util import total_scatter_kernel_xs_indexed
+
 import equinox as eqx
 from abc import abstractmethod
-from .scatter_operator_util import _lm_real_expansion
+from jax_sn.quadrature_set.quadrature_set_base import _lm_real_expansion
 from .scatter_operator_imp import ScatterOperator
 
 class GatherScatterOperator(eqx.Module):

@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from .scatter_operator_util import _scatter_kernel_xs_indexed_discrete, _scatter_kernel_xs_indexed_discrete_transposed
+
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.operators.moment_operator import DiscreteOperator, DiscreteOperatorTransposed
 from jax_sn.domain.cross_sections import CrossSectionIndexed
@@ -9,7 +9,9 @@ from jax_sn.domain.cross_sections import CrossSectionIndexed
 from jax_sn.quadrature_set import QuadratureSet
 
 import lineax as lx
-from .scatter_operator_util import total_scatter_kernel_xs_indexed
+
+import equinox as eqx
+from jax_sn.quadrature_set.quadrature_set_base import _lm_real_expansion
 
 class ScatterOperator(AbstractLinearOperator_sn):
     r'''
@@ -87,3 +89,48 @@ def _(operator):
 @lx.linearise.register(ScatterOperator)
 def _(operator):
     return operator
+
+def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, cross_sections_indexed : CrossSectionIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
+    r'''
+    Computes from a given element index, outgoing group, incoming group, indexed cross section object and buffer for the specific incoming group, the corresponding scattering scattering source:
+
+    .. math::
+        s^{g_{out}}_{lm}=  \sigma_{l, g_{out}\from g_{in}}^{(e)} \psi_{lm}^{(e, g_{in})}
+
+    Automatically pads or truncates the cross section data to match the number of moments in the moments_array.
+        
+    Parameters
+    ----------
+    elem_idx : int
+        The element index.
+    g_out : int
+        The outgoing energy group index.
+    g_in : int
+        The incoming energy group index.
+    cross_sections_indexed : CrossSectionIndexed
+        The indexed cross section data structure.
+    moments_array : jnp.ndarray [n_elements, n_basis, n_moments]
+        The moments array containing angular flux moments.
+    
+    Returns
+    -------
+    jnp.ndarray [n_basis, n_moments]
+        The scattering source moments for the specified element and energy groups.
+    '''
+    assert moments_array.ndim == 3, f"moments_array must be 3D [n_moments, n_elements, n_basis], but has shape {moments_array.shape}."    
+    
+    xs_idx = cross_sections_indexed.indices[elem_idx]
+
+    sigma_l_gg = cross_sections_indexed.cross_section_data.scattering[xs_idx, :, g_out, g_in] # [lmax + 1]
+    
+    # Since this is a l expansion, not in terms of lm, we expand it locally to the full n_moments                                                                                            
+    extended_sigma_lm_gg = sigma_l_gg[_lm_real_expansion(sigma_l_gg.shape[0] - 1)[0]] # [n_moments]
+    # now we have to pad/truncate to match moments_array
+    n_moments = moments_array.shape[0]
+    extended_sigma_lm_gg = extended_sigma_lm_gg[:n_moments]  #  first truncate if needed (if n_moments > extended_sigma_lm_gg.shape[0], this does nothing)
+    extended_sigma_lm_gg = jnp.pad(extended_sigma_lm_gg, (0, n_moments - extended_sigma_lm_gg.shape[0]))  # pad if needed    
+    return extended_sigma_lm_gg[:, None] * moments_array[:, elem_idx, :]  # [n_moments, None] * [n_moments, n_basis] -> [n_moments, n_basis]
+
+@eqx.filter_jit
+def total_scatter_kernel_xs_indexed(g_out : int, g_in : int, cross_sections_indexed : CrossSectionIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
+    return jax.vmap(_scatter_kernel_xs_indexed_kernel, in_axes=(0, None, None, None, None), out_axes=1)(jnp.arange(cross_sections_indexed.indices.shape[0]), g_out, g_in, cross_sections_indexed, moments_array)
