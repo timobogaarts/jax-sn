@@ -146,13 +146,13 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jn
 
     where we use that for lower energy groups :math:`g' < g`, the scattering operator is zero (since we use the gather scattering of a general :class:`MultiGroupOperator <jax_sn.operators.multi_group_operator.MultiGroupOperator>` here, the others are still used, but they are just zero).
 
-    The situation is now similar to the the forward transpose of the :class:`MultiGroupOperator <jax_sn.operators.multi_group_operator.MultiGroupOperator>`. We cannot use a single sweep per energy group, but we have to not only store the solution :math:`\phi_{g\ell ei}`,
+    The situation is now similar to the the forward transpose of the :class:`MultiGroupOperator <jax_sn.operators.multi_group_operator.MultiGroupOperator>`. We can use a single sweep per energy group, but we have to not only store the solution :math:`\phi_{g\ell ei}`,
     but also the intermediate values 
 
     .. math::
         \xi_{g} = \mathbf{D}^T \mathbf{H}^T (\mathbf{T}_{g}^{-1})^T \mathbf{M}^T [\phi_{g}]
 
-    Then, we can reconstruct the source as 
+    Then, we can reconstruct the source quickly as 
 
     .. math::
         \text{rhs}_g + \sum_{g' > g} \mathbf{S}^T_{g'g} [\xi_{g'}]
