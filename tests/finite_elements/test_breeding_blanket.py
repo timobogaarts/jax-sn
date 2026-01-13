@@ -413,9 +413,9 @@ def test_bb(_setup_bb, expected_value_function = _get_expected_values_sb_bb):
     rhs_total = jnp.stack([rhs_eg0] + [jnp.zeros_like(rhs_eg0) for _ in range(MGOP.n_energy_groups -1)], axis =0)
     bicgstab_solver = lx.BiCGStab(1e-20, 1e-20, max_steps = 300)
 
-    from jax_sn.operators.multi_group_operator.multi_group_operator_imp import solve_lower_triangular, solve_total
+    from jax_sn.operators.multi_group_operator import solve_lower_triangular, solve_total
 
-    values_lower_triangular = solve_lower_triangular(MGOP, bicgstab_solver, rhs_total)
+    values_lower_triangular = solve_lower_triangular(MGOP, bicgstab_solver, rhs_total)[0]
     values_total            = solve_total(MGOP, bicgstab_solver, rhs_total)
 
     x = _interp_x()    

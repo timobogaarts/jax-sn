@@ -103,7 +103,7 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
     rhs_total = jnp.stack([rhs_eg0] + [jnp.zeros_like(rhs_eg0) for _ in range(MGOP.n_energy_groups -1)], axis =0)
 
     # %%
-    from jax_sn.operators.multi_group_operator.multi_group_operator_imp import solve_lower_triangular, solve_total
+    from jax_sn.operators.multi_group_operator import solve_lower_triangular, solve_total
 
     import lineax as lx
     bicgstab_solver = lx.BiCGStab(1e-10, 1e-10, max_steps = 5)
@@ -156,7 +156,7 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
     from jax_sn.tools.memory_analysis import custom_timeit
     def analyse_solve_timing(mgop):
         def solve_lower_triangular_part():
-            return solve_lower_triangular(mgop, bicgstab_solver, rhs_total)
+            return solve_lower_triangular(mgop, bicgstab_solver, rhs_total)[0]
         time, std_time = custom_timeit(solve_lower_triangular_part, **n_timings_solve(dim))
         
         print(f"Lower triangular solve time: {time     * 1000:.2f} ms ")
