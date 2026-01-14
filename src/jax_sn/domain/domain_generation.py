@@ -2,7 +2,7 @@ import jax.numpy as jnp
 import jax 
 from typing import List, Tuple  
 from .cross_sections import CrossSectionData
-from .cross_sections import CrossSectionIndexed
+from .cross_sections import CrossSectionsIndexed
 from .geometric_domain import Domain
 
 def create_cartesian_setup(dimension : int, region_size_res : List[List[Tuple]], cross_sections_regions : List[CrossSectionData], source_regions : List[float], inhomogeneity_direction : int):
@@ -64,7 +64,7 @@ def create_cartesian_setup(dimension : int, region_size_res : List[List[Tuple]],
 
     layered_indices       = make_element_array(cross_section_indices, region_size_res, inhomogeneity_direction)
 
-    layered_cross_section = CrossSectionIndexed(layered_indices.flatten(), cross_section_data)
+    layered_cross_section = CrossSectionsIndexed(layered_indices.flatten(), cross_section_data)
     
     layered_source        = make_element_array(source_regions, region_size_res, inhomogeneity_direction)
 

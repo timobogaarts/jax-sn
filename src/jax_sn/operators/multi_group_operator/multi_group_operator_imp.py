@@ -118,7 +118,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
 
     The places are 
 
-    - The :class:`CrossSectionIndexed <jax_sn.domain.cross_sections.CrossSectionIndexed>` is shared between the transport operator and the gather-scatter operator. 
+    - The :class:`CrossSectionsIndexed <jax_sn.domain.cross_sections.CrossSectionsIndexed>` is shared between the transport operator and the gather-scatter operator. 
       This is because both operators need access to the cross section data to perform their operations. Specifically, the transport operator uses the total data, while the gather-scatter operator uses the scattering data.
       
       - :attr:`transport_operator.solution_domain_data.domain.cross_sections_indexed`,
@@ -137,13 +137,13 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
 
     The location of the shared data is crucial for correct pytree surgery (i.e. not replacing just one, but replacing both).
 
-    These are provided as property, see :attr:`cross_section_indexed_loc`, :attr:`precomputed_geometric_data_loc`, and :attr:`fem_matrices_loc`.
+    These are provided as property, see :attr:`cross_sections_indexed_loc`, :attr:`precomputed_geometric_data_loc`, and :attr:`fem_matrices_loc`.
 
     Pytree surgery can then be performed as (e.g., for replacing cross section data)::
         
-        multi_group_operator_new = eqx.tree_at(multi_group_operator.cross_section_indexed_loc, 
+        multi_group_operator_new = eqx.tree_at(multi_group_operator.cross_sections_indexed_loc, 
                                                multi_group_operator, 
-                                               replace_fn = lambda _ : new_cross_section_indexed)
+                                               replace_fn = lambda _ : new_cross_sections_indexed)
 
     (the normal replace will not work directly as it expects that the replace is a tuple of the same length as the number of locations, which we do not want to assume a priori).
 
@@ -152,7 +152,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         xs_indexed_new = eqx.tree_at(lambda xs_idx : xs_idx.cross_section_data, 
                                      self.gather_scatter_operator.cross_sections_indexed, 
                                      cs_data_lower)
-        return eqx.tree_at(self.cross_section_indexed_loc, 
+        return eqx.tree_at(self.cross_sections_indexed_loc, 
                            self, 
                            replace_fn = lambda _ : xs_indexed_new)
 
@@ -278,7 +278,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         cs_data_lower = self.gather_scatter_operator.cross_sections_indexed.cross_section_data.convert_to_downscattering_only()
         xs_indexed_new = eqx.tree_at(lambda xs_idx : xs_idx.cross_section_data, self.gather_scatter_operator.cross_sections_indexed, cs_data_lower)
 
-        return eqx.tree_at(self.cross_section_indexed_loc, self, replace_fn = lambda _ : xs_indexed_new)
+        return eqx.tree_at(self.cross_sections_indexed_loc, self, replace_fn = lambda _ : xs_indexed_new)
         
     @property 
     def n_elements(self):
@@ -297,7 +297,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         return self.transport_operator.solution_domain_data.n_basis
         
     @property
-    def cross_section_indexed_loc(self):
+    def cross_sections_indexed_loc(self):
         '''
         Function that returns a function to get the location of the cross section data in the tree.
         Since multiple places hold cross section data, we return a tuple of locations.

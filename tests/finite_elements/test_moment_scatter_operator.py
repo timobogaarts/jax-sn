@@ -141,7 +141,7 @@ def test_scatter_operator_transpose():
     xs_data_scat = jnp.array(onp.random.rand(n_elem, 16, 2,2))
 
     cross_section_data= jax_sn.domain.cross_sections.CrossSectionData(xs_data_total, xs_data_scat)
-    cross_sections_indexed = jax_sn.domain.geometric_domain.CrossSectionIndexed(jnp.arange(n_elem), cross_section_data)
+    cross_sections_indexed = jax_sn.domain.geometric_domain.CrossSectionsIndexed(jnp.arange(n_elem), cross_section_data)
 
     scatter_operator = jax_sn.operators.scatter_operator.ScatterOperator(cross_sections_indexed, jax.ShapeDtypeStruct((4,n_elem, 3), dtype = xs_data_total.dtype), energy_group_out=1, energy_group_in=0)
     from .operator_util import _check_adjoint_of_operator

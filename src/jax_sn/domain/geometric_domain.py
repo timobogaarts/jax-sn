@@ -111,7 +111,7 @@ class GeometricDomain:
         '''
         return _containing_cell(self, points)
 
-from .cross_sections import CrossSectionData, CrossSectionDataSingleGroup, CrossSectionIndexed
+from .cross_sections import CrossSectionData, CrossSectionDataSingleGroup, CrossSectionsIndexed
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True, eq=False)
@@ -122,12 +122,12 @@ class Domain(GeometricDomain):
     '''
 
     
-    cross_sections_indexed : CrossSectionIndexed
+    cross_sections_indexed : CrossSectionsIndexed
     '''Indexed cross sections for the domain.'''
 
     
     @classmethod
-    def from_mesh_and_cross_sections(cls, mesh : Tuple[jnp.ndarray, jnp.ndarray], face_template : jnp.ndarray, cross_sections_indexed : CrossSectionIndexed):
+    def from_mesh_and_cross_sections(cls, mesh : Tuple[jnp.ndarray, jnp.ndarray], face_template : jnp.ndarray, cross_sections_indexed : CrossSectionsIndexed):
         '''
         Constructs a Domain from a mesh, face template, and indexed cross sections. Checks compatibility between the mesh and cross sections.
         
@@ -137,7 +137,7 @@ class Domain(GeometricDomain):
             A tuple containing vertices and connectivity of the mesh. vertices is a jnp.ndarray of shape [n_vertices, n_dim] and connectivity is a jnp.ndarray of shape [n_elements, n_vertices_per_element].
         face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
             A 2D array representing the face template.
-        cross_sections_indexed : CrossSectionIndexed
+        cross_sections_indexed : CrossSectionsIndexed
             Indexed cross sections for the domain.
         Returns
         -------
@@ -152,7 +152,7 @@ class Domain(GeometricDomain):
             cross_sections_indexed = cross_sections_indexed
         )    
     @classmethod 
-    def from_geometric_domain_and_cross_sections(cls, geometric_domain : GeometricDomain, cross_sections_indexed : CrossSectionIndexed):        
+    def from_geometric_domain_and_cross_sections(cls, geometric_domain : GeometricDomain, cross_sections_indexed : CrossSectionsIndexed):        
         '''
         Constructs a Domain from a GeometricDomain and indexed cross sections. Checks compatibility between the geometric domain and cross sections.
 
@@ -160,7 +160,7 @@ class Domain(GeometricDomain):
         ----------
         geometric_domain : GeometricDomain
             The geometric domain.
-        cross_sections_indexed : CrossSectionIndexed
+        cross_sections_indexed : CrossSectionsIndexed
             Indexed cross sections for the domain.
         Returns
         -------
@@ -179,7 +179,7 @@ class Domain(GeometricDomain):
                    cross_sections_indexed=cross_sections_indexed
                   )    
     
-def _check_cross_section_compatibility(n_elements : int, cross_sections : CrossSectionIndexed):
+def _check_cross_section_compatibility(n_elements : int, cross_sections : CrossSectionsIndexed):
     '''
     Checks whether the cross sections are compatible with the geometric domain.
     Only is static array shape checking, not values.

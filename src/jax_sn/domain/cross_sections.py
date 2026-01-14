@@ -133,7 +133,7 @@ class CrossSectionData:
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
-class CrossSectionIndexed:
+class CrossSectionsIndexed:
     '''
     Dataclass to hold indexed cross section data for multiple energy groups.
     Each element has an index into the cross section data. This avoids repeating cross section data for each element.
@@ -167,7 +167,7 @@ class CrossSectionIndexed:
         return self.cross_section_data.scattering.shape[-3] - 1
 
 @jax.jit
-def _map_cross_sections_to_full_array(cross_sections : CrossSectionIndexed, energy_group : int) -> CrossSectionDataSingleGroup:
+def _map_cross_sections_to_full_array(cross_sections : CrossSectionsIndexed, energy_group : int) -> CrossSectionDataSingleGroup:
     return CrossSectionDataSingleGroup(cross_sections.cross_section_data.total[cross_sections.indices,energy_group], cross_sections.cross_section_data.scattering[cross_sections.indices, : , energy_group, energy_group])
     
 def _check_if_lower_triangular(cross_section_data : CrossSectionData) -> bool:

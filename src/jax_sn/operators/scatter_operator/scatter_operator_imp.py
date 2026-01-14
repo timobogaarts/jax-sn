@@ -4,7 +4,7 @@ import jax.numpy as jnp
 
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.operators.moment_operator import DiscreteOperator, DiscreteOperatorTransposed
-from jax_sn.domain.cross_sections import CrossSectionIndexed
+from jax_sn.domain.cross_sections import CrossSectionsIndexed
 
 from jax_sn.quadrature_set import QuadratureSet
 
@@ -43,7 +43,7 @@ class ScatterOperator(AbstractLinearOperator_sn):
 
     '''
     
-    cross_sections_indexed : CrossSectionIndexed
+    cross_sections_indexed : CrossSectionsIndexed
     r'''The indexed cross sections to use.'''
     moments_elements_basis_shape   : jax.ShapeDtypeStruct  #[n_elements, n_basis]
     r'''The shape of the elements and basis functions over which this operator is batched. Identified with :math:`F` in the documentation above.'''
@@ -90,7 +90,7 @@ def _(operator):
 def _(operator):
     return operator
 
-def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, cross_sections_indexed : CrossSectionIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
+def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, cross_sections_indexed : CrossSectionsIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
     r'''
     Computes from a given element index, outgoing group, incoming group, indexed cross section object and buffer for the specific incoming group, the corresponding scattering scattering source:
 
@@ -107,7 +107,7 @@ def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, c
         The outgoing energy group index.
     g_in : int
         The incoming energy group index.
-    cross_sections_indexed : CrossSectionIndexed
+    cross_sections_indexed : CrossSectionsIndexed
         The indexed cross section data structure.
     moments_array : jnp.ndarray [n_elements, n_basis, n_moments]
         The moments array containing angular flux moments.
@@ -132,5 +132,5 @@ def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, c
     return extended_sigma_lm_gg[:, None] * moments_array[:, elem_idx, :]  # [n_moments, None] * [n_moments, n_basis] -> [n_moments, n_basis]
 
 @eqx.filter_jit
-def total_scatter_kernel_xs_indexed(g_out : int, g_in : int, cross_sections_indexed : CrossSectionIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
+def total_scatter_kernel_xs_indexed(g_out : int, g_in : int, cross_sections_indexed : CrossSectionsIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
     return jax.vmap(_scatter_kernel_xs_indexed_kernel, in_axes=(0, None, None, None, None), out_axes=1)(jnp.arange(cross_sections_indexed.indices.shape[0]), g_out, g_in, cross_sections_indexed, moments_array)

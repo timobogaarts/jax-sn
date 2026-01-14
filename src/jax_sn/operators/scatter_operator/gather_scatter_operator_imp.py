@@ -3,7 +3,7 @@ import jax.numpy as jnp
 
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.operators.moment_operator import DiscreteOperator, DiscreteOperatorTransposed
-from jax_sn.domain.cross_sections import CrossSectionIndexed
+from jax_sn.domain.cross_sections import CrossSectionsIndexed
 from jax_sn.quadrature_set import QuadratureSet
 import lineax as lx
 
@@ -44,7 +44,7 @@ class GatherScatterOperator(eqx.Module):
         \mathbf{\mathbf{V}}_{g_{in}} [\psi] = \sum_{g_{out}} \sigma_{\ell g_{out} g_{in},e} \psi_{g_{out}\ell e}
     
     '''
-    cross_sections_indexed : CrossSectionIndexed
+    cross_sections_indexed : CrossSectionsIndexed
     r'''The indexed cross sections to use.'''
 
     def gather_forward(self, x : jnp.ndarray, energy_group_out : int) -> jnp.ndarray:
@@ -181,7 +181,7 @@ def _extend_sigma_lgg_match_moments(sigma_l_gg : jnp.ndarray, n_moments : int) -
     return extended_sigma_lm_gg  # [n_moments, n_groups]
 
 
-def _bc_gather_forward_xs_indexed_kernel(elem_idx : int, g_out : int, cross_sections_indexed : CrossSectionIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
+def _bc_gather_forward_xs_indexed_kernel(elem_idx : int, g_out : int, cross_sections_indexed : CrossSectionsIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
     r'''
     Computes from a given element index, outgoing group, incoming group, indexed cross section object and buffer for the specific incoming group, the corresponding scattering scattering source:
 
@@ -196,7 +196,7 @@ def _bc_gather_forward_xs_indexed_kernel(elem_idx : int, g_out : int, cross_sect
         The element index.    
     g_in : int
         The incoming energy group index.
-    cross_sections_indexed : CrossSectionIndexed
+    cross_sections_indexed : CrossSectionsIndexed
         The indexed cross section data structure.
     moments_array : jnp.ndarray [n_elements, n_basis, n_moments]
         The moments array containing angular flux moments.
@@ -218,7 +218,7 @@ def _bc_gather_forward_xs_indexed_kernel(elem_idx : int, g_out : int, cross_sect
 @eqx.filter_jit
 def _forward_gathering_bc(        
         g_out                       : int,
-        cross_sections_indexed       : CrossSectionIndexed,
+        cross_sections_indexed       : CrossSectionsIndexed,
         moments_array               : jnp.ndarray
     ) -> jnp.ndarray:
     r'''
@@ -231,7 +231,7 @@ def _forward_gathering_bc(
     ----------
     g_out : int
         The outgoing energy group index.
-    cross_sections_indexed : CrossSectionIndexed
+    cross_sections_indexed : CrossSectionsIndexed
         The indexed cross section data structure.   
     moments_array : jnp.ndarray [n_groups, n_moments, n_elements, n_basis]
         The moments array containing angular flux moments.
@@ -247,7 +247,7 @@ def _forward_gathering_bc(
     )(jnp.arange(cross_sections_indexed.indices.shape[0]), g_out, cross_sections_indexed, moments_array)
 
 
-def _bc_gather_backward_xs_indexed_kernel(elem_idx : int, g_in : int, cross_sections_indexed : CrossSectionIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
+def _bc_gather_backward_xs_indexed_kernel(elem_idx : int, g_in : int, cross_sections_indexed : CrossSectionsIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
     r'''
     Backwards gathering:
 
@@ -266,7 +266,7 @@ def _bc_gather_backward_xs_indexed_kernel(elem_idx : int, g_in : int, cross_sect
 @eqx.filter_jit
 def _backward_gathering_bc(        
         g_in                        : int,
-        cross_sections_indexed       : CrossSectionIndexed,
+        cross_sections_indexed       : CrossSectionsIndexed,
         moments_array               : jnp.ndarray
     ) -> jnp.ndarray:
     r'''

@@ -129,7 +129,7 @@ def _cross_sections_from_sb(dimension, degree):
     xsdata =  jax_sn.domain.cross_sections.CrossSectionData(total, scattering)
     xsdata.assert_valid_batched()
     
-    return jax_sn.domain.geometric_domain.CrossSectionIndexed(inverse, xsdata)
+    return jax_sn.domain.geometric_domain.CrossSectionsIndexed(inverse, xsdata)
 
 def _angle_function_tn():
     return _angle_function_indexed(*tn_order_index())[0]
