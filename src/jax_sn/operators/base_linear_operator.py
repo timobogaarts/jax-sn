@@ -13,7 +13,7 @@ class AbstractLinearOperator_sn(lx.AbstractLinearOperator):
     '''
     
     def __repr__(self):        
-        return super().__repr__() +' maps '+ str(self.in_structure().shape) + ' -> ' + str(self.out_structure().shape)
+        return super().__repr__() #+' maps '+ str(self.in_structure().shape) + ' -> ' + str(self.out_structure().shape)
     
     def as_matrix(self):    
         '''

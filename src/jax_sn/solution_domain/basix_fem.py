@@ -365,6 +365,6 @@ def _precompute_jacobians_simplex(domain : GeometricDomain) -> PrecomputedGeomet
     face_conn          = domain.connectivity[:, domain.face_template]    # [n_element, n_faces, n_face_vertices]    
     face_vertices      =  domain.vertices[face_conn]
     face_jacobians     = _jacobian_simplex(face_vertices)
-    face_jacobians_det = jnp.sqrt(jnp.abs(jnp.linalg.det(onp.einsum('...ji,...jk->...ik', face_jacobians, face_jacobians))))    
+    face_jacobians_det = jnp.sqrt(jnp.abs(jnp.linalg.det(jnp.einsum('...ji,...jk->...ik', face_jacobians, face_jacobians))))    
     return PrecomputedGeometricData(volume_J_total, volume_J_inv_total, volume_J_det_total, face_jacobians_det)
     

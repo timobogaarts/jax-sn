@@ -357,4 +357,5 @@ class MultiGroupOperatorSigmaAllParametrised(OperatorThetaParametrised):
     
     @staticmethod
     def reconstruct_operator(operator, theta):
-        return eqx.tree_at(lambda op : [op.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data, op.gather_scatter_operator.cross_sections_indexed.cross_section_data], operator, replace = [theta,theta])
+        xs_idxed = eqx.tree_at(lambda xs_idx : xs_idx.cross_section_data, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed, replace = theta)
+        return eqx.tree_at(operator.cross_sections_indexed_loc, operator, replace_fn= lambda _ :  xs_idxed)
