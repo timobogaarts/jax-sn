@@ -116,7 +116,20 @@ class CrossSectionData:
                 f"Total cross section number of energy groups must be at least {n_energy_groups}. Provided shape: {self.total.shape}"
         assert self.scattering.shape[-2] >= n_energy_groups and self.scattering.shape[-1] >= n_energy_groups,\
                 f"Scattering cross section number of energy groups must be at least {n_energy_groups}. Provided shape: {self.scattering.shape}"
-
+        
+    @property
+    def downscattering_only(self) -> bool:
+        return _check_if_lower_triangular(self)
+    
+    def convert_to_downscattering_only(self) -> "CrossSectionData":
+        r'''
+        Converts the cross section data to a downscattering only cross section data by zeroing all upscattering cross sections.
+        '''
+        scattering_down = jnp.tril(self.scattering)
+        return CrossSectionData(
+            total=self.total,
+            scattering=scattering_down
+        )
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -157,4 +170,22 @@ class CrossSectionIndexed:
 def _map_cross_sections_to_full_array(cross_sections : CrossSectionIndexed, energy_group : int) -> CrossSectionDataSingleGroup:
     return CrossSectionDataSingleGroup(cross_sections.cross_section_data.total[cross_sections.indices,energy_group], cross_sections.cross_section_data.scattering[cross_sections.indices, : , energy_group, energy_group])
     
-               
+def _check_if_lower_triangular(cross_section_data : CrossSectionData) -> bool:
+    r'''
+    Check if the multi-group operator is lower triangular.
+
+    This is the case if all upscattering cross sections are zero.
+
+    Parameters
+    ----------
+    mgop : MultiGroupOperator
+        The multi group operator.
+    Returns
+    -------
+    bool
+        True if the operator is lower triangular, False otherwise.
+    '''
+
+
+    tril = jnp.tril(cross_section_data.scattering)    
+    return jnp.all(cross_section_data.scattering == tril)

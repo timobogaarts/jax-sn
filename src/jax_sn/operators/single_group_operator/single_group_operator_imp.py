@@ -168,6 +168,8 @@ def _mv_single_group_operator_transpose(moment_operator, transport_operator, mas
 class SingleGroupOperatorTranspose(SingleGroupOperator):
     r'''
     Transpose of the SingleGroupOperator. See SingleGroupOperator for details.
+
+    This does not have the transposes of its constituent operators pre-applied, but applies them on the fly in the mv() method.
     '''
     
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:
@@ -185,6 +187,9 @@ class SingleGroupOperatorTranspose(SingleGroupOperator):
                                    self.mass_operator,
                                    self.discrete_operator,
                                    self.inscatter_operator)
+    
+    def to_energy_group(self, energy_group):
+        return SingleGroupOperatorTranspose(self.moment_operator, self.transport_operator.to_energy_group(energy_group), self.mass_operator, self.discrete_operator, self.inscatter_operator.to_energy_group(energy_group, energy_group))
     
     def in_structure(self):
         return SingleGroupOperator.out_structure(self)

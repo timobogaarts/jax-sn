@@ -14,10 +14,9 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver):
         assert isinstance(operator, MultiGroupOperator), f"MultiGroupLowerTriangularSolver can only be used with MultiGroupOperator but got operator of type {type(operator)}."
         return operator
     
-    def compute(self, solver_state : MultiGroupOperator, rhs : jnp.ndarray, options):
-        
+    def compute(self, solver_state : MultiGroupOperator, rhs : jnp.ndarray, options):        
         if solver_state.transpose_bool:
-            raise NotImplementedError("Transpose of MultiGroupLowerTriangularBlockSolver is not implemented.")
+            return solve_upper_triangular_transpose(solver_state, self.single_group_solver, rhs)
         else:
             return solve_lower_triangular(solver_state, self.single_group_solver, rhs)
         
@@ -83,6 +82,7 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinear
         The solution.   
     '''
     n_groups = mgop.n_energy_groups        
+    assert not mgop.transpose_bool, "The multi-group operator must not be transposed to use the lower triangular transpose solver."
 
     def body_fun(i, state):                
         solution, n_steps = state
@@ -103,30 +103,6 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinear
     return  solution, result, {'num_steps_per_group' : n_steps}
 
 @eqx.filter_jit
-def solve_total(mgop : MultiGroupOperator, solver, rhs : jnp.ndarray) -> jnp.ndarray:
-    r'''
-    Solve the linear system using a given solver. This is a general solver that does not assume any special structure of the multi-group operator.
-
-    It simply uses the lineax linear solver on the full multi-group operator, which has a defined mv() method.
-
-    Parameters
-    ----------
-    mgop : MultiGroupOperator
-        The multi group operator.
-    solver : lx.LinearSolver
-        The linear solver to use.
-    rhs : jnp.ndarray
-        The right-hand side.
-
-    Returns
-    -------
-    jnp.ndarray
-        The solution.
-    '''    
-    return lx.linear_solve(mgop, rhs, solver).value
-
-
-
 def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jnp.ndarray) -> jnp.ndarray:
     r'''
     Solve the linear system using a given solver, assuming the multi-group operator is lower triangular.
@@ -173,23 +149,34 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jn
     jnp.ndarray
         The solution.   
     '''
-    TODO
-    n_groups = mgop.n_energy_groups        
-
+    assert mgop.transpose_bool, "The multi-group operator must be transposed to use the upper triangular transpose solver."
+    n_groups = mgop.n_energy_groups
+    sgop_t  = mgop.to_single_group_operator(0)  # the sgop transpose doesn't actually transpose its constituents, just has a different mv method that takes care of it.
+                                               # so, instead we just transpose the individual members of it and transpose when we need.
+    top_t = sgop_t.transport_operator.transpose()
+    dop_t = sgop_t.discrete_operator.transpose()
+    mop_t = sgop_t.moment_operator.transpose()
+    hop_t = sgop_t.mass_operator.transpose() 
+    
     def body_fun(i, state):                
-        solution, n_steps = state
-        sgop = mgop.to_single_group_operator(i)        
-
-        rhs_i = rhs[i] + mgop.moment_operator.mv(sgop.transport_operator.inv(mgop.mass_operator.mv(mgop.discrete_operator.mv(mgop.gather_scatter_operator.gather_forward(solution, i)))))
-        lxsolve = lx.linear_solve(sgop, rhs_i, solver, throw = False)
+        solution, xi_g, n_steps = state        
         
-        return solution.at[i].set(lxsolve.value), n_steps.at[i].set(lxsolve.stats['num_steps'])
-    
-    solution = jnp.zeros_like(rhs)
-    n_steps = jnp.zeros(n_groups, dtype = mgop.gather_scatter_operator.cross_sections_indexed.indices.dtype)
-    
-    solution, n_steps =  jax.lax.fori_loop(0, n_groups, body_fun, (solution, n_steps) )
+        g_i     = n_groups - i - 1 # Upper triangular, so we go from high to low energy group
+        sgop_gi = sgop_t.to_energy_group(g_i)
 
+        rhs_i   = rhs[g_i] + mgop.gather_scatter_operator.gather_backward(xi_g, g_i)
+        
+        lxsolve = lx.linear_solve(sgop_gi, rhs_i, solver, throw = False) # Solve single group transpose system
+
+        xi_new       = xi_g.at[g_i].set(dop_t.mv(hop_t.mv(top_t.to_energy_group(g_i).inv(mop_t.mv(lxsolve.value))))) # D^T H^T (T_g^{-1})^T M^T [phi_g]
+        solution_new = solution.at[g_i].set(lxsolve.value)
+
+        return solution_new, xi_new, n_steps.at[g_i].set(lxsolve.stats['num_steps'])
+    
+    solution          = jnp.zeros_like(rhs)
+    xi_g              = jnp.zeros_like(rhs) # Intermediate values to store D^T H^T (T_g^{-1})^T M^T [phi_g]
+    n_steps           = jnp.zeros(n_groups, dtype = mgop.gather_scatter_operator.cross_sections_indexed.indices.dtype)    
+    solution, _,  n_steps =  jax.lax.fori_loop(0, n_groups, body_fun, (solution, xi_g, n_steps) )
     # Simple check just if the solution converged within max steps for all groups. TODO improve in future? raise runtime in the loop?
     result = lx.RESULTS.where( jnp.all(n_steps < solver.max_steps), lx.RESULTS.successful, lx.RESULTS.max_steps_reached)
     return  solution, result, {'num_steps_per_group' : n_steps}

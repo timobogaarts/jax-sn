@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+from jax_sn.domain.cross_sections import CrossSectionData
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.operators.single_group_operator import SingleGroupOperator, SingleGroupOperatorTranspose
 from jax_sn.operators.moment_operator import MomentOperator, MomentOperatorTransposed, DiscreteOperator, DiscreteOperatorTransposed
@@ -110,6 +111,50 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     However, in some cases, e.g. downscattering only problems (such as often found in fusion applications), the multi-group operator is lower triangular. In these cases, it is much more efficient to solve the system directly using a block forward substitution approach, 
     solving each energy group sequentially using the single-group operator for that group and the already computed higher energy group solutions to form the scattering source. This is implemented in the function :func:`solve_lower_triangular`.    
 
+    Shared data
+    ---------------------------
+    Some operators have shared underlying data. The reason why these are not merged is that each operator has its own meaning and can be applied separately. In principle, the alternative would be to discard the operator mechanism
+    and simply have all the data here.
+
+    The places are 
+
+    - The :class:`CrossSectionIndexed <jax_sn.domain.cross_sections.CrossSectionIndexed>` is shared between the transport operator and the gather-scatter operator. 
+      This is because both operators need access to the cross section data to perform their operations. Specifically, the transport operator uses the total data, while the gather-scatter operator uses the scattering data.
+      
+      - :attr:`transport_operator.solution_domain_data.domain.cross_sections_indexed`,
+      - :attr:`gather_scatter_operator.cross_sections_indexed`.
+
+    - The :class:`PrecomputedGeometricData <jax_sn.solution_domain.PrecomputedGeometricData>` is shared between the transport operator and the mass operator.
+      Both operators need access to geometric data to perform their operations. 
+      
+      - :attr:`transport_operator.solution_domain_data.precomputed_geometric_data`,
+      - :attr:`mass_operator.precomputed_geometric_data <jax_sn.operators.mass_operator.MassOperator.precomputed_geometric_data>`.
+
+    - The :class:`FEMMatrices <jax_sn.solution_domain.FEMMatrices>` is shared between the transport operator and the mass operator. Both require the application of the computed FEM matrices.
+
+      - :attr:`transport_operator.solution_domain_data.fem_matrices`,
+      - :attr:`mass_operator.fem_matrices <jax_sn.operators.mass_operator.MassOperator.fem_matrices>`.
+
+    The location of the shared data is crucial for correct pytree surgery (i.e. not replacing just one, but replacing both).
+
+    These are provided as property, see :attr:`cross_section_indexed_loc`, :attr:`precomputed_geometric_data_loc`, and :attr:`fem_matrices_loc`.
+
+    Pytree surgery can then be performed as (e.g., for replacing cross section data)::
+        
+        multi_group_operator_new = eqx.tree_at(multi_group_operator.cross_section_indexed_loc, 
+                                               multi_group_operator, 
+                                               replace_fn = lambda _ : new_cross_section_indexed)
+
+    (the normal replace will not work directly as it expects that the replace is a tuple of the same length as the number of locations, which we do not want to assume a priori).
+
+    If the sub-data needs to be replaced, the easiest is to stack two replaces. An example is :meth:`convert_to_lower_block_triangular`, which internally replaces the required cross section data in both locations::
+    
+        xs_indexed_new = eqx.tree_at(lambda xs_idx : xs_idx.cross_section_data, 
+                                     self.gather_scatter_operator.cross_sections_indexed, 
+                                     cs_data_lower)
+        return eqx.tree_at(self.cross_section_indexed_loc, 
+                           self, 
+                           replace_fn = lambda _ : xs_indexed_new)
 
     Possible improvements
     ---------------------------
@@ -118,11 +163,10 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
 
     - Merging the scattering and moment-to-discrete operators to avoid storing intermediate results. This reduces one vector :math:`\phi_{lm}\in \mathcal{M}\otimes \mathcal{F}` in total (as you don't store the intermediate result after the scattering operation.). However, XLA  might already do this anyway.
 
-    - Noting that since the discrete operator and the mass operator are acting on different spaces (:math:`\mathcal{M}` and :math:`\mathcal{F}` respectively), these two operations commute and could be interchanged. Since the number of moments is often much smaller than the number of basis functions, it might be more efficient to first apply the mass operator and then the discrete operator. 
+    - Noting that since the discrete operator and the mass operator are acting on different spaces (:math:`\mathcal{M}` and :math:`\mathcal{F}` respectively), these two operations commute and could be interchanged. Since the number of moments is often much smaller than the number of basis functions, it might be more efficient to first apply the mass operator and then the discrete operator.
 
-    - One could note that in fact, the entire inversion operator can be materialised (in the sense that all :math:`G_{gkije}^{-1}` and :math:`D_{gk e\gamma ij}), since it doesn't depend on the right-hand-side. This would however require significant memory (:math:`~5 G\cdot N_{angles} \cdot N_{elements} \cdot N_{basis}^2` floating point numbers), so is likely not feasible for large problems. Furthermore,
-      it would not actually provide that much improvement, since the main cost is still the transport sweeps, which would still need to be done sequentially.    
-
+    - One could note that in fact, the entire inversion operator can be materialised (in the sense that all :math:`G_{gkije}^{-1}` and :math:`D_{gk e\gamma ij} can be stored and computed)`, since it doesn't depend on the right-hand-side. This would however require significant memory (:math:`~5 G\cdot N_{angles} \cdot N_{elements} \cdot N_{basis}^2` floating point numbers), so is likely not feasible for large problems. Furthermore,
+      it would not actually provide that much improvement, since the main cost is still the transport sweeps, which would still need to be done sequentially.
 
     '''
     moment_operator           : MomentOperator
@@ -203,17 +247,39 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
             Energy group index.
         Returns
         -------
-        Singl   eGroupOperator
+        SingleGroupOperator
             The single group operator for energy group g_i.
         ''' 
         if self.transpose_bool:
             return SingleGroupOperatorTranspose(self.moment_operator,
                                                 self.transport_operator.to_energy_group(g_i),
                                                 self.mass_operator,
+                                                self.discrete_operator,
                                                 self.gather_scatter_operator.to_scatter_operator(g_i, g_i, self.moment_operator.out_structure()))
         else:
             return SingleGroupOperator(self.moment_operator, self.transport_operator.to_energy_group(g_i), self.mass_operator, self.discrete_operator, self.gather_scatter_operator.to_scatter_operator(g_i, g_i, self.moment_operator.out_structure()))
+        
+    @property
+    def lower_block_triangular(self):
+        '''
+        Whether the structure of the multi-group operator is lower block triangular (downscattering only)
+        '''
+        return self.gather_scatter_operator.cross_sections_indexed.cross_section_data.downscattering_only
     
+    def convert_to_lower_block_triangular(self):
+        r'''
+        Convert to lower block triangular multi-group operator by discarding all upscattering cross sections.
+
+        Returns
+        -------
+        MultiGroupOperator
+            The lower block triangular multi-group operator.
+        ''' 
+        cs_data_lower = self.gather_scatter_operator.cross_sections_indexed.cross_section_data.convert_to_downscattering_only()
+        xs_indexed_new = eqx.tree_at(lambda xs_idx : xs_idx.cross_section_data, self.gather_scatter_operator.cross_sections_indexed, cs_data_lower)
+
+        return eqx.tree_at(self.cross_section_indexed_loc, self, replace_fn = lambda _ : xs_indexed_new)
+        
     @property 
     def n_elements(self):
         return self.transport_operator.solution_domain_data.domain.n_elements
@@ -229,6 +295,31 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     @property 
     def n_basis(self):
         return self.transport_operator.solution_domain_data.n_basis
+        
+    @property
+    def cross_section_indexed_loc(self):
+        '''
+        Function that returns a function to get the location of the cross section data in the tree.
+        Since multiple places hold cross section data, we return a tuple of locations.
+        '''
+        return lambda m :  (m.transport_operator.solution_domain_data.domain.cross_sections_indexed, m.gather_scatter_operator.cross_sections_indexed)
+    
+    @property
+    def precomputed_geometric_data_loc(self):
+        '''
+        Function that returns a function to get the location of the precomputed geometric data in the tree.
+        Since multiple places hold precomputed geometric data, we return a tuple of locations.
+        '''
+        return lambda m : (m.transport_operator.solution_domain_data.precomputed_geometric_data, m.mass_operator.precomputed_geometric_data)
+    
+    @property
+    def fem_matrices_loc(self):
+        '''
+        Function that returns a function to get the location of the FEM matrices in the tree.
+        Since multiple places hold FEM matrices, we return a tuple of locations.
+        '''
+        return lambda m : (m.transport_operator.solution_domain_data.fem_matrices, m.mass_operator.fem_matrices)
+    
 
 @lx.is_symmetric.register(MultiGroupOperator)
 def _(operator : MultiGroupOperator):
@@ -317,7 +408,6 @@ def _multi_group_operator_transpose_scan(n_energy_groups : int, moment_operator 
 
     in_structure_shape   = (n_energy_groups,) + moment_operator_t.in_structure().shape
     assert x.shape == in_structure_shape, f"Input x shape {x.shape} does not match expected in_structure shape {in_structure_shape}."
-
     
     def _single_energy_group_zeta(_, g_i):        
         return None, discrete_operator_t.mv(mass_operator_t.mv(transport_operator_t.to_energy_group(g_i).inv(moment_operator_t.mv(x[g_i]))))
@@ -330,10 +420,6 @@ def _multi_group_operator_transpose_scan(n_energy_groups : int, moment_operator 
 
     _, result = jax.lax.scan(_scan_body, None, jnp.arange(n_energy_groups))
     return result
-
-
-
-
 
 class MultiGroupOperatorScan(MultiGroupOperator):
     r'''

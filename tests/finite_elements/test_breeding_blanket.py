@@ -413,10 +413,10 @@ def test_bb(_setup_bb, expected_value_function = _get_expected_values_sb_bb):
     rhs_total = jnp.stack([rhs_eg0] + [jnp.zeros_like(rhs_eg0) for _ in range(MGOP.n_energy_groups -1)], axis =0)
     bicgstab_solver = lx.BiCGStab(1e-20, 1e-20, max_steps = 300)
 
-    from jax_sn.operators.multi_group_operator import solve_lower_triangular, solve_total
+    from jax_sn.operators.multi_group_operator import solve_lower_triangular
 
     values_lower_triangular = solve_lower_triangular(MGOP, bicgstab_solver, rhs_total)[0]
-    values_total            = solve_total(MGOP, bicgstab_solver, rhs_total)
+    values_total            = lx.linear_solve(MGOP,  rhs_total, bicgstab_solver).value
 
     x = _interp_x()    
     
@@ -450,3 +450,35 @@ def test_bb_moment_operator_transpose(_setup_bb):
     Ax = MGOP.mv(x)
     ATy = MGOP.transpose().mv(y)
     onp.testing.assert_allclose(onp.sum(y * Ax), onp.sum(ATy * x), rtol=1e-12)
+
+
+def test_solving_mg_total_single_and_transpose(_setup_bb):
+    import lineax as lx 
+    MGOP,_, _, _ = _setup_bb
+    MGOP = MGOP.convert_to_lower_block_triangular() # the example isn't actually lower block triangular due to thermal scattering. we just remove it for this test
+    from jax_sn.operators.multi_group_operator import MultiGroupLowerTriangularBlockSolver
+
+    bicgstab_solver               = lx.BiCGStab(rtol = 1e-12, atol = 1e-15, max_steps = 160)
+    lower_triangular_block_solver = MultiGroupLowerTriangularBlockSolver(bicgstab_solver)
+    
+    onp.random.seed(14012026)
+    rhs_rng = jnp.array(onp.random.rand(*MGOP.in_structure().shape))
+
+    result_total_solve = lx.linear_solve(MGOP, rhs_rng, bicgstab_solver).value
+    result_lower_triangular_solve = lx.linear_solve(MGOP, rhs_rng, lower_triangular_block_solver).value
+
+    onp.testing.assert_allclose(onp.array(result_total_solve), onp.array(result_lower_triangular_solve), rtol=1e-12, atol = 1e-12)
+
+    result_total_solve_T = lx.linear_solve(MGOP.transpose(), rhs_rng, bicgstab_solver).value
+    result_lower_triangular_solve_T = lx.linear_solve(MGOP.transpose(), rhs_rng, lower_triangular_block_solver).value
+
+    onp.testing.assert_allclose(onp.array(result_total_solve_T), onp.array(result_lower_triangular_solve_T), rtol=1e-12, atol = 1e-12)
+
+    residual = MGOP.mv(result_total_solve) - rhs_rng
+    onp.testing.assert_allclose(onp.array(residual), onp.zeros_like(onp.array(residual)), rtol=1e-12, atol = 1e-12)
+
+    residual_T = MGOP.transpose().mv(result_total_solve_T) - rhs_rng
+    onp.testing.assert_allclose(onp.array(residual_T), onp.zeros_like(onp.array(residual_T)), rtol=1e-12, atol = 1e-12)
+
+
+    
