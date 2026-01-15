@@ -364,9 +364,6 @@ def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : Momen
     in_structure_shape = (n_energy_groups,) + moment_operator.out_structure().shape
 
     assert x.shape == in_structure_shape, f"Input x shape {x.shape} does not match expected in_structure shape {in_structure_shape}."
-    result = jnp.zeros(in_structure_shape, dtype=moment_operator.in_structure().dtype)
-
-    
         
     def _single_energy_group(_, g_i):        
         y_g = (x[g_i] - moment_operator.mv(transport_operator.to_energy_group(g_i).inv(mass_operator.mv(discrete_operator.mv(gather_scatter_operator.gather_forward(x, g_i))))))

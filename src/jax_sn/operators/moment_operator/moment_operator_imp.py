@@ -6,6 +6,7 @@ from typing import Callable
 from jax_sn.quadrature_set import QuadratureSet
 import lineax as lx
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
+import equinox as eqx   
 
 class MomentOperator(AbstractLinearOperator_sn):
     r'''
@@ -147,8 +148,6 @@ def _call_batched_moment_operator(buffer_sweep : jnp.ndarray, wk_yklm : jnp.ndar
     return jnp.einsum('k...,kl->l...', buffer_sweep, wk_yklm)
 
 
-
-
 class MomentOperatorTransposed(MomentOperator):
     '''Transposed Moment Operator mapping moments to angular fluxes. See :class:`MomentOperator` for details.'''
     
@@ -205,3 +204,80 @@ def _call_batched_moment_operator_transposed(x : jnp.ndarray, wk_yklm : jnp.ndar
     '''    
     assert x.shape[0] == wk_yklm.shape[-1], f"Number of moments in x ({x.shape[0]}) must match number of moments in wk_yklm ({wk_yklm.shape[-1]})."
     return jnp.einsum('l...,kl->k...', x, wk_yklm)
+
+
+@eqx.filter_jit
+def _call_streaming_moment_operator(buffer_sweep : jnp.ndarray, wk_yklm : jnp.ndarray):
+    r'''
+    Apply the moment operator to the angular flux buffer to compute the moments.
+
+    Computes:
+
+    .. math::
+        \phi_{l,m}^{ei} = \sum_{a=1}^{N_{angles}} \psi_k^{ei} w_{k} Y_{l,m}(\Omega_k)
+
+    with :math:`\phi_{l,m}^{ei}` the moment of order :math:`(l,m)` in element :math:`e` and basis function :math:`i`,
+    :math:`\psi_k^{ei}` the angular flux for angle :math:`k` in element :math:`e` and basis function :math:`i`, :math:`w_k` the weight for angle :math:`k` 
+    and :math:`Y_{l,m}(\Omega_k)` the spherical harmonic of order :math:`(l,m)` evaluated at direction :math:`\Omega_k`. For the latter definition, 
+    see `jax_sn.quadrature_set.QuadratureSet.wk_ylm_real`.
+
+
+    Parameters:
+    ----------
+    buffer_sweep : jnp.ndarray [n_angles, n_elements, n_basis]
+        The angular flux buffer containing the angular fluxes for each angle and each element and its basis functions
+    wk_yklm : jnp.ndarray [n_angles, (L+1)**2]
+        The moment operator weights mapping angles to moments for the specific desired order L.
+
+    Returns:
+    -------
+    moments : jnp.ndarray [n_moments, n_elements, n_basis]
+        The computed moments.
+    
+    '''    
+    out0 = jnp.zeros((wk_yklm.shape[1],) + buffer_sweep.shape[1:], dtype=buffer_sweep.dtype)
+    def body(out, k):        
+        wk_broadcast = wk_yklm[k].reshape((wk_yklm.shape[1],) + (1,) * (buffer_sweep.ndim - 1))        
+        contrib = wk_broadcast * buffer_sweep[k, None, ...] 
+        return out + contrib, None
+
+    out, _ = jax.lax.scan(body, out0, jnp.arange(buffer_sweep.shape[0]))
+    return out
+
+@eqx.filter_jit
+def _call_streaming_moment_operator_transposed(buffer_moments : jnp.ndarray, wk_yklm : jnp.ndarray):
+    r'''
+    Apply the moment operator to the angular flux buffer to compute the moments.
+
+    Computes:
+
+    .. math::
+        \phi_{l,m}^{ei} = \sum_{a=1}^{N_{angles}} \psi_k^{ei} w_{k} Y_{l,m}(\Omega_k)
+
+    with :math:`\phi_{l,m}^{ei}` the moment of order :math:`(l,m)` in element :math:`e` and basis function :math:`i`,
+    :math:`\psi_k^{ei}` the angular flux for angle :math:`k` in element :math:`e` and basis function :math:`i`, :math:`w_k` the weight for angle :math:`k` 
+    and :math:`Y_{l,m}(\Omega_k)` the spherical harmonic of order :math:`(l,m)` evaluated at direction :math:`\Omega_k`. For the latter definition, 
+    see `jax_sn.quadrature_set.QuadratureSet.wk_ylm_real`.
+
+
+    Parameters:
+    ----------
+    buffer_sweep : jnp.ndarray [n_angles, n_elements, n_basis]
+        The angular flux buffer containing the angular fluxes for each angle and each element and its basis functions
+    wk_yklm : jnp.ndarray [n_angles, (L+1)**2]
+        The moment operator weights mapping angles to moments for the specific desired order L.
+
+    Returns:
+    -------
+    moments : jnp.ndarray [n_moments, n_elements, n_basis]
+        The computed moments.
+    
+    '''    
+    out0 = jnp.zeros((wk_yklm.shape[0],) + buffer_moments.shape[1:], dtype=buffer_moments.dtype)
+    def body(out, l):        
+        wk_broadcast = wk_yklm[:,l].reshape((wk_yklm.shape[0],) + (1,) * (buffer_moments.ndim - 1))        
+        contrib = wk_broadcast * buffer_moments[l, None, ...] 
+        return out + contrib, None
+
+    out, _ = jax.lax.scan(body, out0, jnp.arange(buffer_moments.shape[0]))
+    return out

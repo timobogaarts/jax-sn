@@ -250,3 +250,71 @@ print("======================================")
 
 
 
+#No checkpointing:
+# ==============================
+# None.mv memory usage:
+# 	 Direct {'peak': 14.699943542480469, 'argument': 3.95343017578125, 'output': 3.0517578125e-05, 'temp': 10.785820007324219} MB 
+# 	 Grad {'peak': 37.21913242340088, 'argument': 3.95343017578125, 'output': 0.01052093505859375, 'temp': 33.27348327636719} MB
+#   Timing:
+# 	 Direct 0.1029207706451416 
+# 	 Grad 0.2264847755432129
+# moment_operator.mv memory usage:
+# 	 Direct {'peak': 4.159461975097656, 'argument': 1.667724609375, 'output': 3.0517578125e-05, 'temp': 2.4919586181640625} MB 
+# 	 Grad {'peak': 4.169952392578125, 'argument': 1.667724609375, 'output': 0.01052093505859375, 'temp': 2.4919815063476562} MB
+#   Timing:
+# 	 Direct 0.0006968975067138672 
+# 	 Grad 0.001093745231628418
+# transport_operator.inv memory usage:
+# 	 Direct {'peak': 8.068130493164062, 'argument': 2.265655517578125, 'output': 3.0517578125e-05, 'temp': 5.807014465332031} MB 
+# 	 Grad {'peak': 11.856826782226562, 'argument': 2.265655517578125, 'output': 0.01052093505859375, 'temp': 9.594161987304688} MB
+#   Timing:
+# 	 Direct 0.03757894039154053 
+# 	 Grad 0.05487406253814697
+# transport_operator.mv memory usage:
+# 	 Direct {'peak': 5.127464294433594, 'argument': 1.7104339599609375, 'output': 3.0517578125e-05, 'temp': 3.4205398559570312} MB 
+# 	 Grad {'peak': 11.267578125, 'argument': 1.7104339599609375, 'output': 0.01052093505859375, 'temp': 9.555099487304688} MB
+#   Timing:
+# 	 Direct 0.004252314567565918 
+# 	 Grad 0.02102792263031006
+# mass_operator.mv memory usage:
+# 	 Direct {'peak': 6.608192443847656, 'argument': 1.664031982421875, 'output': 3.0517578125e-05, 'temp': 4.9445953369140625} MB 
+# 	 Grad {'peak': 6.618682861328125, 'argument': 1.664031982421875, 'output': 0.01052093505859375, 'temp': 4.944862365722656} MB
+#   Timing:
+# 	 Direct 0.0016932487487792969 
+# 	 Grad 0.002108454704284668
+# ==============================
+
+
+# With checkpointing:
+# ==============================
+# None.mv memory usage:
+# 	 Direct {'peak': 14.699943542480469, 'argument': 3.95343017578125, 'output': 3.0517578125e-05, 'temp': 10.785820007324219} MB 
+# 	 Grad {'peak': 18.350364685058594, 'argument': 3.95343017578125, 'output': 0.01052093505859375, 'temp': 14.911407470703125} MB
+#   Timing:
+# 	 Direct 0.11737728118896484 
+# 	 Grad 0.3272467851638794
+# moment_operator.mv memory usage:
+# 	 Direct {'peak': 4.159461975097656, 'argument': 1.667724609375, 'output': 3.0517578125e-05, 'temp': 2.4919586181640625} MB 
+# 	 Grad {'peak': 4.169952392578125, 'argument': 1.667724609375, 'output': 0.01052093505859375, 'temp': 2.4919815063476562} MB
+#   Timing:
+# 	 Direct 0.0009436607360839844 
+# 	 Grad 0.0008800029754638672
+# transport_operator.inv memory usage:
+# 	 Direct {'peak': 8.068130493164062, 'argument': 2.265655517578125, 'output': 3.0517578125e-05, 'temp': 5.807014465332031} MB 
+# 	 Grad {'peak': 11.856826782226562, 'argument': 2.265655517578125, 'output': 0.01052093505859375, 'temp': 9.594161987304688} MB
+#   Timing:
+# 	 Direct 0.03924906253814697 
+# 	 Grad 0.05521118640899658
+# transport_operator.mv memory usage:
+# 	 Direct {'peak': 5.127464294433594, 'argument': 1.7104339599609375, 'output': 3.0517578125e-05, 'temp': 3.4205398559570312} MB 
+# 	 Grad {'peak': 11.267578125, 'argument': 1.7104339599609375, 'output': 0.01052093505859375, 'temp': 9.555099487304688} MB
+#   Timing:
+# 	 Direct 0.004510283470153809 
+# 	 Grad 0.02179086208343506
+# mass_operator.mv memory usage:
+# 	 Direct {'peak': 6.608192443847656, 'argument': 1.664031982421875, 'output': 3.0517578125e-05, 'temp': 4.9445953369140625} MB 
+# 	 Grad {'peak': 6.618682861328125, 'argument': 1.664031982421875, 'output': 0.01052093505859375, 'temp': 4.944862365722656} MB
+#   Timing:
+# 	 Direct 0.0014009475708007812 
+# 	 Grad 0.0014159679412841797
+# ==============================

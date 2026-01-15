@@ -219,4 +219,3 @@ def _total_mass_kernel_idx_in_precomp(
                 fem_matrices,
                 precomputed_geometric_data,
                 values)
-
