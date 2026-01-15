@@ -47,7 +47,7 @@ def setup_from_verts(verts, conn, cross_sections, sources,  degree, tn_order):
 
     return solution_domain, sources, jax_sn.quadrature_set.create_tn_quadrature_set(tn_order)
 
-def _setup_operators(solution_domain: SolutionDomain, sources: jnp.ndarray, quadrature_set: jax_sn.quadrature_set.QuadratureSet, batch_size = 100) -> Tuple[MultiGroupOperatorScan, jnp.ndarray, SolutionDomain]:        
+def _setup_operators(solution_domain: SolutionDomain, sources: jnp.ndarray, quadrature_set: jax_sn.quadrature_set.QuadratureSet, batch_size = 50) -> Tuple[MultiGroupOperatorScan, jnp.ndarray, SolutionDomain]:        
     n_energy_groups           = solution_domain.domain.cross_sections_indexed.n_energy_groups
     lmax                      = solution_domain.domain.cross_sections_indexed.l_max
 

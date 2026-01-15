@@ -110,7 +110,9 @@ def forward_transport_operator_batch(
     batch_size                 : int
 ) -> jnp.ndarray:
     '''
-    Forward transport operator using vmap over angles.
+    Forward transport operator using batching over elements.
+
+    The result is checkpointed in the batching. This reduces memory significantly.
 
     Parameters
     ----------
@@ -133,7 +135,7 @@ def forward_transport_operator_batch(
         Result of applying the forward transport operator. Shape [n_angles, n_elements, n_basis]
     '''
     elements_all = jnp.arange(geometric_domain.n_elements)
-    f_batch = lambda i : _single_compute_forward(i, geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, x)
+    f_batch = jax.checkpoint(lambda i : _single_compute_forward(i, geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, x))
     return jax.lax.map(f_batch, elements_all, batch_size=batch_size)
 
 def _single_compute_forward(
