@@ -25,3 +25,15 @@ def plot_levels(geometric_domain, angle):
     plotter.add_mesh(mesh_to_pyvista_mesh(mesh_base), scalars=levels + 0.5, show_edges=True, cmap=cmap, clim = (0, jnp.max(levels) + 1))
     plotter.add_arrows(*get_arrow_next_to_domain(geometric_domain, angle), color="black", mag=2) 
     plotter.show()
+
+def solve_and_plot(MGOP, rhs, sol_domain_2, lower_triangular_solver):
+    import matplotlib.pyplot as plt
+    import lineax as lx
+    x               = jnp.linspace(0,2.432, 1000)
+    y               = jnp.full_like(x, 2.5)
+    xy              = jnp.stack([x,y], axis=-1)
+    solution_i      = lx.linear_solve(MGOP, rhs, lower_triangular_solver)
+    solution_result = [sol_domain_2.interpolate(xy, solution_i.value[i, 0]) for i in range(MGOP.n_energy_groups)]
+    plt.semilogy(x, onp.array(solution_result).T)
+    plt.xlabel("x [m]")
+    plt.ylabel("$\\phi$")
