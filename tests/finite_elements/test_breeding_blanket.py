@@ -482,3 +482,25 @@ def test_solving_mg_total_single_and_transpose(_setup_bb):
 
 
     
+def test_mg_with_and_without_checkpoint(_setup_bb):
+
+    MGOP, _, _, _ = _setup_bb
+
+    MGOP.convert_to_lower_block_triangular()
+
+    from jax_sn.operators.multi_group_operator.multi_group_operator_imp import MultiGroupOperatorScanCheckpoint
+
+    MGOP_cp = MultiGroupOperatorScanCheckpoint(MGOP.moment_operator, MGOP.discrete_operator, MGOP.transport_operator, MGOP.mass_operator, MGOP.gather_scatter_operator, MGOP.n_energy_groups, MGOP.transpose_bool)
+
+    onp.random.seed(15012026)
+
+    rhs_rng = jnp.array(onp.random.rand(*MGOP.in_structure().shape))
+
+    x = MGOP.mv(rhs_rng)
+    x_cp = MGOP_cp.mv(rhs_rng)
+
+    onp.testing.assert_allclose(onp.array(x), onp.array(x_cp), rtol=1e-12, atol = 1e-12)
+
+    x2 = MGOP.transpose().mv(rhs_rng)
+    x2_cp = MGOP_cp.transpose().mv(rhs_rng) 
+    onp.testing.assert_allclose(onp.array(x2), onp.array(x2_cp), rtol=1e-12, atol = 1e-12)

@@ -332,7 +332,7 @@ def _(operator : MultiGroupOperator):
 
 
 @eqx.filter_jit
-def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : MomentOperator, transport_operator : TransportOperatorMultipleAngles,  mass_operator      : MassOperator,  discrete_operator : DiscreteOperator, gather_scatter_operator : GatherScatterOperator, x : jnp.ndarray) -> jnp.ndarray:
+def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : MomentOperator, transport_operator : TransportOperatorMultipleAngles,  mass_operator      : MassOperator,  discrete_operator : DiscreteOperator, gather_scatter_operator : GatherScatterOperator, x : jnp.ndarray, checkpoint = False) -> jnp.ndarray:
     r'''
     This computes the multi-group operator mv using a scan over energy groups.
     
@@ -365,13 +365,17 @@ def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : Momen
 
     assert x.shape == in_structure_shape, f"Input x shape {x.shape} does not match expected in_structure shape {in_structure_shape}."
     result = jnp.zeros(in_structure_shape, dtype=moment_operator.in_structure().dtype)
+
+    
         
     def _single_energy_group(_, g_i):        
         y_g = (x[g_i] - moment_operator.mv(transport_operator.to_energy_group(g_i).inv(mass_operator.mv(discrete_operator.mv(gather_scatter_operator.gather_forward(x, g_i))))))
         return None, y_g
     
+    f_seg = jax.checkpoint(_single_energy_group) if checkpoint else _single_energy_group
+    
     _, result = jax.lax.scan(
-        _single_energy_group,
+        f_seg,
         init=None,
         xs=jnp.arange(n_energy_groups),
     )
@@ -379,7 +383,7 @@ def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : Momen
 
 
 @eqx.filter_jit
-def _multi_group_operator_transpose_scan(n_energy_groups : int, moment_operator    : MomentOperator, transport_operator : TransportOperatorMultipleAngles,  mass_operator      : MassOperator,  discrete_operator : DiscreteOperator, gather_scatter_operator : GatherScatterOperator, x : jnp.ndarray) -> jnp.ndarray:    
+def _multi_group_operator_transpose_scan(n_energy_groups : int, moment_operator    : MomentOperator, transport_operator : TransportOperatorMultipleAngles,  mass_operator      : MassOperator,  discrete_operator : DiscreteOperator, gather_scatter_operator : GatherScatterOperator, x : jnp.ndarray, checkpoint = False) -> jnp.ndarray:    
     r'''
     This computes the multi-group operator transpose mv using a scan over energy groups.
 
@@ -411,19 +415,22 @@ def _multi_group_operator_transpose_scan(n_energy_groups : int, moment_operator 
     
     def _single_energy_group_zeta(_, g_i):        
         return None, discrete_operator_t.mv(mass_operator_t.mv(transport_operator_t.to_energy_group(g_i).inv(moment_operator_t.mv(x[g_i]))))
-            
-    zeta_g_stored = jax.lax.scan(_single_energy_group_zeta, None, jnp.arange(n_energy_groups))[1]
 
+    f_seg = jax.checkpoint(_single_energy_group_zeta) if checkpoint else _single_energy_group_zeta
+    
+    zeta_g_stored = jax.lax.scan(f_seg, None, jnp.arange(n_energy_groups))[1]
 
     def _scan_body(_, g_i):                
         return None, x[g_i] - gather_scatter_operator.gather_backward(zeta_g_stored, g_i)
+    
+    f_collapse = jax.checkpoint(_scan_body) if checkpoint else _scan_body
 
-    _, result = jax.lax.scan(_scan_body, None, jnp.arange(n_energy_groups))
+    _, result = jax.lax.scan(f_collapse, None, jnp.arange(n_energy_groups))
     return result
 
 class MultiGroupOperatorScan(MultiGroupOperator):
     r'''
-    Multi energy group linear operator implementation using fori_loop over energy groups.
+    Multi energy group linear operator implementation using scan over energy groups.
     Parallelisation is then over angles and elements only.
     
     '''    
@@ -432,4 +439,24 @@ class MultiGroupOperatorScan(MultiGroupOperator):
     
     def _mv_transpose(self, x):
         return _multi_group_operator_transpose_scan(self.n_energy_groups, self.moment_operator, self.transport_operator, self.mass_operator, self.discrete_operator, self.gather_scatter_operator, x)
+    
+
+
+class MultiGroupOperatorScanCheckpoint(MultiGroupOperator):
+    r'''
+    Multi energy group linear operator implementation using scan over energy groups.
+    Parallelisation is then over angles and elements only.
+
+    Uses checkpointing of the scan loop to lower memory requirements with cost of computation time (value_and_grad ~ 3 times wrt base, while without checkpointing ~2 times wrt base).
+
+    However, when using iterative solve, this does not matter nearly as much: the solve applies this operator O(10^2, 10^3) times. Differentiating through the solve means 
+    computing the derivative of 1 times the operator application. Therefore, this means the total cost increase due to checkpointing is only 1/(O(10^2, 10^3)) compared to not using checkpointing, which is negligible
+    in most cases.
+    
+    '''    
+    def _mv_forward(self, x : jnp.ndarray) -> jnp.ndarray:
+        return _multi_group_operator_scan(self.n_energy_groups, self.moment_operator, self.transport_operator, self.mass_operator, self.discrete_operator, self.gather_scatter_operator, x, True)
+    
+    def _mv_transpose(self, x):
+        return _multi_group_operator_transpose_scan(self.n_energy_groups, self.moment_operator, self.transport_operator, self.mass_operator, self.discrete_operator, self.gather_scatter_operator, x, True)
     
