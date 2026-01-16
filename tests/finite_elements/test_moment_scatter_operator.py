@@ -91,7 +91,7 @@ def check_moment_operator(dimension, degree, tn_order, lmax, _verts_conn_functio
     #sweep_angles = jax_sn.operators.transport_operator.transport_inverse_sweep_multiple_angles_batched(*solution_domain.solution_domain_data, solution_domain.map_cross_sections_to_full_array(0), total_toposorts, source_total, sweep_array, 10)
     moment_operator = jax_sn.operators.moment_operator.MomentOperator.from_quadrature_set(quadrature_set, lmax, solution_domain.elements_basis_shape)
 
-    mass_operator  = jax_sn.operators.mass_operator.MassOperator(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data)
+    mass_operator  = jax_sn.operators.mass_operator.MassOperatorVmap(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data)
     source_x = mass_operator.mv(source_total.source_values) # this automatically batches
     psilm = moment_operator.mv(transport_operator.inv(source_x ))
 

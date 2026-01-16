@@ -16,7 +16,7 @@ def check_transport_inverse_sweep_complete_vmap(element, degree,
     
     lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values = _setup_all(element, degree, _vertices_conn_function, _angle_function, _expected_values_function, _source_function, _cross_section_function)
 
-    mass_operator = jax_sn.operators.mass_operator.MassOperator(femmatrices, precomputed_data)
+    mass_operator = jax_sn.operators.mass_operator.MassOperatorVmap(femmatrices, precomputed_data)
 
     source_mass_op = mass_operator.mv(source.source_values)
 
@@ -203,7 +203,7 @@ def test_local_real_inversion(dimension):
 @pytest.mark.slow
 def test_level_sweep(setup_solution_domain_data_and_toposort_sb):
     solution_domain, toposort, mapped_xs, source, _, _ , _, _ = setup_solution_domain_data_and_toposort_sb
-    mass_operator = jax_sn.operators.mass_operator.MassOperator(solution_domain.solution_domain_data.fem_matrices, solution_domain.solution_domain_data.precomputed_geometric_data)
+    mass_operator = jax_sn.operators.mass_operator.MassOperatorVmap(solution_domain.solution_domain_data.fem_matrices, solution_domain.solution_domain_data.precomputed_geometric_data)
     source_mass_op = mass_operator.mv(source.source_values)
     base_parameters = (*solution_domain.solution_domain_data, mapped_xs, toposort, source_mass_op)    
     complete_vmap_sweep = jax_sn.operators.transport_operator.transport_inverse_sweep_complete_vmap(*base_parameters)        

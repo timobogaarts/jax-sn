@@ -341,7 +341,7 @@ def setup_bb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_d
 def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order):
     from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
     from jax_sn.operators.transport_operator import TransportOperatorMultipleAnglesVmap, TransportOperatorVmap
-    from jax_sn.operators.mass_operator import MassOperator
+    from jax_sn.operators.mass_operator import MassOperatorVmap
     from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
     from jax_sn.domain.geometric_domain import TopologicalSortedAngle
     from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan
@@ -354,7 +354,7 @@ def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_o
 
     topological_sorted_angles = TopologicalSortedAngle.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
     transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorVmap(solution_domain.solution_domain_data, topological_sorted_angles, 0))
-    mass_operator             = MassOperator.from_transport_operator(transport_operator)
+    mass_operator             = MassOperatorVmap.from_transport_operator(transport_operator)
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)    
     
     groups_elements_basis_shape = (n_energy_groups, ) + solution_domain.elements_basis_shape.shape 

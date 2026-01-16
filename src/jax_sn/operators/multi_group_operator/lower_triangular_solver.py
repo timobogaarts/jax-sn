@@ -68,6 +68,23 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinear
 
     The single group system is then solved with the :class:`SingleGroupOperator` for energy group g.
 
+    Memory footprint
+    ------------------
+    Theoretically, it uses (for a discrete angle array :math:`D\in \mathcal{D}\times \mathcal{F}`, and a moment array :math:`M \in \mathcal{<}\times \mathcal{F}` (we don't take into account the batching temporaries from a batched transport operator)):
+
+    .. math::
+        \text{In}:  \ &G\times M \\ 
+        \text{Out}: \ &G\times M \\ 
+        \text{Temporary BiCGSTAB}: \ &5 \times M \\ 
+        \text{MV temporary}  :\ &2 \times D \\ 
+        \text{Total}: \ &2 \times G \times M + 2 \times D + 5 \times M \\ 
+
+    In practice, due to XLA compilation, this can be somewhat higher. For 15000 triangular elements with 72 angles, 36 moments, and 4 energy groups on an RTX3080, it used 
+
+    .. math::
+        2\times G\times M + 2 \times D + 8 \times M
+
+
     Parameters
     ----------
     mgop : MultiGroupOperator
@@ -135,6 +152,23 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jn
 
     
     The single group system is then solved with the :class:`SingleGroupOperatorTranspose` for each specific energy group
+
+    Memory footprint
+    ------------------
+    Theoretically, it uses (for a discrete angle array :math:`D\in \mathcal{D}\times \mathcal{F}`, and a moment array :math:`M \in \mathcal{<}\times \mathcal{F}` (we don't take into account the batching temporaries from a batched transport operator)):
+
+    .. math::
+        \text{In}:  \ &G\times M \\ 
+        \text{Out}: \ &G\times M \\ 
+        \text{Temporary BiCGSTAB}: \ &5 \times M \\ 
+        \xi_g \text{ temporary} :\  & G \times M \\
+        \text{MV temporary} :\ &2 \times D \\ 
+        \text{Total}: \ &3 \times G \times M + 2 \times D + 5 \times M \\ 
+
+    In practice, due to XLA compilation, this can be somewhat higher. For 15000 triangular elements with 72 angles, 36 moments, and 4 energy groups on an RTX3080, it used 
+
+    .. math::
+        3\times G\times M + 2 \times D + 9 \times M
 
     Parameters
     ----------

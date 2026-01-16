@@ -133,7 +133,24 @@ def _mv_single_group_operator(moment_operator, transport_operator, mass_operator
     jnp.ndarray
         The result of the multiplication.
     '''        
+
+    # Memory analysis:
+    # mass_operator(x) [no temporary ]
+
+    # mass_operator(inscatter(x)) [temporary size x due to not being able to re-use x for the output, this means the inscatter op needs to scale to a temporary, and we use this temporary as input for the mass operator (which we can't reuse as output for the mass operator)]
+
+
+    # moment_op(disc_op(mass_op(inscatter(x)))) [temporary size discrete x, because we need that buffer as temporary anyway. the temporary of above is apparently re-used]
+
+    # moment_operator.mv(mass_operator.mv(discrete_operator.mv(inscatter_operator.mv(x)))) [temporary size 2 x discrete x because we need it as input for the mass operator and as output for the mass operator ] (same for x - this)
+
+    # x - moment_operator.mv(transport_operator.inv(mass_operator.mv(discrete_operator.mv(inscatter_operator.mv(x))))) [temporary size 2x discrete x, apparently re-used for transport operator (doesn't require much because batch size 1)]
+
+    # switching out mass & discrete does nothing: then you need 2 temporaries for the input output of the transport operator, so you gain absolutely nothing.
+    # This is the absolute best you can do (and it's the same actually as in the old stell-blanket.): the transport operator inverse is non local, so you can't merge or fuse the kernels any further.
     return x - moment_operator.mv(transport_operator.inv(mass_operator.mv(discrete_operator.mv(inscatter_operator.mv(x)))))
+
+
 
 
 @eqx.filter_jit
@@ -205,3 +222,10 @@ def _(operator : SingleGroupOperatorTranspose):
 def _(operator : SingleGroupOperatorTranspose):
     return operator    
         
+
+# For the solve, we have as memory analysis:
+# mv = 2 x discrete temporary + in out moment
+# solve  with bicgstab:
+#    in  = moment array + setup
+#    out = moment_array
+#    temp = 2 * discrete temporary + 5 * moment_array from bicstab + 2 * moment array that i cannot place (seems from xla reshuffle in the specific case i tested? only init carry return already gives this...)

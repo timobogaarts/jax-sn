@@ -338,6 +338,10 @@ def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : Momen
     
     See :class:`MultiGroupOperator` for details on the mathematical formulation.
 
+    The memory requirement does not scale with the number of energy groups, since we only need to store temporaries for a single energy group at a time.
+
+    In fact, the only temporary memory required is for the transport operator application, which requires two temporaries of size :math:`N_{angles} \times N_{elements} \times N_{basis}` (one for input, one for output). All other operations can re-use these temporaries.
+
     Parameters
     ----------
     n_energy_groups : int
@@ -361,6 +365,8 @@ def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : Momen
     
     '''
 
+    # We have exactly the same memory analysis as for the single group operator, (see _mv_single_group_operator).
+    # Two discrete single-group sized temporaries [n_angles, n_elements, n_basis] are required as in/out for transport operator. 
     in_structure_shape = (n_energy_groups,) + moment_operator.out_structure().shape
 
     assert x.shape == in_structure_shape, f"Input x shape {x.shape} does not match expected in_structure shape {in_structure_shape}."

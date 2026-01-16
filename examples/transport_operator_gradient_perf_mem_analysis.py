@@ -11,7 +11,6 @@ import jax_sn
 from jax_sn.domain import CrossSectionData, Domain, TopologicalSortedAngle
 from jax_sn.solution_domain import BasixLagrangianSimplex, SolutionDomain
 from jax_sn.domain.domain_generation import create_cartesian_setup
-from jax_sn.operators.mass_operator import MassOperator
 
 from jax_sn.operators.transport_operator import TransportOperatorBatched, transport_inverse_sweep_batched, TransportOperatorVmap, TransportOperatorBatchedPallas, TransportOperatorVmapPallas
 from jax_sn.operators.transport_operator.transport_operator_base import TransportOperatorMultipleAnglesVmap

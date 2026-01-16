@@ -12,6 +12,9 @@ from jax_sn.solution_domain import SolutionDomainData
 from typing import Union    
 
 from jax_sn.operators.transport_operator.transport_operator_base import TransportOperator, TransportOperatorMultipleAngles
+from abc import abstractmethod
+
+
 class MassOperator(AbstractLinearOperator_sn):
     r'''
     Interface for mass operator. 
@@ -124,12 +127,10 @@ class MassOperator(AbstractLinearOperator_sn):
                    in_structure.shape[:-2])  
     
 
-    
+    @abstractmethod
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:        
-        return _total_mass_kernel_idx_in_precomp(
-                self.fem_matrices,
-                self.precomputed_geometric_data,
-                x)
+        ...
+        
     
     def transpose(self) -> "MassOperator":
         '''Returns the transpose operator, which is itself since the mass matrix is symmetric.'''
@@ -157,6 +158,33 @@ def _(operator : MassOperator):
 @lx.linearise.register(MassOperator)
 def _(operator : MassOperator):
     return operator
+
+class MassOperatorVmap(MassOperator):
+    r'''
+    Uses a vmap of all elements to compute the mass operator.
+    Alone, this creates a temporary. However, in a combined operator (e.g. SingleGroupOperator), this temporary can often be re-used, such that it is not necessarily 
+    any worse than :class:`MassOperatorLax` (which does not create temporaries).
+    '''
+
+    def mv(self,x : jnp.ndarray) -> jnp.ndarray:
+        '''
+        Apply the mass operator to the input vector x.
+
+        Parameters
+        ----------
+        x : jnp.ndarray
+            Input array of shape [..., n_elements, n_basis]
+
+        Returns
+        -------
+        jnp.ndarray
+            Output array of shape [..., n_elements, n_basis]
+        '''        
+        return _total_mass_kernel_idx_in_precomp(
+            self.fem_matrices,
+            self.precomputed_geometric_data,
+            x
+        )
 
 
 def _mass_kernel_idx_in_precomp(
@@ -219,3 +247,48 @@ def _total_mass_kernel_idx_in_precomp(
                 fem_matrices,
                 precomputed_geometric_data,
                 values)
+
+
+@jax.jit
+def total_mass_kernel_lax(
+    fem_matrices: FEMMatrices,
+    precomputed_geometric_data: PrecomputedGeometricData,
+    values: jnp.ndarray,                     # [..., n_elem, n_dof]
+):
+    M = fem_matrices.mass_matrix              # [n_dof, n_dof]
+    detJ = precomputed_geometric_data.vol_jacobians_det  # [n_elem]
+
+    # Move first axes to to batch axis
+    # (..., n_elem, n_dof) -> (batch, n_elem, n_dof)
+    batch_shape = values.shape[:-2]
+    values_b = values.reshape((-1,) + values.shape[-2:])
+
+    # Batched matmul: (n_dof, n_dof) @ (..., n_elem, n_dof)^T
+    out = jax.lax.dot_general(
+        values_b,                             # (B, n_elem, n_dof)
+        M,                                    # (n_dof, n_dof)
+        dimension_numbers=(
+            ((2,), (1,)),                     # contract dof
+            ((), ())                          # no batch contraction
+        ),
+    )                                         # (B, n_elem, n_dof)
+
+    # Scale by Jacobian determinant
+    out = out * detJ[None, :, None]
+
+    return out.reshape(batch_shape + out.shape[-2:])
+
+
+class MassOperatorLax(MassOperator):
+    '''
+    Batched matrix multiplication implementation of the mass operator using jax.lax.
+    This implementation does not create temporaries and is not particularly less or more performant than :class:`MassOperatorVmap`.
+    '''
+    
+    def mv(self,x : jnp.ndarray) -> jnp.ndarray:
+        
+        return total_mass_kernel_lax(
+            self.fem_matrices,
+            self.precomputed_geometric_data,
+            x
+        )
