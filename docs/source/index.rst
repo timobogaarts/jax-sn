@@ -9,9 +9,11 @@ Welcome to jax-sn's documentation!
 .. toctree::
    :maxdepth: 1
    :caption: Contents:
-      
+   
+   theory.rst   
    api_reference.rst
    appendices.rst
+
 
 
 .. Indices and tables
