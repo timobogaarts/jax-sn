@@ -23,7 +23,7 @@ def setup_anisotropic(dim, degree, n_elem_regions, d_other_dim, n_other_dim, tn_
                                                                        [6.45294, 21.3570]], 
                                                                       [[4.363, 0.0],
                                                                        [-0.003508, 2.3457]]]))
-    void = CrossSectionData.constant(1e-10, 2, 2)
+    void = CrossSectionData.constant(1e-10, 2, 1)
     other_dims   = [[(d_other_dim, n_other_dim)]]*(dim - 1)
 
     region_sizes = [0.2, 0.1,     0.5,   0.2,  0.1,  0.1,    0.1]

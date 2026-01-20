@@ -59,9 +59,9 @@ def all_testing_derivatives():
 def _dim_degree_tested():
     return (2,2)
 
-from jax_sn.tools.memory_analysis import TotalOperatorSigmaAllParametrised
+from jax_sn.parametrisation import SingleGroupOperatorSigmaAllParametrised
 def sum_f(sgop, rhs, theta, solver):        
-    sgop_new = TotalOperatorSigmaAllParametrised.reconstruct_operator(sgop, theta)
+    sgop_new = SingleGroupOperatorSigmaAllParametrised.reconstruct_operator(sgop, theta)
     return total_solve(sgop_new, rhs, solver).value.sum()  
 
 @pytest.mark.slow
@@ -82,7 +82,7 @@ def test_single_group_ad():
     
     sum_grad_f = eqx.filter_jit(jax.grad(sum_f, argnums = (2,)))
 
-    all_derivatives = sum_grad_f(sgop, source_eg0, TotalOperatorSigmaAllParametrised.theta_base(sgop), bicgstab)[0]
+    all_derivatives = sum_grad_f(sgop, source_eg0, SingleGroupOperatorSigmaAllParametrised.theta_base(sgop), bicgstab)[0]
 
     def index_all_derivatives(xs_data_indices, all_derivatives):
         if xs_data_indices[0] == 'total':

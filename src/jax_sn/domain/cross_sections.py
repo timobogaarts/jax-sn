@@ -13,6 +13,7 @@ import jax
 from dataclasses import dataclass
 import jax.numpy as jnp
 from typing import List
+import equinox as eqx
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -54,7 +55,7 @@ class CrossSectionData:
         '''
         return cls(
             total=jnp.zeros((n_eg,)),
-            scattering=jnp.zeros((n_L, n_eg, n_eg))
+            scattering=jnp.zeros((n_L + 1, n_eg, n_eg))
         )
     @classmethod    
     def constant(cls, total : float, n_eg : int, n_L : int):
@@ -66,7 +67,7 @@ class CrossSectionData:
         :param n_L: Number of scattering moments (L).'''
         return cls(
             total=jnp.full((n_eg,), total),
-            scattering=jnp.zeros((n_L, n_eg, n_eg))            
+            scattering=jnp.zeros((n_L + 1, n_eg, n_eg))            
         )    
     @classmethod
     def from_list(cls, cross_section_data : List["CrossSectionData"]):
@@ -131,9 +132,8 @@ class CrossSectionData:
             scattering=scattering_down
         )
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class CrossSectionsIndexed:
+
+class CrossSectionsIndexed(eqx.Module):
     '''
     Dataclass to hold indexed cross section data for multiple energy groups.
     Each element has an index into the cross section data. This avoids repeating cross section data for each element.
@@ -151,6 +151,9 @@ class CrossSectionsIndexed:
         :param energy_group: Energy group index to map to.
         '''
         return _map_cross_sections_to_full_array(self, energy_group)
+    
+    def __check_init__(self):
+        self.cross_section_data.assert_valid_batched()
     
     @property 
     def n_energy_groups(self):

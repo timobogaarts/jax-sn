@@ -219,179 +219,67 @@ class OperatorAnalysis(ABC):
         duration_mv = custom_timeit( run_method, number = n_samples , ignore_n=ignore_n)[0]                
         return duration_mv
 
-class OperatorThetaParametrised(ABC):
+from jax_sn.parametrisation.base_parametrisation import ParametrizedModule
+
+
+def analyze_grad_memory(cls : ParametrizedModule, operator : lx.AbstractLinearOperator, method : Union[str, Callable]):
     '''
-    Class to simplify analysis of memory usage and timing of linear operators parameterized by certain variables (theta).
-    This is useful to analyze how memory and timing change when computing gradients with respect to these parameters.    
-    '''
-    @staticmethod
-    @abstractmethod
-    def theta_base(operator ):
-        '''Has to provide the theta parameter for this operator.'''
-        ...
+    Analyzes memory usage for the gradient of a parameterised operator method (mv or inv).
+    First it initializes the operator with the provided arguments and keyword arguments.
 
-    @staticmethod
-    @abstractmethod
-    def reconstruct_operator(operator, theta):
-        '''Has to provide a function to reconstruct the operator with the new theta parameter.'''
-        ...
+    It uses _make_theta_op to create a function that applies the specified method of the operator some input (just ones, for memory it does not matter) and sums the output.
+    This gives a scalar output, allowing the use of jax.value_and_grad to compute the gradient with respect to the parameter theta.
 
-    @classmethod
-    def analyze_grad_memory(cls, operator : lx.AbstractLinearOperator, method : Union[str, Callable]):
-        '''
-        Analyzes memory usage for the gradient of a parameterised operator method (mv or inv).
-        First it initializes the operator with the provided arguments and keyword arguments.
+    This function is then lowered and compiled and its memory usage is analyzed using _filter_jit_f_to_memory. This is finally printed.
 
-        It uses _make_theta_op to create a function that applies the specified method of the operator some input (just ones, for memory it does not matter) and sums the output.
-        This gives a scalar output, allowing the use of jax.value_and_grad to compute the gradient with respect to the parameter theta.
+    :param cls: The parametrisation case class, providing theta_base and reconstruct_operator methods.
+    :param operator: The linear operator to analyze.
+    :param method: The method of the operator to use, e.g. "mv" or "inv".        
+    :return: mem_mv, mem_grad_mv
+        mem_mv : Dict[str, float]
+            Memory usage statistics for the operator method [in MB].
+        mem_grad_mv : Dict[str, float]
+            Memory usage statistics for the gradient of the operator method [in MB].
+    '''        
+    mem_mv, mem_grad_mv  = make_memory_parametrised_grad(method)(operator, cls)
 
-        This function is then lowered and compiled and its memory usage is analyzed using _filter_jit_f_to_memory. This is finally printed.
-
-        :param cls: The parametrisation case class, providing theta_base and reconstruct_operator methods.
-        :param operator: The linear operator to analyze.
-        :param method: The method of the operator to use, e.g. "mv" or "inv".        
-        :return: mem_mv, mem_grad_mv
-            mem_mv : Dict[str, float]
-                Memory usage statistics for the operator method [in MB].
-            mem_grad_mv : Dict[str, float]
-                Memory usage statistics for the gradient of the operator method [in MB].
-        '''        
-        mem_mv, mem_grad_mv  = make_memory_parametrised_grad(method)(operator, cls)
-
-        return mem_mv, mem_grad_mv
-        
-
-    @classmethod
-    def analyze_grad_timing(cls, operator : lx.AbstractLinearOperator, method : Union[str, Callable], n_samples : int = 100, ignore_n : int = 1):        
-        '''
-        Analyzes timing for the gradient of a parameterised operator method.
-
-        It uses _make_theta_op to create a function that applies the specified method of the operator some input (just ones, for timing it does not matter) and sums the output.
-        This gives a scalar output, allowing the use of jax.value_and_grad to compute the gradient with respect to the parameter theta.
-
-        The function and its gradient are then timed using custom_timeit, and the results are returned.
-
-        :param cls: The parametrisation case class, providing theta_base and reconstruct_operator methods.
-        :param operator: The linear operator to analyze.
-        :param method: The method of the operator to use, e.g. "mv" or "inv".        
-        :param n_samples: The number of samples to use for timing, by default 100.
-        :param ignore_n: The number of initial runs to ignore for timing (e.g. for compilation caching), by default 1.
-        :return: duration_mv, duration_grad_mv
-            duration_mv : float
-                The average time taken for the operator method.
-            duration_grad_mv : float
-                The average time taken for the gradient of the operator method.
-        '''
-
-        x_in = jnp.ones_like(operator.in_structure()) 
-
-        args_method = (operator, cls.theta_base(operator), x_in, cls.reconstruct_operator)
-
-        method_f, grad_method_f = _make_theta_op(method)
-        
-        def run_method():
-            return method_f(*args_method).block_until_ready()
-                
-        duration_mv = custom_timeit( run_method, number = n_samples , ignore_n=ignore_n)[0]        
-        def run_grad_method():
-            return jax.block_until_ready(grad_method_f(*args_method)[1])
-
-        duration_grad_mv = custom_timeit( run_grad_method, number=n_samples, ignore_n=ignore_n)[0]
-        
-        return duration_mv, duration_grad_mv
-
-#============================================================================================================
-#                                             Transport operator specific
-#============================================================================================================
-
-class TransportOperatorSigmaParametrised(OperatorThetaParametrised):
-    '''
-    Parametrisation case for transport operators parameterised by the total cross section.
-    '''
-    @staticmethod
-    def theta_base(operator ):
-        return operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data.total
+    return mem_mv, mem_grad_mv
     
-    @staticmethod
-    def reconstruct_operator(operator, theta):
-        return eqx.tree_at(lambda op : op.solution_domain_data.domain.cross_sections_indexed.cross_section_data.total, operator, replace = theta)
-    
-
-
-class TotalOperatorSigmaParametrised(OperatorThetaParametrised):
+def analyze_grad_timing(cls : ParametrizedModule, operator : lx.AbstractLinearOperator, method : Union[str, Callable], n_samples : int = 100, ignore_n : int = 1):        
     '''
-    Parametrisation case for total operators parameterised by the total cross section.
+    Analyzes timing for the gradient of a parameterised operator method.
+
+    It uses _make_theta_op to create a function that applies the specified method of the operator some input (just ones, for timing it does not matter) and sums the output.
+    This gives a scalar output, allowing the use of jax.value_and_grad to compute the gradient with respect to the parameter theta.
+
+    The function and its gradient are then timed using custom_timeit, and the results are returned.
+
+    :param cls: The parametrisation case class, providing theta_base and reconstruct_operator methods.
+    :param operator: The linear operator to analyze.
+    :param method: The method of the operator to use, e.g. "mv" or "inv".        
+    :param n_samples: The number of samples to use for timing, by default 100.
+    :param ignore_n: The number of initial runs to ignore for timing (e.g. for compilation caching), by default 1.
+    :return: duration_mv, duration_grad_mv
+        duration_mv : float
+            The average time taken for the operator method.
+        duration_grad_mv : float
+            The average time taken for the gradient of the operator method.
     '''
-    @staticmethod
-    def theta_base(operator ):
-        # We just replace the entire cross section data. this does not matter for the scattering data; it is not used in the transport operator...
-        return operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data
+
+    x_in = jnp.ones_like(operator.in_structure()) 
+
+    args_method = (operator, cls.theta_base(operator), x_in, cls.reconstruct_operator)
+
+    method_f, grad_method_f = _make_theta_op(method)
     
-    @staticmethod
-    def reconstruct_operator(operator, theta):
-        return eqx.tree_at(lambda op : op.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data, operator, replace = theta)
+    def run_method():
+        return method_f(*args_method).block_until_ready()
+            
+    duration_mv = custom_timeit( run_method, number = n_samples , ignore_n=ignore_n)[0]        
+    def run_grad_method():
+        return jax.block_until_ready(grad_method_f(*args_method)[1])
+
+    duration_grad_mv = custom_timeit( run_grad_method, number=n_samples, ignore_n=ignore_n)[0]
     
-    
+    return duration_mv, duration_grad_mv
 
-
-class TotalOperatorSigmaAllParametrised(OperatorThetaParametrised):
-    '''
-    Parametrisation case for total operators parameterised by the total and scattering cross section.
-    '''
-    @staticmethod
-    def theta_base(operator ):
-        return operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data
-    
-    @staticmethod
-    def reconstruct_operator(operator, theta):
-        return eqx.tree_at(lambda op : [op.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data, op.inscatter_operator.cross_sections_indexed.cross_section_data], operator, replace = [theta,theta])
-    
-
-class MultiGroupOperatorSigmaAllParametrised(OperatorThetaParametrised):
-    '''
-    Parametrisation case for total operators parameterised by the total and scattering cross section.
-    '''
-    @staticmethod
-    def theta_base(operator ):
-        return operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data
-    
-    @staticmethod
-    def reconstruct_operator(operator, theta):
-        xs_idxed = eqx.tree_at(lambda xs_idx : xs_idx.cross_section_data, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed, replace = theta)
-        return eqx.tree_at(operator.cross_sections_indexed_loc, operator, replace_fn= lambda _ :  xs_idxed)
-    
-from jax_sn.domain.cross_sections import CrossSectionData
-
-
-class EverythingTheta(eqx.Module):
-    vertices : jnp.ndarray 
-    cross_section_data: CrossSectionData
-
-class MultiGroupOperatorEverythingParametrised(OperatorThetaParametrised):
-    '''
-    Parametrisation case for total operators parameterised by the total and scattering cross section.
-    '''
-    @staticmethod
-    def theta_base(operator ):
-        return EverythingTheta(operator.transport_operator.solution_domain_data.domain.vertices, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data)
-    
-    @staticmethod
-    def reconstruct_operator(operator, theta):
-        import jax_sn
-
-        # We have to replace:
-        # 1. cross sections
-        xs_idxed             = eqx.tree_at(lambda xs_idx : xs_idx.cross_section_data, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed, replace = theta.cross_section_data)                
-        operator_xs_replaced =  eqx.tree_at(operator.cross_sections_indexed_loc, operator, replace_fn= lambda _ :  xs_idxed)
-
-        # 2. domain itself
-        domain = operator_xs_replaced.transport_operator.solution_domain_data.domain
-        #       -  Face normals in the domain & vertices in the domain (although they don't do anything anymore i think...)
-        face_normals = jax_sn.domain.geometric_domain.compute_face_normal_vectors_from_3d_simplices(theta.vertices[domain.connectivity], domain.face_template)
-        domain_replaced = eqx.tree_at(lambda d : [d.vertices, d.face_normals], domain, replace = [theta.vertices, face_normals])        
-        operator_xs_dom_replaced = eqx.tree_at(lambda op : op.transport_operator.transport_operator.solution_domain_data.domain, operator_xs_replaced, replace = domain_replaced)
-
-        # 3. precomputed geometric data
-        precomputed_geometric_data_comp = jax_sn.solution_domain.basix_fem._precompute_jacobians_simplex(domain_replaced)
-        
-        return eqx.tree_at(operator_xs_dom_replaced.precomputed_geometric_data_loc, operator_xs_dom_replaced, replace_fn= lambda _ : precomputed_geometric_data_comp)

@@ -15,7 +15,7 @@ from jax_sn.solution_domain.solution_domain import SolutionDomain
 from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
 from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
 from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan, MultiGroupLowerTriangularBlockSolver
-from jax_sn.tools.memory_analysis import MultiGroupOperatorEverythingParametrised
+from jax_sn.parametrisation.multigroup_parametrisation import MultigroupOperatorParametrisedVerticesXS
 
 import equinox as eqx
 from jax_sn.domain.domain_generation import create_cartesian_setup
@@ -89,7 +89,7 @@ def solve_and_sum(MGOP, rhs, solver):
 
 @eqx.filter_jit
 def solve_result_everything(theta, MGOP, rhs_base, ltri_solver):    
-    MGOP_new = MultiGroupOperatorEverythingParametrised.reconstruct_operator(MGOP, theta)
+    MGOP_new = MultigroupOperatorParametrisedVerticesXS.reconstruct_operator(MGOP, theta)
     solution_value =  lx.linear_solve(MGOP_new, rhs_base, solver=ltri_solver).value
     return jnp.sum(solution_value)
 
@@ -136,7 +136,7 @@ def test_mg_ad():
 
     MGOP, source_eg0, _ = modify_setup_mgop(dim, degree, lambda v,c : (v,c))
 
-    theta_everything_base = MultiGroupOperatorEverythingParametrised.theta_base(MGOP)
+    theta_everything_base = MultigroupOperatorParametrisedVerticesXS.theta_base(MGOP)
 
     rhs = get_rhs(MGOP, source_eg0)
 

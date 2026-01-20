@@ -1,4 +1,4 @@
-from . import quadrature_set, domain, energy_set, tools, operators
+from . import quadrature_set, domain, energy_set, tools, operators, parametrisation
 
 __all__ = [
     "quadrature_set",
@@ -6,4 +6,5 @@ __all__ = [
     "energy_set",
     "tools",
     "operators",
+    "parametrisation"
 ]

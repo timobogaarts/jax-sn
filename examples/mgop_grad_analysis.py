@@ -20,7 +20,8 @@ from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
 from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
 from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan
 from jax_sn.operators.multi_group_operator import MultiGroupLowerTriangularBlockSolver
-from jax_sn.tools.memory_analysis import MultiGroupOperatorSigmaAllParametrised, _filter_jit_f_to_memory, OperatorAnalysis, pytree_nbytes, MultiGroupOperatorEverythingParametrised
+from jax_sn.tools.memory_analysis import _filter_jit_f_to_memory, OperatorAnalysis, pytree_nbytes
+from jax_sn.parametrisation import MultigroupOperatorParametrisedVerticesXS
 
 from jax_sn.domain.cross_sections import CrossSectionsIndexed
 import equinox as eqx
@@ -128,11 +129,11 @@ def solve_and_sum(MGOP, rhs, solver):
 
 @eqx.filter_jit
 def solve_result_everything(theta, MGOP, rhs_base, ltri_solver):    
-    MGOP_new = MultiGroupOperatorEverythingParametrised.reconstruct_operator(MGOP, theta)
+    MGOP_new = MultigroupOperatorParametrisedVerticesXS.reconstruct_operator(MGOP, theta)
     solution_value =  lx.linear_solve(MGOP_new, rhs_base, solver=ltri_solver).value
     return jnp.sum(solution_value)
 
-theta_everything_base = MultiGroupOperatorEverythingParametrised.theta_base(MGOP)
+theta_everything_base = MultigroupOperatorParametrisedVerticesXS.theta_base(MGOP)
 grad_theta_everything = eqx.filter_jit(jax.grad(solve_result_everything, argnums=0))
 
 # %%
@@ -157,7 +158,7 @@ def print_memory_parametrisation(theta, MGOP, attribute_name, attribute_method):
 
     @eqx.filter_jit
     def sum_attr(mgop, theta, rhs, attribute_name):
-        mgop1 = MultiGroupOperatorEverythingParametrised.reconstruct_operator(mgop, theta)
+        mgop1 = MultigroupOperatorParametrisedVerticesXS.reconstruct_operator(mgop, theta)
         if attribute_name is None:
             op = mgop1
         else:
@@ -251,17 +252,17 @@ print("==============================")
 ltri_solver = MultiGroupLowerTriangularBlockSolver(bicgstab_solver)
 
 # %%
-from jax_sn.tools.memory_analysis import OperatorThetaParametrised
+
 from jax_sn.solution_domain import PrecomputedGeometricData
 from jax_sn.domain.cross_sections import CrossSectionData
 from jax_sn.domain.geometric_domain import compute_face_normal_vectors_from_3d_simplices
 from jax_sn.solution_domain.basix_fem import _precompute_jacobians_simplex
 
-theta_everything_base = MultiGroupOperatorEverythingParametrised.theta_base(MGOP)
+theta_everything_base = MultigroupOperatorParametrisedVerticesXS.theta_base(MGOP)
 
 @eqx.filter_jit
 def solve_result_everything(theta, MGOP, rhs_base, ltri_solver):    
-    MGOP_new = MultiGroupOperatorEverythingParametrised.reconstruct_operator(MGOP, theta)
+    MGOP_new = MultigroupOperatorParametrisedVerticesXS.reconstruct_operator(MGOP, theta)
     solution_value =  lx.linear_solve(MGOP_new, rhs_base, solver=ltri_solver).value
     return jnp.sum(solution_value)
 
@@ -271,7 +272,7 @@ grad_theta_everything = eqx.filter_jit(jax.grad(solve_result_everything, argnums
 def print_mem_timing(theta, mgop, rhs_base, ltri_solver):
     @eqx.filter_jit
     def f(theta):
-        mgop_new = MultiGroupOperatorEverythingParametrised.reconstruct_operator(mgop, theta)
+        mgop_new = MultigroupOperatorParametrisedVerticesXS.reconstruct_operator(mgop, theta)
         solution_value =  lx.linear_solve(mgop_new, rhs_base, solver=ltri_solver).value
         return jnp.sum(solution_value)
     
@@ -289,7 +290,7 @@ def print_mem_timing(theta, mgop, rhs_base, ltri_solver):
 
 # %%
 print("Everything parametrised")
-theta_everything_base = MultiGroupOperatorEverythingParametrised.theta_base(MGOP)
+theta_everything_base = MultigroupOperatorParametrisedVerticesXS.theta_base(MGOP)
 
 print("Without checkpointing Lower Triangular")
 print("======================================")

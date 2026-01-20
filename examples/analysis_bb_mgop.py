@@ -54,7 +54,8 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
     MGOP, source_eg0, solution_domain = setup_mgop(dim,degree)
 
     # %%
-    from jax_sn.tools.memory_analysis import OperatorAnalysis, TotalOperatorSigmaParametrised
+    from jax_sn.tools.memory_analysis import OperatorAnalysis
+    from jax_sn.parametrisation import SingleGroupOperatorSigmaAllParametrised
 
     # %%
     print("================================")
@@ -103,7 +104,7 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
     rhs_total = jnp.stack([rhs_eg0] + [jnp.zeros_like(rhs_eg0) for _ in range(MGOP.n_energy_groups -1)], axis =0)
 
     # %%
-    from jax_sn.operators.multi_group_operator import solve_lower_triangular, solve_total
+    from jax_sn.operators.multi_group_operator import solve_lower_triangular
 
     import lineax as lx
     bicgstab_solver = lx.BiCGStab(1e-10, 1e-10, max_steps = 5)

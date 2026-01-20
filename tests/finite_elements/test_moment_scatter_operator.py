@@ -137,7 +137,7 @@ def test_scatter_operator_transpose():
     quadrature_set = jax_sn.quadrature_set.create_tn_quadrature_set(3)    
     n_elem = 10
 
-    xs_data_total = jnp.array(onp.random.rand(n_elem,2,2))
+    xs_data_total = jnp.array(onp.random.rand(n_elem,2))
     xs_data_scat = jnp.array(onp.random.rand(n_elem, 16, 2,2))
 
     cross_section_data= jax_sn.domain.cross_sections.CrossSectionData(xs_data_total, xs_data_scat)

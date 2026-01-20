@@ -41,7 +41,8 @@ def setup_base_case(dim, degree):
 
 
 
-from jax_sn.tools.memory_analysis import pytree_nbytes, _array_bytes, TransportOperatorSigmaParametrised
+from jax_sn.tools.memory_analysis import pytree_nbytes, _array_bytes, analyze_grad_memory, analyze_grad_timing
+from jax_sn.parametrisation import TransportOperatorSigmaParametrised
 
 
 def _run_single_angle_operators(dim, degree):
@@ -57,8 +58,8 @@ def _run_single_angle_operators(dim, degree):
     toposort = TopologicalSortedAngle.from_domain_angle(solution_domain.domain, angle_i[i_tn][0], 100)
     for operator_cls in transportoperators_sa.keys():        
         operator_instance = operator_cls(solution_domain.solution_domain_data, toposort, 0, **transportoperators_sa[operator_cls])
-        mem_mv, mem_mv_grad   = TransportOperatorSigmaParametrised.analyze_grad_memory(operator_instance, method="mv")    
-        mem_inv, mem_inv_grad = TransportOperatorSigmaParametrised.analyze_grad_memory(operator_instance, method="inv")    
+        mem_mv, mem_mv_grad   = analyze_grad_memory(TransportOperatorSigmaParametrised, operator_instance, method="mv")    
+        mem_inv, mem_inv_grad = analyze_grad_memory(TransportOperatorSigmaParametrised, operator_instance, method="inv")    
         print(f"{operator_cls.__name__} single angle for a dimension {dim} degree {degree} operator with {solution_domain.domain.n_elements} elements:")
         print(f"\tmv memory      : {mem_mv}")
         print(f"\tgrad mv memory : {mem_mv_grad}")
@@ -66,8 +67,8 @@ def _run_single_angle_operators(dim, degree):
         print(f"\tgrad inv memory: {mem_inv_grad}")           
     for operator_cls in transportoperators_sa.keys():        
         operator_instance = operator_cls(solution_domain.solution_domain_data, toposort, 0, **transportoperators_sa[operator_cls])
-        time_mv, time_mv_grad   = TransportOperatorSigmaParametrised.analyze_grad_timing(operator_instance, method="mv", n_samples = 10, ignore_n = 2)    
-        time_inv, time_inv_grad = TransportOperatorSigmaParametrised.analyze_grad_timing(operator_instance, method="inv", n_samples= 7,  ignore_n = 2)    
+        time_mv, time_mv_grad   = analyze_grad_timing(TransportOperatorSigmaParametrised, operator_instance, method="mv", n_samples = 10, ignore_n = 2)    
+        time_inv, time_inv_grad = analyze_grad_timing(TransportOperatorSigmaParametrised, operator_instance, method="inv", n_samples= 7,  ignore_n = 2)    
         print(f"{operator_cls.__name__} single angle for a dimension {dim} degree {degree} operator with {solution_domain.domain.n_elements} elements:")        
         print(f"\tmv time      : {time_mv       * 1000:.2f} ms")
         print(f"\tgrad mv time : {time_mv_grad  * 1000:.2f} ms")
@@ -88,8 +89,8 @@ def _run_multi_angle_operators(dim, degree):
     total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
     for operator_cls in transportoperators_ma.keys():        
         operator_instance = TransportOperatorMultipleAnglesVmap(operator_cls(solution_domain.solution_domain_data, total_toposorts, 0, **transportoperators_ma[operator_cls]))
-        mem_mv, mem_mv_grad   = TransportOperatorSigmaParametrised.analyze_grad_memory(operator_instance, method="mv")    
-        mem_inv, mem_inv_grad = TransportOperatorSigmaParametrised.analyze_grad_memory(operator_instance, method="inv")    
+        mem_mv, mem_mv_grad   = analyze_grad_memory(TransportOperatorSigmaParametrised, operator_instance, method="mv")    
+        mem_inv, mem_inv_grad = analyze_grad_memory(TransportOperatorSigmaParametrised, operator_instance, method="inv")    
         print(f"{operator_cls.__name__} multi angle for a dimension {dim} degree {degree} operator with {solution_domain.domain.n_elements} elements and {n_angles} angles:")
         print(f"\tmv memory      : {mem_mv}")
         print(f"\tgrad mv memory : {mem_mv_grad}")
@@ -97,8 +98,8 @@ def _run_multi_angle_operators(dim, degree):
         print(f"\tgrad inv memory: {mem_inv_grad}")           
     for operator_cls in transportoperators_ma.keys():        
         operator_instance = TransportOperatorMultipleAnglesVmap(operator_cls(solution_domain.solution_domain_data, total_toposorts, 0, **transportoperators_ma[operator_cls]))
-        time_mv, time_mv_grad   = TransportOperatorSigmaParametrised.analyze_grad_timing(operator_instance, method="mv", n_samples = 3, ignore_n = 1)    
-        time_inv, time_inv_grad = TransportOperatorSigmaParametrised.analyze_grad_timing(operator_instance, method="inv", n_samples= 3,  ignore_n = 1)    
+        time_mv, time_mv_grad   = analyze_grad_timing(TransportOperatorSigmaParametrised, operator_instance, method="mv", n_samples = 3, ignore_n = 1)    
+        time_inv, time_inv_grad = analyze_grad_timing(TransportOperatorSigmaParametrised, operator_instance, method="inv", n_samples= 3,  ignore_n = 1)    
         print(f"{operator_cls.__name__} multi angle for a dimension {dim} degree {degree} operator with {solution_domain.domain.n_elements} elements and {n_angles} angles:")        
         print(f"\tmv time      : {time_mv       * 1000:.2f} ms")
         print(f"\tgrad mv time : {time_mv_grad  * 1000:.2f} ms")
