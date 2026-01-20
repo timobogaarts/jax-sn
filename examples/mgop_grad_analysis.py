@@ -65,7 +65,7 @@ def setup_from_verts(verts, conn, cross_sections, sources,  degree, tn_order):
 
     return solution_domain, sources, jax_sn.quadrature_set.create_tn_quadrature_set(tn_order)
 
-def _setup_operators(solution_domain: SolutionDomain, sources: jnp.ndarray, quadrature_set: jax_sn.quadrature_set.QuadratureSet, batch_size = 50) -> Tuple[MultiGroupOperatorScan, jnp.ndarray, SolutionDomain]:        
+def _setup_operators(solution_domain: SolutionDomain, sources: jnp.ndarray, quadrature_set: jax_sn.quadrature_set.QuadratureSet, batch_size = 100) -> Tuple[MultiGroupOperatorScan, jnp.ndarray, SolutionDomain]:        
     n_energy_groups           = solution_domain.domain.cross_sections_indexed.n_energy_groups
     lmax                      = solution_domain.domain.cross_sections_indexed.l_max
 
@@ -93,10 +93,21 @@ def get_rhs(MGOP, source_eg0):
     rhs_total = jnp.stack([rhs_eg0] + [jnp.zeros_like(rhs_eg0) for _ in range(MGOP.n_energy_groups -1)], axis=0)
     return rhs_total
 
-dim, degree = 2,2
+dim, degree = 3,2
 bicgstab_solver = lx.BiCGStab(1e-12, 1e-12, max_steps = 160)
 lower_triangular_solver = MultiGroupLowerTriangularBlockSolver(bicgstab_solver)
+
 MGOP, source_eg0, _ = modify_setup_mgop(dim, degree, lambda v,c : (v,c))
+print("===================")
+print("MultiGroupOperatorScan")
+print("With:")
+print("\t Dimension:", dim)
+print("\t Degree:", degree)
+print("\t Number of energy groups:", MGOP.n_energy_groups)
+print("\t Number of angles:       ", MGOP.n_angles)
+print("\t Number of elements:     ", MGOP.n_elements)
+print("\t Number of moments       ", MGOP.n_moments)
+print("\t Number of basis         ", MGOP.n_basis)
 rhs = get_rhs(MGOP, source_eg0)
 
 # %%
@@ -290,129 +301,135 @@ print_mem_timing(theta_everything_base, MGOP_cp, rhs, ltri_solver)
 print("======================================")
 
 
-
+# RTx 3080
+# ===================
+# MultiGroupOperatorScan
+# With:
+#          Dimension: 3
+#          Degree: 2
+#          Number of energy groups: 4
+#          Number of angles:        72
+#          Number of elements:      15000
+#          Number of moments        36
+#          Number of basis          10
 # No checkpointing:
 # ==============================
 # None.mv memory usage:
-#          Direct {'peak': 14.758445739746094, 'argument': 3.95343017578125, 'output': 3.0517578125e-05, 'temp': 10.828300476074219} MB
-#          Grad {'peak': 37.15237522125244, 'argument': 3.95343017578125, 'output': 0.01052093505859375, 'temp': 33.20463562011719} MB
+#          Direct {'peak': 543.8956604003906, 'argument': 183.41949462890625, 'output': 3.0517578125e-05, 'temp': 360.4821090698242} MB
+#          Grad {'peak': 1624.0409088134766, 'argument': 183.41949462890625, 'output': 0.07816314697265625, 'temp': 1440.5605926513672} MB
 #   Timing:
-#          Direct 0.07041335105895996
-#          Grad 0.14512646198272705
+#          Direct 1.9877829551696777
+#          Grad 4.17750871181488
 # moment_operator.mv memory usage:
-#          Direct {'peak': 4.159461975097656, 'argument': 1.667724609375, 'output': 3.0517578125e-05, 'temp': 2.4919586181640625} MB
-#          Grad {'peak': 4.169952392578125, 'argument': 1.667724609375, 'output': 0.01052093505859375, 'temp': 2.4919815063476562} MB
+#          Direct {'peak': 127.61600494384766, 'argument': 82.417236328125, 'output': 3.0517578125e-05, 'temp': 45.19898986816406} MB
+#          Grad {'peak': 127.69413757324219, 'argument': 82.417236328125, 'output': 0.07816314697265625, 'temp': 45.199012756347656} MB
 #   Timing:
-#          Direct 0.0005929470062255859
-#          Grad 0.0005670785903930664
+#          Direct 0.005095124244689941
+#          Grad 0.005202889442443848
 # transport_operator.inv memory usage:
-#          Direct {'peak': 8.126632690429688, 'argument': 2.265655517578125, 'output': 3.0517578125e-05, 'temp': 5.864631652832031} MB
-#          Grad {'peak': 11.812332153320312, 'argument': 2.265655517578125, 'output': 0.01052093505859375, 'temp': 9.547286987304688} MB
+#          Direct {'peak': 214.2653045654297, 'argument': 100.98171997070312, 'output': 3.0517578125e-05, 'temp': 113.28772735595703} MB
+#          Grad {'peak': 401.4707794189453, 'argument': 100.98171997070312, 'output': 0.07816314697265625, 'temp': 300.4242401123047} MB
 #   Timing:
-#          Direct 0.041327714920043945
-#          Grad 0.06586384773254395
+#          Direct 0.5078434944152832
+#          Grad 1.0253645181655884
 # transport_operator.mv memory usage:
-#          Direct {'peak': 4.622779846191406, 'argument': 1.7104339599609375, 'output': 3.0517578125e-05, 'temp': 2.9154129028320312} MB
-#          Grad {'peak': 10.690963745117188, 'argument': 1.7104339599609375, 'output': 0.01052093505859375, 'temp': 8.977218627929688} MB
+#          Direct {'peak': 176.79979705810547, 'argument': 84.49629211425781, 'output': 3.0517578125e-05, 'temp': 92.30725860595703} MB
+#          Grad {'peak': 221.48089599609375, 'argument': 84.49629211425781, 'output': 0.07816314697265625, 'temp': 136.9152069091797} MB
 #   Timing:
-#          Direct 0.006909847259521484
-#          Grad 0.016488194465637207
+#          Direct 0.035828590393066406
+#          Grad 0.17823994159698486
 # mass_operator.mv memory usage:
-#          Direct {'peak': 6.608192443847656, 'argument': 1.664031982421875, 'output': 3.0517578125e-05, 'temp': 4.9445953369140625} MB
-#          Grad {'peak': 6.618682861328125, 'argument': 1.664031982421875, 'output': 0.01052093505859375, 'temp': 4.944862365722656} MB
+#          Direct {'peak': 251.72295379638672, 'argument': 82.92799377441406, 'output': 3.0517578125e-05, 'temp': 168.79518127441406} MB
+#          Grad {'peak': 251.80108642578125, 'argument': 82.92799377441406, 'output': 0.07816314697265625, 'temp': 168.79569244384766} MB
 #   Timing:
-#          Direct 0.0026912689208984375
-#          Grad 0.0028263330459594727
+#          Direct 0.003974437713623047
+#          Grad 0.005253314971923828
 # ==============================
-
-
+#
 # With checkpointing:
 # ==============================
 # None.mv memory usage:
-#          Direct {'peak': 14.758445739746094, 'argument': 3.95343017578125, 'output': 3.0517578125e-05, 'temp': 10.828300476074219} MB
-#          Grad {'peak': 18.551666259765625, 'argument': 3.95343017578125, 'output': 0.01052093505859375, 'temp': 14.606475830078125} MB
+#          Direct {'peak': 543.8956604003906, 'argument': 183.41949462890625, 'output': 3.0517578125e-05, 'temp': 360.4821090698242} MB
+#          Grad {'peak': 954.3883743286133, 'argument': 183.41949462890625, 'output': 0.07816314697265625, 'temp': 770.9099426269531} MB
 #   Timing:
-#          Direct 0.07059133052825928
-#          Grad 0.22380352020263672
+#          Direct 1.963196039199829
+#          Grad 6.137986779212952
 # moment_operator.mv memory usage:
-#          Direct {'peak': 4.159461975097656, 'argument': 1.667724609375, 'output': 3.0517578125e-05, 'temp': 2.4919586181640625} MB
-#          Grad {'peak': 4.169952392578125, 'argument': 1.667724609375, 'output': 0.01052093505859375, 'temp': 2.4919815063476562} MB
+#          Direct {'peak': 127.61600494384766, 'argument': 82.417236328125, 'output': 3.0517578125e-05, 'temp': 45.19898986816406} MB
+#          Grad {'peak': 127.69413757324219, 'argument': 82.417236328125, 'output': 0.07816314697265625, 'temp': 45.199012756347656} MB
 #   Timing:
-#          Direct 0.0005769729614257812
-#          Grad 0.0005109310150146484
+#          Direct 0.005663275718688965
+#          Grad 0.005121707916259766
 # transport_operator.inv memory usage:
-#          Direct {'peak': 8.126632690429688, 'argument': 2.265655517578125, 'output': 3.0517578125e-05, 'temp': 5.864631652832031} MB
-#          Grad {'peak': 11.812332153320312, 'argument': 2.265655517578125, 'output': 0.01052093505859375, 'temp': 9.547286987304688} MB
+#          Direct {'peak': 214.2653045654297, 'argument': 100.98171997070312, 'output': 3.0517578125e-05, 'temp': 113.28772735595703} MB
+#          Grad {'peak': 401.4707794189453, 'argument': 100.98171997070312, 'output': 0.07816314697265625, 'temp': 300.4242401123047} MB
 #   Timing:
-#          Direct 0.037072062492370605
-#          Grad 0.06548380851745605
+#          Direct 0.48498594760894775
+#          Grad 1.0300859212875366
 # transport_operator.mv memory usage:
-#          Direct {'peak': 4.622779846191406, 'argument': 1.7104339599609375, 'output': 3.0517578125e-05, 'temp': 2.9154129028320312} MB
-#          Grad {'peak': 10.690963745117188, 'argument': 1.7104339599609375, 'output': 0.01052093505859375, 'temp': 8.977218627929688} MB
+#          Direct {'peak': 176.79979705810547, 'argument': 84.49629211425781, 'output': 3.0517578125e-05, 'temp': 92.30725860595703} MB
+#          Grad {'peak': 221.48089599609375, 'argument': 84.49629211425781, 'output': 0.07816314697265625, 'temp': 136.9152069091797} MB
 #   Timing:
-#          Direct 0.0074062347412109375
-#          Grad 0.02523648738861084
+#          Direct 0.08780908584594727
+#          Grad 0.17808616161346436
 # mass_operator.mv memory usage:
-#          Direct {'peak': 6.608192443847656, 'argument': 1.664031982421875, 'output': 3.0517578125e-05, 'temp': 4.9445953369140625} MB
-#          Grad {'peak': 6.618682861328125, 'argument': 1.664031982421875, 'output': 0.01052093505859375, 'temp': 4.944862365722656} MB
+#          Direct {'peak': 251.72295379638672, 'argument': 82.92799377441406, 'output': 3.0517578125e-05, 'temp': 168.79518127441406} MB
+#          Grad {'peak': 251.80108642578125, 'argument': 82.92799377441406, 'output': 0.07816314697265625, 'temp': 168.79569244384766} MB
 #   Timing:
-#          Direct 0.002141714096069336
-#          Grad 0.004360795021057129
+#          Direct 0.004551887512207031
+#          Grad 0.005142331123352051
 # ==============================
 # No checkpointing:
 # ==============================
 # Transport Operator
-# {'peak': 8.141891479492188, 'argument': 2.34576416015625, 'output': 1.6479721069335938, 'temp': 4.150764465332031}
+# {'peak': 215.2952651977539, 'argument': 104.98715209960938, 'output': 82.3974838256836, 'temp': 27.91297149658203}
 # Single group operator
-# {'peak': 9.760894775390625, 'argument': 1.575103759765625, 'output': 0.8239974975585938, 'temp': 7.364875793457031}
+# {'peak': 281.5982894897461, 'argument': 64.0634765625, 'output': 41.198753356933594, 'temp': 176.33899688720703}
 # Multi group operator
-# {'peak': 14.787193298339844, 'argument': 4.047027587890625, 'output': 3.2959213256835938, 'temp': 7.466499328613281}
+# {'peak': 545.1603698730469, 'argument': 187.65966796875, 'output': 164.7949447631836, 'temp': 192.70990753173828}
 # Forward solve
-# {'peak': 34.61592197418213, 'argument': 4.0999908447265625, 'output': 3.2959213256835938, 'temp': 29.676513671875}
+# {'peak': 1673.4162607192993, 'argument': 190.2606658935547, 'output': 164.7949447631836, 'temp': 1318.37255859375}
 # Forward tri solve
-# {'peak': 20.745513916015625, 'argument': 4.0999908447265625, 'output': 3.2959213256835938, 'temp': 14.849861145019531}
+# {'peak': 898.8746118545532, 'argument': 190.2606658935547, 'output': 164.7949447631836, 'temp': 622.2316970825195}
 # Backward solve
-# {'peak': 41.48410129547119, 'argument': 4.0999908447265625, 'output': 3.2959213256835938, 'temp': 34.102783203125}
+# {'peak': 1874.3625802993774, 'argument': 190.2606658935547, 'output': 164.7949447631836, 'temp': 1519.321533203125}
 # Backward tri solve
-# {'peak': 26.108474731445312, 'argument': 4.0999908447265625, 'output': 3.2959213256835938, 'temp': 19.38526153564453}
+# {'peak': 1099.9423141479492, 'argument': 190.2606658935547, 'output': 164.7949447631836, 'temp': 758.4199295043945}
 # ==============================
-
-
+#
 # With checkpointing:
 # ==============================
 # Transport Operator
-# {'peak': 8.141891479492188, 'argument': 2.34576416015625, 'output': 1.6479721069335938, 'temp': 4.150764465332031}
+# {'peak': 215.2952651977539, 'argument': 104.98715209960938, 'output': 82.3974838256836, 'temp': 27.91297149658203}
 # Single group operator
-# {'peak': 9.760894775390625, 'argument': 1.575103759765625, 'output': 0.8239974975585938, 'temp': 7.364875793457031}
+# {'peak': 281.5982894897461, 'argument': 64.0634765625, 'output': 41.198753356933594, 'temp': 176.33899688720703}
 # Multi group operator
-# {'peak': 14.787193298339844, 'argument': 4.047027587890625, 'output': 3.2959213256835938, 'temp': 7.466499328613281}
+# {'peak': 545.1603698730469, 'argument': 187.65966796875, 'output': 164.7949447631836, 'temp': 192.70990753173828}
 # Forward solve
-# {'peak': 34.61592197418213, 'argument': 4.0999908447265625, 'output': 3.2959213256835938, 'temp': 29.676513671875}
+# {'peak': 1673.4162607192993, 'argument': 190.2606658935547, 'output': 164.7949447631836, 'temp': 1318.37255859375}
 # Forward tri solve
-# {'peak': 20.745513916015625, 'argument': 4.0999908447265625, 'output': 3.2959213256835938, 'temp': 14.849861145019531}
+# {'peak': 898.8746118545532, 'argument': 190.2606658935547, 'output': 164.7949447631836, 'temp': 622.2316970825195}
 # Backward solve
-# {'peak': 41.48410129547119, 'argument': 4.0999908447265625, 'output': 3.2959213256835938, 'temp': 34.102783203125}
+# {'peak': 1874.3625802993774, 'argument': 190.2606658935547, 'output': 164.7949447631836, 'temp': 1519.321533203125}
 # Backward tri solve
-# {'peak': 26.108474731445312, 'argument': 4.0999908447265625, 'output': 3.2959213256835938, 'temp': 19.38526153564453}
+# {'peak': 1099.9423141479492, 'argument': 190.2606658935547, 'output': 164.7949447631836, 'temp': 758.4199295043945}
 # ==============================
 # Everything parametrised
 # Without checkpointing Lower Triangular
 # ======================================
 # Solve memory usage:
-#          Direct {'peak': 21.39806365966797, 'argument': 0.010467529296875, 'output': 3.0517578125e-05, 'temp': 17.877822875976562} MB
-#          Grad {'peak': 38.07039737701416, 'argument': 0.010467529296875, 'output': 0.01052093505859375, 'temp': 31.93964385986328} MB
+#          Direct {'peak': 916.5773239135742, 'argument': 0.0781097412109375, 'output': 3.0517578125e-05, 'temp': 790.0023345947266} MB
+#          Grad {'peak': 1705.7125244140625, 'argument': 0.0781097412109375, 'output': 0.07816314697265625, 'temp': 1440.3554153442383} MB
 #   Timing:
-#          Direct 6.132092475891113
-#          Grad 13.027214288711548
+#          Direct 157.4159665107727
+#          Grad 364.88139247894287
 # ======================================
-
-
 # With checkpointing Lower Triangular
 # ======================================
 # Solve memory usage:
-#          Direct {'peak': 21.39806365966797, 'argument': 0.010467529296875, 'output': 3.0517578125e-05, 'temp': 17.877822875976562} MB
-#          Grad {'peak': 34.65501403808594, 'argument': 0.010467529296875, 'output': 0.01052093505859375, 'temp': 28.947959899902344} MB
+#          Direct {'peak': 916.5773239135742, 'argument': 0.0781097412109375, 'output': 3.0517578125e-05, 'temp': 790.0023345947266} MB
+#          Grad {'peak': 1494.7709197998047, 'argument': 0.0781097412109375, 'output': 0.07816314697265625, 'temp': 1240.6984481811523} MB
 #   Timing:
-#          Direct 6.0999157428741455
-#          Grad 13.124618291854858
+#          Direct 160.66807341575623
+#          Grad 369.60521483421326
 # ======================================
