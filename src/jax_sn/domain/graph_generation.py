@@ -6,7 +6,8 @@ import jax
 import jax.numpy as jnp
 from .geometric_domain import GeometricDomain
 from functools import partial
-from jax_sn.tools.graph_tools import _compute_levels_parallel_scan, _compute_levels_parallel_while, compute_levels_iterative
+from jax_sn.tools.graph_tools import _compute_levels_parallel_scan, _compute_levels_parallel_while, compute_levels_iterative, compute_levels_iterative_jax
+import equinox as eqx
 
 def _compute_inflow_bool(face_normals : jnp.ndarray, angle : jnp.ndarray) -> jnp.ndarray:
     normal_dot_angle = jnp.sum(face_normals * angle[None, None, :], axis=-1) 
@@ -63,13 +64,14 @@ def compute_levels_domain(geometric_domain : GeometricDomain, angle : jnp.ndarra
 
 
 def compute_levels_domain_safe(geometric_domain : GeometricDomain, angle : jnp.ndarray, n_iterations_per_loop : int ) -> jnp.ndarray:
-    '''
+    r'''
     Computes computation levels for elements in a geometric domain given an angle.
     Each element's level is determined by the maximum level of its upstream elements plus one (zero upstream elements -> 0 level).
         
     This function uses a safe iterative approach that checks for cycles in the graph.
 
-    See also `compute_levels_domain` for a jittable version (also for i.e. vmaps) that does not check for cycles.
+    See also :func:`compute_levels_domain` for a jittable version (also for i.e. vmaps) that does not check for cycles
+    or :func:`compute_levels_domain_safe_jax` for a jittable version that checks for cycles.
 
     Parameters:
     -----------
@@ -78,9 +80,7 @@ def compute_levels_domain_safe(geometric_domain : GeometricDomain, angle : jnp.n
     angle : jnp.ndarray
         A 1D array representing the angle for which to compute the levels.
     n_max_iterations : int
-        The maximum number of iterations to perform. Default is 1500.
-    while_loop : bool
-        If True, use a jax.while_loop to compute levels; otherwise, use jax.lax.scan.    
+        The maximum number of iterations to perform.
     Returns:
     --------
     jnp.ndarray
@@ -89,3 +89,25 @@ def compute_levels_domain_safe(geometric_domain : GeometricDomain, angle : jnp.n
     connection_indices = _get_inflow_indices_compressed(geometric_domain, angle)
     return compute_levels_iterative(connection_indices, n_iterations_per_loop=n_iterations_per_loop)
 
+@eqx.filter_jit
+def compute_levels_domain_safe_jax(geometric_domain : GeometricDomain, angle : jnp.ndarray, n_iterations_per_loop : int ) -> jnp.ndarray:
+    r'''
+    Computes computation levels for elements in a geometric domain given an angle.
+    Each element's level is determined by the maximum level of its upstream elements plus one (zero upstream elements -> 0 level).
+    This function uses a safe iterative approach that checks for cycles in the graph.
+    
+    Parameters:
+    -----------
+    geometric_domain : GeometricDomain
+        The geometric domain containing the mesh and adjacency information.
+    angle : jnp.ndarray
+        A 1D array representing the angle for which to compute the levels.
+    n_max_iterations : int
+        The maximum number of iterations to perform.
+    Returns:
+    --------
+    jnp.ndarray
+        An array of shape (n_elements,) containing the computed levels for each element.
+    '''
+    connection_indices = _get_inflow_indices_compressed(geometric_domain, angle)
+    return compute_levels_iterative_jax(connection_indices, n_iterations_per_loop=n_iterations_per_loop)

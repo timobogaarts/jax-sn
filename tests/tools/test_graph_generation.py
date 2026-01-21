@@ -90,10 +90,12 @@ def test_levels(domain):
     generations = jax_sn.domain.graph_generation.compute_levels_domain(domain, angle, 15000, while_loop=True)
 
     generations_2 = jax_sn.domain.graph_generation.compute_levels_domain(domain, angle, 1500, while_loop=False)
-
     generations_3 = jax_sn.domain.graph_generation.compute_levels_domain_safe(domain , angle, n_iterations_per_loop=50)
+    generations_4 = jax_sn.domain.graph_generation.compute_levels_domain_safe_jax(domain , angle, n_iterations_per_loop=50)
     onp.testing.assert_array_equal(generations, generations_2)
     onp.testing.assert_array_equal(generations, generations_3)
+    onp.testing.assert_array_equal(generations, generations_4)
+    
     for i, gen in enumerate(nx.algorithms.topological_generations(networks_graph)):                
         gen_nx = onp.sort(gen)
         gen_jsn = onp.sort(onp.where(generations == i)[0])

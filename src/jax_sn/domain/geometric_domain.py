@@ -7,6 +7,7 @@ from typing import Tuple
 from .cross_sections import CrossSectionDataSingleGroup
 from jax_sn.quadrature_set import QuadratureSet
 from typing import Tuple 
+import equinox as eqx
 
 @jax.jit
 def _compute_domain_setup_from_mesh(mesh : Tuple[jnp.ndarray, jnp.ndarray], face_template : jnp.ndarray):
@@ -237,6 +238,32 @@ class TopologicalSortedAngle:
         levels_argsort = jnp.argsort(levels)
         return cls(levels=levels, angle=angle, levels_argsort=levels_argsort)
     
+    # @classmethod
+    # def from_domain_quadrature_set(cls, geometric_domain : GeometricDomain, quadrature_set : QuadratureSet, n_iterations_per_loop : int = 100):
+    #     '''
+    #     Computes topological sorts for all angles in the given quadrature set and geometric domain.
+    #     This function is not jittable because it uses Python control flow to safely compute levels, which can throw if there is a cycle in the graph.
+
+    #     Parameters
+    #     ----------
+    #     geometric_domain : GeometricDomain
+    #         The geometric domain for which to compute the topological sorts.
+    #     quadrature_set : QuadratureSet
+    #         The quadrature set containing the angles for which to compute the topological sorts.
+    #     n_iterations_per_loop : int, optional
+    #         The number of iterations per loop for the level computation. The default is 100.
+    #     Returns
+    #     -------
+    #     toposorts : TopologicalSortedAngle
+    #         The computed topological sorts for all angles in the quadrature set. Batched over angles.
+    #     '''
+    #     from .graph_generation import compute_levels_domain_safe
+    #     levels = [compute_levels_domain_safe(geometric_domain, angle, n_iterations_per_loop) for angle in quadrature_set.angles]
+
+    #     levels = jnp.stack(levels, axis=0) #[n_angles, n_elements]
+    #     levels_argsort = jnp.argsort(levels, axis=-1) #[n_angles, n_elements]
+    #     return cls(levels=levels, angle=quadrature_set.angles, levels_argsort=levels_argsort)
+    
     @classmethod
     def from_domain_quadrature_set(cls, geometric_domain : GeometricDomain, quadrature_set : QuadratureSet, n_iterations_per_loop : int = 100):
         '''
@@ -256,12 +283,7 @@ class TopologicalSortedAngle:
         toposorts : TopologicalSortedAngle
             The computed topological sorts for all angles in the quadrature set. Batched over angles.
         '''
-        from .graph_generation import compute_levels_domain_safe
-        levels = [compute_levels_domain_safe(geometric_domain, angle, n_iterations_per_loop) for angle in quadrature_set.angles]
-
-        levels = jnp.stack(levels, axis=0) #[n_angles, n_elements]
-        levels_argsort = jnp.argsort(levels, axis=-1) #[n_angles, n_elements]
-        return cls(levels=levels, angle=quadrature_set.angles, levels_argsort=levels_argsort)
+        return cls(*_topologicalsorted_angle_from_domain_quadrature_set_scan(geometric_domain, quadrature_set, n_iterations_per_loop))        
 
     
     def __getitem__(self, idx : int) -> "TopologicalSortedAngle":
@@ -302,6 +324,34 @@ class TopologicalSortedAngle:
             levels_argsort = self.levels_argsort[..., ::-1] 
         )
     
+@eqx.filter_jit
+def _topologicalsorted_angle_from_domain_quadrature_set_scan(geometric_domain : GeometricDomain, quadrature_set : QuadratureSet, n_iterations_per_loop : int = 100):
+    '''
+    Jittable version of TopologicalSortedAngle.from_domain_quadrature_set.
+    Computes topological sorts for all angles in the given quadrature set and geometric domain.
+
+    Parameters
+    ----------
+    geometric_domain : GeometricDomain
+        The geometric domain for which to compute the topological sorts.
+    quadrature_set : QuadratureSet
+        The quadrature set containing the angles for which to compute the topological sorts.
+    n_iterations_per_loop : int, optional
+        The number of iterations per loop for the level computation. The default is 100.
+    Returns
+    -------
+    toposorts : TopologicalSortedAngle
+        The computed topological sorts for all angles in the quadrature set. Batched over angles.
+    '''
+    from jax_sn.domain.graph_generation import compute_levels_domain_safe_jax
+
+    def body_fn(carry, angle):
+        levels = compute_levels_domain_safe_jax(geometric_domain, angle, n_iterations_per_loop)
+        return carry, levels
+    
+    levels = jax.lax.scan(body_fn, None, quadrature_set.angles)[1] #[n_angles, n_elements]        
+    levels_argsort = jnp.argsort(levels, axis=-1) #[n_angles, n_elements]
+    return levels, quadrature_set.angles, levels_argsort
 
 @lru_cache(maxsize=16)
 def _build_bvh(geometric_domain : GeometricDomain):    

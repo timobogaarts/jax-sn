@@ -22,6 +22,10 @@ class MultigroupOperatorParametrisedVerticesXS(ParametrizedModule):
     
     @staticmethod
     def reconstruct_operator(operator, theta):
+        return reconstruct_multigroup_operator_including_toposort(operator, theta)
+
+@eqx.filter_jit
+def reconstruct_multigroup_operator_including_toposort(operator, theta):
         import jax_sn
 
         # We have to replace:
@@ -37,7 +41,12 @@ class MultigroupOperatorParametrisedVerticesXS(ParametrizedModule):
         operator_xs_dom_replaced = eqx.tree_at(lambda op : op.transport_operator.transport_operator.solution_domain_data.domain, operator_xs_replaced, replace = domain_replaced)
 
         # 3. precomputed geometric data
-        precomputed_geometric_data_comp = jax_sn.solution_domain.basix_fem._precompute_jacobians_simplex(domain_replaced)
-        
-        return eqx.tree_at(operator_xs_dom_replaced.precomputed_geometric_data_loc, operator_xs_dom_replaced, replace_fn= lambda _ : precomputed_geometric_data_comp)
+        precomputed_geometric_data_comp = jax_sn.solution_domain.basix_fem._precompute_jacobians_simplex(domain_replaced)        
+        operator_xs_dom_precomp_replaced =  eqx.tree_at(operator_xs_dom_replaced.precomputed_geometric_data_loc, operator_xs_dom_replaced, replace_fn= lambda _ : precomputed_geometric_data_comp)
+
+        # 4. topological sorts [they are only used for inversion, so the gradient should not flow through them. In principle, we could completley remove it here, put it directly in the inverse (which doesn't get 'gradded' anyway, but this saves 
+        # recomputation for multiple energy groups)]
+        topological_sorts_replaced = jax.lax.stop_gradient(jax_sn.domain.TopologicalSortedAngle.from_domain_quadrature_set(domain_replaced, operator_xs_dom_precomp_replaced.moment_operator.quadrature_set))
+
+        return eqx.tree_at(lambda op : op.transport_operator.transport_operator.topological_sorted_angle, operator_xs_dom_precomp_replaced, replace = topological_sorts_replaced)
 

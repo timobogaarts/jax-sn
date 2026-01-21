@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 from functools import partial
+import equinox as eqx
 
 def _increment_levels_including_dummy(levels_elements : jnp.ndarray, dependency_matrix : jnp.ndarray) -> jnp.ndarray:
     '''
@@ -137,6 +138,7 @@ def compute_levels_iterative(dependency_matrix : jnp.ndarray, n_iterations_per_l
     n_elements = dependency_matrix.shape[0]
     
     absolute_maximum_loops = (n_elements + 1) // n_iterations_per_loop + 1
+        
     n_elements_computed    = 0 
     for _ in range(absolute_maximum_loops):                                
         levels = _scan_loop_levels_including_dummy(levels, dependency_matrix, n_iterations_per_loop)
@@ -148,9 +150,54 @@ def compute_levels_iterative(dependency_matrix : jnp.ndarray, n_iterations_per_l
         n_elements_computed = n_elements_computed_new
     return _levels_including_dummy_to_levels(levels)
         
-    
 
+@eqx.filter_jit
+def compute_levels_iterative_jax(dependency_matrix : jnp.ndarray, n_iterations_per_loop : int) -> jnp.ndarray:
+    '''
+    Compute levels of elements in a graph defined by dependency_matrix using a safe while loop.
+    Each element's level is determined by the maximum level of its upstream elements plus one (zero upstream elements -> 0 level).
+    
+    Uses a while loop and equinox runtime errors to check for cycles in the graph.    
+    
+    :param dependency_matrix: A (n_elements, n_faces_per_element) array where each row contains the indices of upstream elements for each element.
+                              Use n_elements as a dummy index for faces that do not connect to any upstream element.
+    :param n_iterations_per_loop: The number of iterations to perform in each JAX-compiled step.  
+    :return: An array of shape (n_elements,) containing the computed levels for each element.    
+    
+    '''
+    
+    n_elements             = dependency_matrix.shape[0]    
+    absolute_maximum_loops = (n_elements + 1) // n_iterations_per_loop + 1
+    levels0                = _setup_levels_including_dummy(dependency_matrix)
+    n_computed_0           = jnp.sum(levels0 < n_elements)
 
+    state0 = (
+        levels0,                                          # levels start
+        0,                                                # loop idx
+        n_computed_0,                                     # n_computed_0
+        0                                                 # n_computed_prev        
+        )   
     
+    def cond_fn(state):
+        levels, loop_idx, n_computed, n_computed_prev = state
+        return jnp.logical_and(loop_idx < absolute_maximum_loops, jnp.logical_and(n_computed < n_elements, n_computed != n_computed_prev))
     
+    def body_fn(state):
+        levels, loop_idx, n_computed, n_computed_prev = state
+        levels_new = _scan_loop_levels_including_dummy(levels, dependency_matrix, n_iterations_per_loop)
+        n_computed_new = jnp.sum(levels_new < n_elements)
+        return (
+            levels_new,
+            loop_idx + 1,
+            n_computed_new,
+            n_computed
+        )
+    
+    def error_fn(state):
+        state = eqx.error_if(state, jnp.logical_and(state[2] < n_elements, state[1] >= absolute_maximum_loops), f"Absolute maximum number of loops {absolute_maximum_loops} reached while not all elements could be computed. Graph cannot be computed: there may be cycles present in the graph.")
+        state = eqx.error_if(state, jnp.logical_and(state[2] < n_elements, state[2] == state[3]), f"No new elements are in the next level while not all elements can be computed. Graph cannot be computed: there are cycles present in the graph.")
+        return state 
+    
+    state = error_fn(jax.lax.while_loop(cond_fn, body_fn, state0))
+    return _levels_including_dummy_to_levels(state[0])
 
