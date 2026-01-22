@@ -78,12 +78,21 @@ class ParametrisedModuleObjective(ParametrisedObjective):
     theta_parametrised_module : ParametrisedModuleTheta
     '''The parametrised module defining the mapping from parametrisation values to the module.'''
     
-    def objective(self, theta : ParametrisationValues) -> Union[float, PyTree]:
-        module = self.theta_parametrised_module.to_module(theta)
-        return self.module_objective(module)
-    
     @abstractmethod
-    def module_objective(self, module : eqx.Module) -> Union[float, PyTree]:
-        ... 
+    def objective(self, theta : ParametrisationValues) -> Union[float, PyTree]:
+        ...
+
+    def to_module(self, theta : ParametrisationValues) -> eqx.Module:
+        '''
+        Get the parametrised module corresponding to the given parametrisation values.
+
+        Args:
+            theta: The parametrisation values.
+
+        Returns:
+            The parametrised module.
+        '''
+        return self.theta_parametrised_module.to_module(theta)
+
 
 

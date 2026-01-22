@@ -10,6 +10,7 @@ from jax_sn.operators.multi_group_operator import MultiGroupOperator
 from jaxtyping import PyTree
 from abc import abstractmethod
 from lineax._misc import structure_equal
+from jax_sn.operators.multi_group_operator.multi_group_operator_imp import _solve_multigroup_operator_rhs_scan
 
 class VerticesXSTheta(eqx.Module):
     vertices : jnp.ndarray 
@@ -43,8 +44,6 @@ class MultigroupOperatorParametrisedVertices(ParametrisedModule):
         vertices_xs_theta = VerticesXSTheta(theta, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data)
         return reconstruct_multigroup_operator_including_toposort(operator, vertices_xs_theta)
     
-
-
 class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
 
     rhs : PyTree
@@ -54,15 +53,64 @@ class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
         assert isinstance(self.multi_group_solver, lx.AbstractLinearSolver), "multi_group_solver must be an instance of lx.AbstractLinearSolver"
         assert structure_equal(self.rhs, self.theta_parametrised_module.base_module.in_structure()), "rhs must have the same structure as the module's in_structure"
                  
-    def module_objective(self, module : eqx.Module) -> Union[float, PyTree]:
-        assert isinstance(module, MultiGroupOperator), "module must be a MultiGroupOperator"
-        rhs_actual = module.moment_operator.mv(module.transport_operator.inv(module.mass_operator.mv(self.rhs)))
-        return lx.linear_solve(module.moment_operator.mv, rhs_actual, self.multi_group_solver).value
+    def objective(self, theta : ParametrisationValues) -> Union[float, PyTree]:                
+        '''
+        Objective implementation for a given parametrisation values theta.
+
+        Computes first the parametrised module, then solves the multi-group operator, and finally converts the solution values to an objective value using :meth:`solution_values_to_objective`.
+
+        Parameters
+        ----------
+        theta : ParametrisationValues
+            The parametrisation values.
         
+        Returns
+        -------
+        Union[float, PyTree]
+            The objective value.
+        '''
+        mgop_theta            = self.to_module(theta)                
+        solution_values = self._to_solution(mgop_theta).value
+        return self.solution_values_to_objective(theta, mgop_theta, solution_values)
+    
+    def _to_solution(self, mgop_theta : MultiGroupOperator) -> PyTree:        
+        '''
+        Internal function to solve the multi-group operator for given :class:`MultiGroupOperator`.
+
+        Parameters
+        ----------
+        mgop_theta : MultiGroupOperator
+            The parametrised multi-group operator.
+        Returns
+        -------
+        PyTree
+            The solution PyTree.
+        '''
+        return _solve_multigroup_operator_rhs_scan(mgop_theta, self.rhs, self.multi_group_solver)
+        
+    def solution(self, theta : ParametrisationValues) -> PyTree:
+        '''
+        Obtain the solution for a given parametrisation values theta.
+        '''
+        mgop = self.to_module(theta)        
+        return self._to_solution(mgop)
 
     @abstractmethod
-    def solution_values_to_objective(self, solution_values : PyTree) -> Union[float, PyTree]:
+    def solution_values_to_objective(self, theta : ParametrisationValues, mgop_theta : MultiGroupOperator, solution_values : PyTree) -> Union[float, PyTree]:
+        '''
+        Convert solution values to objective value. 
+
+        Parameters
+        ----------
+        theta : ParametrisationValues
+            The parametrisation values used to obtain the module.
+        mgop_theta : MultiGroupOperator
+            The parametrised multi-group operator ( obtained from theta).   
+        solution_values : PyTree
+        '''
         ...
+    
+
 
 
 

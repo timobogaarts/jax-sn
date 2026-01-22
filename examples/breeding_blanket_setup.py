@@ -373,3 +373,12 @@ def _get_bb_args(dim, degree):
     n_other_dim    = 1
     tn_order       = 3
     return dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order
+
+def plot_solution_values(solution_domain, value, ):
+    import matplotlib.pyplot as plt
+    x = jnp.linspace(0, jnp.max(solution_domain.solution_domain_data.domain.vertices[:,0]), 100)[:, None]
+    solution_values = jnp.array([solution_domain.interpolate(x, value[i,0,...]) for i in range(value.shape[0])])
+    plt.semilogy(x, solution_values.T)
+    plt.xlabel("x")
+    plt.ylabel(r"$\phi$")
+    
