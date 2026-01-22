@@ -8,7 +8,7 @@ def n_theta_n_phi():
     return 10, 20
 
 
-@pytest.mark.parametrize("elem", ["lines", "triangles", "tetrahedra"])
+@pytest.mark.Parametrise("elem", ["lines", "triangles", "tetrahedra"])
 def test_mesh_graph(elem):
     import jax_sbgeom
     if elem == "lines":

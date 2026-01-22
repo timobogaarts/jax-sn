@@ -1,6 +1,6 @@
-from .base_parametrisation import ParametrizedModule
+from .base_parametrisation import ParametrisedModule
 import equinox as eqx
-class SingleGroupOperatorSigmaAllParametrised(ParametrizedModule):
+class SingleGroupOperatorSigmaAllParametrised(ParametrisedModule):
     '''
     Parametrisation case for total operators parameterised by the total and scattering cross section.
     '''

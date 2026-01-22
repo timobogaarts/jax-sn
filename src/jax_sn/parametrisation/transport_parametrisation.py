@@ -1,7 +1,7 @@
-from .base_parametrisation import ParametrizedModule
+from .base_parametrisation import ParametrisedModule
 import equinox as eqx
 
-class TransportOperatorSigmaParametrised(ParametrizedModule):
+class TransportOperatorSigmaParametrised(ParametrisedModule):
     '''
     Parametrisation case for transport operators parameterised by the total cross section.
     '''

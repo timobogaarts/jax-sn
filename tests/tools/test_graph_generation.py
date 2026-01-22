@@ -76,7 +76,7 @@ def _get_domain(domain_type):
     
 
 @pytest.mark.slow
-@pytest.mark.parametrize("domain", ["tetrahedral", "triangular", "line"])
+@pytest.mark.Parametrise("domain", ["tetrahedral", "triangular", "line"])
 def test_levels(domain):
     import networkx as nx
     from jax_sbgeom.flux_surfaces import ToroidalExtent

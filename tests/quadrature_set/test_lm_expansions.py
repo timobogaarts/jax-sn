@@ -30,7 +30,7 @@ def _expected_sb_function(tn_set, l_max):
     lm_real_sb = qs_sb.Calculate_Yklm_real(l_max)
     return lm_real_sb
 
-@pytest.mark.parametrize("l_max", [0,1,2,3,4,5])
+@pytest.mark.Parametrise("l_max", [0,1,2,3,4,5])
 def test_lm_expansion(l_max, _expected_function = _expected_sb_function):
     tn_set = 8 
 

@@ -104,7 +104,7 @@ def check_moment_operator(dimension, degree, tn_order, lmax, _verts_conn_functio
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize(("dimension", "degree", "lmax", "tn_order"),
+@pytest.mark.Parametrise(("dimension", "degree", "lmax", "tn_order"),
                           [(1,5,3,3),
                            (2,3,5, 4),
                            (3,2,4, 3)])

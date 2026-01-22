@@ -3,29 +3,67 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jax_sn.domain.cross_sections import CrossSectionData
-from .base_parametrisation import ParametrizedModule
+from .base_parametrisation import ParametrisedModule, ParametrisedModuleObjective, ParametrisationValues, ParametrisedModuleTheta
+from typing import Union
 import lineax as lx
-
+from jax_sn.operators.multigroup_operator import MultiGroupOperator
+from jaxtyping import PyTree
+from abc import abstractmethod
 
 class VerticesXSTheta(eqx.Module):
     vertices : jnp.ndarray 
     cross_section_data: CrossSectionData
 
 
-class MultigroupOperatorParametrisedVerticesXS(ParametrizedModule):
+class MultigroupOperatorParametrisedVerticesXS(ParametrisedModule):
     '''
     Parametrisation case for total operators parameterised by the total and scattering cross section.
     '''
     @staticmethod
-    def theta_base(operator ):
+    def theta_base(operator : MultiGroupOperator ):
         return VerticesXSTheta(operator.transport_operator.solution_domain_data.domain.vertices, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data)
     
     @staticmethod
-    def reconstruct_operator(operator, theta):
+    def reconstruct_operator(operator : MultiGroupOperator, theta : VerticesXSTheta) -> MultiGroupOperator:
         return reconstruct_multigroup_operator_including_toposort(operator, theta)
 
+
+
+class MultigroupOperatorParametrisedVertices(ParametrisedModule):
+    '''
+    Parametrisation case for total operators parameterised by the total and scattering cross section.
+    '''
+    @staticmethod
+    def theta_base(operator : MultiGroupOperator ):
+        return operator.transport_operator.solution_domain_data.domain.vertices
+    
+    @staticmethod
+    def reconstruct_operator(operator : MultiGroupOperator, theta : jnp.ndarray) -> MultiGroupOperator:
+        vertices_xs_theta = VerticesXSTheta(theta, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data)
+        return reconstruct_multigroup_operator_including_toposort(operator, vertices_xs_theta)
+    
+
+
+class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
+
+    rhs : PyTree
+    multi_group_solver : lx.AbstractLinearSolver
+
+    def __check_init(self):
+        assert isinstance(self.multi_group_solver, lx.AbstractLinearSolver), "multi_group_solver must be an instance of lx.AbstractLinearSolver"
+                 
+    def module_objective(self, module : eqx.Module) -> Union[float, PyTree]:
+        rhs
+        
+
+    @abstractmethod
+    def solution_values_to_objective(self, solution_values : PyTree) -> Union[float, PyTree]:
+        ...
+
+
+
 @eqx.filter_jit
-def reconstruct_multigroup_operator_including_toposort(operator, theta):
+def reconstruct_multigroup_operator_including_toposort(operator : MultiGroupOperator, theta : VerticesXSTheta) -> MultiGroupOperator:
         import jax_sn
 
         # We have to replace:
@@ -49,4 +87,3 @@ def reconstruct_multigroup_operator_including_toposort(operator, theta):
         topological_sorts_replaced = jax.lax.stop_gradient(jax_sn.domain.TopologicalSortedAngle.from_domain_quadrature_set(domain_replaced, operator_xs_dom_precomp_replaced.moment_operator.quadrature_set))
 
         return eqx.tree_at(lambda op : op.transport_operator.transport_operator.topological_sorted_angle, operator_xs_dom_precomp_replaced, replace = topological_sorts_replaced)
-
