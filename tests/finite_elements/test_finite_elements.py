@@ -86,7 +86,7 @@ def _get_face_matrices_from_old_generate_basis(element, degree):
     cijexpected = cij_e[:, permutation][..., permutation] * get_area_difference(element)
     return [cijexpected[e] for e in _get_face_permutation(element)]
 
-@pytest.mark.Parametrise("element", ["interval", "triangle", "tetrahedron"])
+@pytest.mark.parametrize("element", ["interval", "triangle", "tetrahedron"])
 def test_volume_matrix(element, get_other_function  = _get_volume_matrix_from_old_generate_basis ):    
     for n_degree in range(0, n_degree_max()+1):
         element_jsn = _get_element_jsn(element, degree=n_degree)
@@ -98,7 +98,7 @@ def test_volume_matrix(element, get_other_function  = _get_volume_matrix_from_ol
         onp.testing.assert_allclose(volume_matrices[2], volume_matrices_old[2], atol =1e-12, rtol=1e-12)
 
 
-@pytest.mark.Parametrise("element", ["interval", "triangle", "tetrahedron"])
+@pytest.mark.parametrize("element", ["interval", "triangle", "tetrahedron"])
 def test_area_matrix(element, get_other_function  = _get_face_matrices_from_old_generate_basis ):    
     from jax_sn.solution_domain.base_fem import _compute_face_outflow_matrices
     for n_degree in range(0, n_degree_max()+1):

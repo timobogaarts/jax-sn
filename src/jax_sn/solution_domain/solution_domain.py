@@ -8,7 +8,7 @@ from jax_sn.domain.geometric_domain import GeometricDomain, TopologicalSortedAng
 from jax_sn.source import Source
 import equinox as eqx
 from .base_fem import Element
-from jax_sn.domain import Domain
+from jax_sn.domain.geometric_domain import Domain
 
 def compute_setup_for_solution_domain(element : Element, domain : GeometricDomain) -> Tuple[FEMMatrices, PrecomputedGeometricData]:
     '''

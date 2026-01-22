@@ -463,3 +463,28 @@ class MultiGroupOperatorScanCheckpoint(MultiGroupOperator):
     def _mv_transpose(self, x):
         return _multi_group_operator_transpose_scan(self.n_energy_groups, self.moment_operator, self.transport_operator, self.mass_operator, self.discrete_operator, self.gather_scatter_operator, x, True)
     
+
+@eqx.filter_jit
+def _solve_multigroup_operator_rhs_scan(operator : MultiGroupOperator, rhs : jnp.ndarray, solver : lx.AbstractLinearSolver) :
+    r'''
+    Solve the multi-group operator system using an iterative solver.
+
+    Parameters
+    ----------
+    operator : MultiGroupOperator
+        The multi-group operator.
+    rhs : jnp.ndarray
+        The right-hand side.
+    solver : lx.AbstractLinearSolver
+        The lineax solver to use.
+
+    Returns
+    -------
+    lx.LinearSolveOutput
+        The solution output from lineax.
+    '''
+    def body_fn(_, g_i):        
+        return None, operator.moment_operator.mv(operator.transport_operator.to_energy_group(g_i).inv(operator.mass_operator.mv(rhs[g_i])))
+
+    rhs_mtinvh = jax.lax.scan(body_fn, None, jnp.arange(operator.n_energy_groups))[1]    
+    return lx.linear_solve(operator, rhs_mtinvh, solver)

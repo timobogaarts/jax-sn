@@ -170,7 +170,7 @@ def setup_solution_domain_data_and_toposort_sb(request):
 #====================================================================================================================================================================================
     
 @pytest.mark.slow
-@pytest.mark.Parametrise("dimension", [1,2,3])
+@pytest.mark.parametrize("dimension", [1,2,3])
 def test_sweep_complete_vmap(dimension):
     # This tests the basic complete vmap sweep against StellBlanket results
     # Then, the other implementations are tested against the complete vmap sweep (transitive testing)
@@ -180,7 +180,7 @@ def test_sweep_complete_vmap(dimension):
 
 
 @pytest.mark.slow
-@pytest.mark.Parametrise("dimension", [1,2,3])
+@pytest.mark.parametrize("dimension", [1,2,3])
 def test_local_real_inversion(dimension):
     # Tests BVH containing & local/real coordinate conversion for simplexes
     lagrangian_element, domain = _setup_domain(dimension, 1, _verts_conn_from_sb)

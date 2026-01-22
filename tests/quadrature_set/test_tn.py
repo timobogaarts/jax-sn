@@ -106,7 +106,7 @@ def create_TN(N: int):
     total_angles
     return total_angles, total_weights
 
-@pytest.mark.Parametrise("N", [2,3,4,5,6])
+@pytest.mark.parametrize("N", [2,3,4,5,6])
 def test_tn(N : int):
     qset = jax_sn.quadrature_set.tn.create_tn_quadrature_set(N)
 

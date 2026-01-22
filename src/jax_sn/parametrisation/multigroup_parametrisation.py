@@ -3,12 +3,13 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jax_sn.domain.cross_sections import CrossSectionData
-from .base_parametrisation import ParametrisedModule, ParametrisedModuleObjective, ParametrisationValues, ParametrisedModuleTheta
+from jax_sn.tools.parametrisation_tools import ParametrisedModule, ParametrisedModuleObjective, ParametrisationValues, ParametrisedModuleTheta
 from typing import Union
 import lineax as lx
-from jax_sn.operators.multigroup_operator import MultiGroupOperator
+from jax_sn.operators.multi_group_operator import MultiGroupOperator
 from jaxtyping import PyTree
 from abc import abstractmethod
+from lineax._misc import structure_equal
 
 class VerticesXSTheta(eqx.Module):
     vertices : jnp.ndarray 
@@ -51,9 +52,12 @@ class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
 
     def __check_init(self):
         assert isinstance(self.multi_group_solver, lx.AbstractLinearSolver), "multi_group_solver must be an instance of lx.AbstractLinearSolver"
+        assert structure_equal(self.rhs, self.theta_parametrised_module.base_module.in_structure()), "rhs must have the same structure as the module's in_structure"
                  
     def module_objective(self, module : eqx.Module) -> Union[float, PyTree]:
-        rhs
+        assert isinstance(module, MultiGroupOperator), "module must be a MultiGroupOperator"
+        rhs_actual = module.moment_operator.mv(module.transport_operator.inv(module.mass_operator.mv(self.rhs)))
+        return lx.linear_solve(module.moment_operator.mv, rhs_actual, self.multi_group_solver).value
         
 
     @abstractmethod

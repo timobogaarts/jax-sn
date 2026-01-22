@@ -1,4 +1,4 @@
-from .base_parametrisation import ParametrisedModule
+from jax_sn.tools.parametrisation_tools import ParametrisedModule
 import equinox as eqx
 class SingleGroupOperatorSigmaAllParametrised(ParametrisedModule):
     '''

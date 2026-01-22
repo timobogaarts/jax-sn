@@ -219,7 +219,7 @@ class OperatorAnalysis(ABC):
         duration_mv = custom_timeit( run_method, number = n_samples , ignore_n=ignore_n)[0]                
         return duration_mv
 
-from jax_sn.parametrisation.base_parametrisation import ParametrisedModule
+from .parametrisation_tools import ParametrisedModule
 
 
 def analyze_grad_memory(cls : ParametrisedModule, operator : lx.AbstractLinearOperator, method : Union[str, Callable]):

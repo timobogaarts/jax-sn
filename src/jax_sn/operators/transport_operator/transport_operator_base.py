@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
 from jax_sn.solution_domain import SolutionDomainData
-from jax_sn.domain import TopologicalSortedAngle
+from jax_sn.domain.geometric_domain import TopologicalSortedAngle
 from jax_sn.source import Source
 import equinox as eqx
 import lineax as lx
