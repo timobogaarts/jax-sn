@@ -122,3 +122,7 @@ logs/
 # Temporary files
 tmp/
 temp/
+
+# OpenMC data
+examples/openmc_data/
+*.xml

@@ -2,7 +2,7 @@ import numpy as onp
 import jax.numpy as jnp
 import jax 
 import pytest
-
+from functools import partial
 jax.config.update("jax_enable_x64", True)
 
 def bb_data_dict():
@@ -266,6 +266,43 @@ def bb_data_dict():
     }
     return data_dict
 
+def aux_data_dict():
+    aux_data_dict = {
+    'BackSupportingStructure': {
+        'heating': jnp.array([1.96243487e+04, 7.64483843e+02, 4.57802819e+00, 1.15483421e+01]),
+        'nt': jnp.array([2.11062784e-07, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00]),
+    },
+    'BreedingZone': {
+        'heating': jnp.array([ 119806.09732053,   40496.41088611,  289594.04437045, 1167898.82782947]),
+        'nt': jnp.array([0.00127852, 0.00682984, 0.06053289, 0.24413547]),
+    },
+    'FirstWall': {
+        'heating': jnp.array([6.70264822e+04, 1.54226304e+03, 5.10790572e+00, 8.42094829e+00]),
+        'nt': jnp.array([6.84443328e-07, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00]),
+    },
+    'Plasma': {
+        'heating': jnp.array([1.37372566e+04, 3.85362758e+02, 4.58094919e-01, 8.15790335e-01]),
+        'nt': jnp.array([8.51041773e-13, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00]),
+    },
+    'TungstenArmor': {
+        'heating': jnp.array([9.16728376e+03, 1.28632502e+03, 7.33933737e+00, 1.02496732e+01]),
+        'nt': jnp.array([6.81821974e-41, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00]),
+    },
+    'VVShield': {
+        'heating': jnp.array([1.08898662e+05, 1.59711262e+04, 4.52674365e+01, 1.49537471e+02]),
+        'nt': jnp.array([6.59770973e-07, 9.17694249e-12, 4.60891642e-11, 3.88480694e-10]),
+    },
+    'VVWallBack': {
+        'heating': jnp.array([4.18746225e+04, 1.78587444e+03, 3.40032171e+01, 2.16743286e+02]),
+        'nt': jnp.array([1.56829474e-06, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00]),
+    },
+    'VVWallFront': {
+        'heating': jnp.array([25402.37299295,  1453.44172751,    31.33813679,   175.37812099]),
+        'nt': jnp.array([7.38823703e-07, 0.00000000e+00, 0.00000000e+00, 0.00000000e+00]),
+    },
+    }
+    return aux_data_dict
+
 def base_region_sizes():
     region_sizes = [0.2, 0.002, 0.025, 0.5, 0.385, 0.06, 0.2, 0.06]
     return region_sizes
@@ -374,11 +411,87 @@ def _get_bb_args(dim, degree):
     tn_order       = 3
     return dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order
 
-def plot_solution_values(solution_domain, value, ):
-    import matplotlib.pyplot as plt
+def _get_solution_interp(solution_domain, value):
     x = jnp.linspace(0, jnp.max(solution_domain.solution_domain_data.domain.vertices[:,0]), 100)[:, None]
     solution_values = jnp.array([solution_domain.interpolate(x, value[i,0,...]) for i in range(value.shape[0])])
+    return x, solution_values
+
+def plot_solution_values(solution_domain, value, ):
+    import matplotlib.pyplot as plt
+    x, solution_values = _get_solution_interp(solution_domain, value)
     plt.semilogy(x, solution_values.T)
     plt.xlabel("x")
     plt.ylabel(r"$\phi$")
     
+
+
+def setup_bb_symmetric(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order, data_dictionary = None):
+
+    def _symmetrize_no_plasma(list):
+        return [list[-( i + 1)] for  i in range(len(list) - 1)] + list
+
+    from jax_sn.domain.geometric_domain import CrossSectionData
+    from jax_sn.domain.domain_generation import create_cartesian_setup
+    from jax_sn.domain import Domain
+    from jax_sn.solution_domain import SolutionDomain, BasixLagrangianSimplex    
+    from jax_sn.quadrature_set import create_tn_quadrature_set
+    if data_dictionary is None:
+        data_dictionary = bb_data_dict() # dictionary with matrices
+
+    xs_data_dict = {name : CrossSectionData(total = jnp.array(data_dictionary[name][0]), scattering = jnp.array(data_dictionary[name][1])) for name in data_dictionary.keys()}
+    
+    other_dims   = [[(d_other_dim, n_other_dim)]]*(dim - 1)
+
+    region_names = ['Plasma', 'TungstenArmor', 'FirstWall', 'BreedingZone','BackSupportingStructure', 'VVWallFront', 'VVShield', 'VVWallBack']
+    region_size_res = [(size, n_elem) for size, n_elem in zip(d_elem_regions, n_elem_regions)]
+
+    region_size_res_symm = _symmetrize_no_plasma(region_size_res)    
+    source_eg0_symm      = _symmetrize_no_plasma([1 if i ==0 else 0 for i in range(len(region_names))])
+    xs_regions_symm      = _symmetrize_no_plasma([xs_data_dict[name] for name in region_names])
+    
+    verts, conn, cross_sections, sources = create_cartesian_setup(dim, [region_size_res_symm] + other_dims, xs_regions_symm, source_eg0_symm, 0)    
+    element_type                         = BasixLagrangianSimplex(degree, dim)
+    domain                               = Domain.from_mesh_and_cross_sections((verts, conn), element_type.face_template, cross_sections)    
+    solution_domain                      = SolutionDomain.from_element_and_domain(element_type, domain)
+    # isotropic flat source
+    sources = jnp.repeat(sources, repeats = solution_domain.n_basis, axis = -1).reshape(-1, solution_domain.n_basis)
+
+    return solution_domain, sources, create_tn_quadrature_set(tn_order)
+
+def _setup_bb_mgop_symmetric(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order, data_dictionary = None):
+    from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
+    from jax_sn.operators.transport_operator import TransportOperatorMultipleAnglesVmap, TransportOperatorVmap
+    from jax_sn.operators.mass_operator import MassOperatorVmap
+    from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
+    from jax_sn.domain.geometric_domain import TopologicalSortedAngle
+    from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan
+    
+    
+
+    solution_domain, sources, quadrature_set = setup_bb_symmetric(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order, data_dictionary) 
+
+    n_energy_groups           = solution_domain.domain.cross_sections_indexed.n_energy_groups
+    lmax                      = solution_domain.domain.cross_sections_indexed.l_max
+
+    topological_sorted_angles = TopologicalSortedAngle.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
+    transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorVmap(solution_domain.solution_domain_data, topological_sorted_angles, 0))
+    mass_operator             = MassOperatorVmap.from_transport_operator(transport_operator)
+    moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)    
+    
+    groups_elements_basis_shape = (n_energy_groups, ) + solution_domain.elements_basis_shape.shape 
+
+
+    discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
+    gather_scatter_operator   = GatherScatterOperatorBroadcasted(cross_sections_indexed=solution_domain.domain.cross_sections_indexed)
+    source_total              = jnp.broadcast_to(sources[None, :, :], (topological_sorted_angles.angle.shape[0],) + sources.shape) # source for all angles
+    Aop                       = MultiGroupOperatorScan(moment_operator, discrete_operator, transport_operator, mass_operator, gather_scatter_operator, n_energy_groups)
+    return Aop, source_total, solution_domain
+
+
+@partial(jax.jit, static_argnums = 1)
+def recreate_symmetric_vertices(size_layers, resolution_layers):
+    n_regions_dim= size_layers.shape[0]
+    cumsum_nodes  = jnp.concatenate([jnp.array([0]), jnp.cumsum(size_layers)])
+    plasma_to_blanket_edge =  jnp.concatenate([jnp.linspace(cumsum_nodes[i], cumsum_nodes[i+1], resolution_layers[i], endpoint=False) for i in range(n_regions_dim)] + [jnp.array([cumsum_nodes[-1]])])
+    blanket_size = cumsum_nodes[-1] - cumsum_nodes[1] 
+    return jnp.concatenate([plasma_to_blanket_edge[-1] - jnp.flip(plasma_to_blanket_edge)[:-resolution_layers[0]], plasma_to_blanket_edge[1:] + blanket_size], axis=0)

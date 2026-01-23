@@ -19,7 +19,7 @@ class VerticesXSTheta(eqx.Module):
 
 class MultigroupOperatorParametrisedVerticesXS(ParametrisedModule):
     '''
-    Parametrisation case for total operators parameterised by the total and scattering cross section.
+    Parametrisation case for a MultiGroupOperator parameterised by both the vertices and the cross section data.
     '''
     @staticmethod
     def theta_base(operator : MultiGroupOperator ):
@@ -33,7 +33,7 @@ class MultigroupOperatorParametrisedVerticesXS(ParametrisedModule):
 
 class MultigroupOperatorParametrisedVertices(ParametrisedModule):
     '''
-    Parametrisation case for total operators parameterised by the total and scattering cross section.
+    Parametrisation case for a MultiGroupOperator parameterised by the vertices only.
     '''
     @staticmethod
     def theta_base(operator : MultiGroupOperator ):
@@ -44,6 +44,20 @@ class MultigroupOperatorParametrisedVertices(ParametrisedModule):
         vertices_xs_theta = VerticesXSTheta(theta, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data)
         return reconstruct_multigroup_operator_including_toposort(operator, vertices_xs_theta)
     
+class MultigroupOperatorParametrisedVerticesNoToposort(ParametrisedModule):
+    '''
+    Parametrisation case for a MultiGroupOperator parameterised by the vertices only, without replacing the topological sort. This is only 
+    useful in 1D or when computing sensitivities without changing the geometry.
+    '''
+    @staticmethod
+    def theta_base(operator : MultiGroupOperator ):
+        return operator.transport_operator.solution_domain_data.domain.vertices
+    
+    @staticmethod
+    def reconstruct_operator(operator : MultiGroupOperator, theta : jnp.ndarray) -> MultiGroupOperator:
+        vertices_xs_theta = VerticesXSTheta(theta, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data)
+        return reconstruct_multigroup_operator_including_toposort(operator, vertices_xs_theta, False)
+    
 class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
 
     rhs : PyTree
@@ -52,26 +66,10 @@ class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
     def __check_init(self):
         assert isinstance(self.multi_group_solver, lx.AbstractLinearSolver), "multi_group_solver must be an instance of lx.AbstractLinearSolver"
         assert structure_equal(self.rhs, self.theta_parametrised_module.base_module.in_structure()), "rhs must have the same structure as the module's in_structure"
-                 
+
+    @abstractmethod         
     def objective(self, theta : ParametrisationValues) -> Union[float, PyTree]:                
-        '''
-        Objective implementation for a given parametrisation values theta.
-
-        Computes first the parametrised module, then solves the multi-group operator, and finally converts the solution values to an objective value using :meth:`solution_values_to_objective`.
-
-        Parameters
-        ----------
-        theta : ParametrisationValues
-            The parametrisation values.
-        
-        Returns
-        -------
-        Union[float, PyTree]
-            The objective value.
-        '''
-        mgop_theta            = self.to_module(theta)                
-        solution_values = self._to_solution(mgop_theta).value
-        return self.solution_values_to_objective(theta, mgop_theta, solution_values)
+        ...
     
     def _to_solution(self, mgop_theta : MultiGroupOperator) -> PyTree:        
         '''
@@ -95,27 +93,12 @@ class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
         mgop = self.to_module(theta)        
         return self._to_solution(mgop)
 
-    @abstractmethod
-    def solution_values_to_objective(self, theta : ParametrisationValues, mgop_theta : MultiGroupOperator, solution_values : PyTree) -> Union[float, PyTree]:
-        '''
-        Convert solution values to objective value. 
-
-        Parameters
-        ----------
-        theta : ParametrisationValues
-            The parametrisation values used to obtain the module.
-        mgop_theta : MultiGroupOperator
-            The parametrised multi-group operator ( obtained from theta).   
-        solution_values : PyTree
-        '''
-        ...
-    
 
 
 
 
 @eqx.filter_jit
-def reconstruct_multigroup_operator_including_toposort(operator : MultiGroupOperator, theta : VerticesXSTheta) -> MultiGroupOperator:
+def reconstruct_multigroup_operator_including_toposort(operator : MultiGroupOperator, theta : VerticesXSTheta, replace_topological_sort : bool = True) -> MultiGroupOperator:
         import jax_sn
 
         # We have to replace:
@@ -136,6 +119,9 @@ def reconstruct_multigroup_operator_including_toposort(operator : MultiGroupOper
 
         # 4. topological sorts [they are only used for inversion, so the gradient should not flow through them. In principle, we could completley remove it here, put it directly in the inverse (which doesn't get 'gradded' anyway, but this saves 
         # recomputation for multiple energy groups)]
-        topological_sorts_replaced = jax.lax.stop_gradient(jax_sn.domain.TopologicalSortedAngle.from_domain_quadrature_set(domain_replaced, operator_xs_dom_precomp_replaced.moment_operator.quadrature_set))
-
-        return eqx.tree_at(lambda op : op.transport_operator.transport_operator.topological_sorted_angle, operator_xs_dom_precomp_replaced, replace = topological_sorts_replaced)
+        # In some cases we don't want to replace the topological sort, e.g. when we are only changing cross-sections but not the geometry or when we are using a 1D geometry where the toposort is fixed anyway.
+        if replace_topological_sort:        
+            topological_sorts_replaced = jax.lax.stop_gradient(jax_sn.domain.TopologicalSortedAngle.from_domain_quadrature_set(domain_replaced, operator_xs_dom_precomp_replaced.moment_operator.quadrature_set))
+            return eqx.tree_at(lambda op : op.transport_operator.transport_operator.topological_sorted_angle, operator_xs_dom_precomp_replaced, replace = topological_sorts_replaced)
+        else:
+            return operator_xs_dom_precomp_replaced
