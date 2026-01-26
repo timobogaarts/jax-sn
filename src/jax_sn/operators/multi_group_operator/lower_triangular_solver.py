@@ -191,7 +191,10 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jn
     dop_t = sgop_t.discrete_operator.transpose()
     mop_t = sgop_t.moment_operator.transpose()
     hop_t = sgop_t.mass_operator.transpose() 
-    
+    jax.debug.print("Using upper triangular transpose solver for multi-group operator with {n_groups} energy groups.", n_groups = n_groups)
+    jax.debug.print("RSH shape: {rhs_shape}", rhs_shape = rhs.shape)
+    jax.debug.print("RSH shape: {rhs}",rhs= rhs)
+
     def body_fun(i, state):                
         solution, xi_g, n_steps = state        
         
@@ -199,13 +202,27 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jn
         sgop_gi = sgop_t.to_energy_group(g_i)
 
         rhs_i   = rhs[g_i] + mgop.gather_scatter_operator.gather_backward(xi_g, g_i)
+
+        def zero_rhs(rhs_i):
+            return jnp.zeros_like(rhs_i), 0
         
-        lxsolve = lx.linear_solve(sgop_gi, rhs_i, solver, throw = False) # Solve single group transpose system
+        def nonzero_rhs(rhs_i):
+            lxsolve = lx.linear_solve(sgop_gi, rhs_i, solver, throw = False) # Solve single group transpose system
+            return lxsolve.value, lxsolve.stats['num_steps']
+        
+        jax.debug.print("Solving group {g_i} with rhs norm {rhs_norm}", g_i = g_i, rhs_norm = jnp.linalg.norm(rhs_i))
+        jax.debug.print("RHS: {rhs_i}", rhs_i = rhs_i)
 
-        xi_new       = xi_g.at[g_i].set(dop_t.mv(hop_t.mv(top_t.to_energy_group(g_i).inv(mop_t.mv(lxsolve.value))))) # D^T H^T (T_g^{-1})^T M^T [phi_g]
-        solution_new = solution.at[g_i].set(lxsolve.value)
+        lxsolvevalue, nsteps = jax.lax.cond(jnp.all(rhs_i == 0.0), zero_rhs, nonzero_rhs,  operand = rhs_i)
+        jax.debug.print("Solved group {g_i} in {nsteps} steps.", g_i = g_i, nsteps = nsteps)
+        jax.debug.print("Solution: {lxsolvevalue}", lxsolvevalue = lxsolvevalue)
+        
+        # lxsolve = lx.linear_solve(sgop_gi, rhs_i, solver, throw = False) # Solve single group transpose system
 
-        return solution_new, xi_new, n_steps.at[g_i].set(lxsolve.stats['num_steps'])
+        xi_new       = xi_g.at[g_i].set(dop_t.mv(hop_t.mv(top_t.to_energy_group(g_i).inv(mop_t.mv(lxsolvevalue))))) # D^T H^T (T_g^{-1})^T M^T [phi_g]
+        solution_new = solution.at[g_i].set(lxsolvevalue)
+
+        return solution_new, xi_new, n_steps.at[g_i].set(nsteps)
     
     solution          = jnp.zeros_like(rhs)
     xi_g              = jnp.zeros_like(rhs) # Intermediate values to store D^T H^T (T_g^{-1})^T M^T [phi_g]
