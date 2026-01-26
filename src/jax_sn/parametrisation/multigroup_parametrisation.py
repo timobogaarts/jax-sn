@@ -11,6 +11,7 @@ from jaxtyping import PyTree
 from abc import abstractmethod
 from lineax._misc import structure_equal
 from jax_sn.operators.multi_group_operator.multi_group_operator_imp import _solve_multigroup_operator_rhs_scan
+from typing import Tuple
 
 class VerticesXSTheta(eqx.Module):
     vertices : jnp.ndarray 
@@ -67,8 +68,8 @@ class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
         assert isinstance(self.multi_group_solver, lx.AbstractLinearSolver), "multi_group_solver must be an instance of lx.AbstractLinearSolver"
         assert structure_equal(self.rhs, self.theta_parametrised_module.base_module.in_structure()), "rhs must have the same structure as the module's in_structure"
 
-    @abstractmethod         
-    def objective(self, theta : ParametrisationValues) -> Union[float, PyTree]:                
+    @abstractmethod
+    def objective_and_constraints(self, theta : ParametrisationValues) -> Tuple[Union[float, PyTree]]:
         ...
     
     def _to_solution(self, mgop_theta : MultiGroupOperator) -> PyTree:        

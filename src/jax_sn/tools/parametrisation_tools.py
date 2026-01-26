@@ -1,8 +1,11 @@
 import equinox as eqx
 from abc import ABC, abstractmethod
 import lineax as lx
-from typing import Union, Callable, Dict, Type
+from typing import Union, Callable, Dict, Type, Tuple
 from jaxtyping import PyTree
+from dataclasses import dataclass
+import jax
+import jax.numpy as jnp
 
 class ParametrisedModule(ABC):
     '''
@@ -33,9 +36,9 @@ class ParametrisationValues(eqx.Module):
 class ParametrisedObjective(eqx.Module):
         
     @abstractmethod
-    def objective(self, theta : ParametrisationValues) -> Union[float, PyTree]:
+    def objective_and_constraints(self, theta : ParametrisationValues) -> Tuple[Union[float, PyTree]]:
         ...
-
+        
 class ParametrisedModuleTheta(eqx.Module):
     '''
     Abstract base class for module problem parametrisations.
@@ -77,22 +80,79 @@ class ParametrisedModuleObjective(ParametrisedObjective):
     
     theta_parametrised_module : ParametrisedModuleTheta
     '''The parametrised module defining the mapping from parametrisation values to the module.'''
-    
+        
     @abstractmethod
-    def objective(self, theta : ParametrisationValues) -> Union[float, PyTree]:
+    def objective_and_constraints(self, theta : ParametrisationValues) -> Tuple[Union[float, PyTree]]:
         ...
+
+    @eqx.filter_jit
+    def grad_objective_and_constraints(self, theta : ParametrisationValues) -> Tuple[Union[float, PyTree]]:
+        '''
+        Get the gradient of the objective and constraints with respect to the parametrisation values.
+
+        Uses JAX reverse mode autodiff.
+
+        Parameters:
+        -------------
+            theta: The parametrisation values.
+        
+        Returns:
+        -------------
+            The gradient of the objective and constraints.
+        '''
+        return jax.jacrev(self.objective_and_constraints, argnums=0)(theta)
 
     def to_module(self, theta : ParametrisationValues) -> eqx.Module:
         '''
         Get the parametrised module corresponding to the given parametrisation values.
 
-        Args:
+        Parameters:
+        -------------
             theta: The parametrisation values.
 
         Returns:
+        -------------
             The parametrised module.
         '''
         return self.theta_parametrised_module.to_module(theta)
 
 
 
+@dataclass
+class ParametrisedScipyInterface:
+
+    parametrised_objective : ParametrisedObjective
+    _cache_theta           : ParametrisationValues = None
+    _cache_result          : tuple = None
+
+    def __init__(self, parametrised_objective : ParametrisedObjective):
+        self.parametrised_objective = parametrised_objective
+        self._cache_theta = None
+        self._cache_result = None
+
+    def evaluate_all(self, theta):
+        theta_i = jnp.array(theta)
+        if self._cache_theta is None or not jnp.allclose(theta_i, self._cache_theta):                                    
+            self._cache_theta = jnp.copy(theta_i)            
+            f_values, df_dtheta = Compute_Full(theta_i, self.base_parameters, self.static_opt_settings,
+                                                self.array_opt_settings, self.global_settings, self.matrix_settings, self.f_obj, self.df_dtheta, self.df_dx)
+            self._cache_result = (f_values[0], df_dtheta[0], f_values[1:], df_dtheta[1:])
+            
+
+        return self._cache_result
+
+    def objective(self, x):
+        obj, *_ = self.evaluate_all(x)
+        return float(obj)
+
+    def grad_objective(self, x):
+        _, grad_obj, _, _ = self.evaluate_all(x)
+        return jnp.array(grad_obj).astype(float)
+
+    def constraints(self, x):
+        _, _, cons, _ = self.evaluate_all(x)
+        return [float(c) for c in cons]
+
+    def jac_constraints(self, x):
+        _, _, _, jac_cons = self.evaluate_all(x)
+        return [jnp.array(j).astype(float) for j in jac_cons]

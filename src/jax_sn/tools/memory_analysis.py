@@ -282,4 +282,42 @@ def analyze_grad_timing(cls : ParametrisedModule, operator : lx.AbstractLinearOp
     duration_grad_mv = custom_timeit( run_grad_method, number=n_samples, ignore_n=ignore_n)[0]
     
     return duration_mv, duration_grad_mv
+from jaxtyping import PyTree
+def assert_pytree_allclose(a, b, *, rtol=1e-12, atol=1e-12):
+    errors = []
 
+    def compare(path, x, y):
+        try:
+            # Type check
+            if type(x) is not type(y):
+                raise AssertionError(f"type {type(x)} vs {type(y)}")
+
+            # Shape-only placeholders
+            if isinstance(x, jax.ShapeDtypeStruct):
+                if x.shape != y.shape or x.dtype != y.dtype:
+                    raise AssertionError(f"{x} vs {y}")
+                return
+
+            # Arrays
+            if hasattr(x, "dtype") and hasattr(x, "shape"):
+                onp.testing.assert_allclose(x, y, rtol=rtol, atol=atol)
+                return
+
+            # Scalars
+            if isinstance(x, (int, float, complex)):
+                onp.testing.assert_allclose(x, y, rtol=rtol, atol=atol)
+                return
+
+            # Everything else
+            if x != y:
+                raise AssertionError(f"{x} != {y}")
+
+        except AssertionError as e:
+            errors.append(f"{path}: {e}")
+
+    jax.tree.map_with_path(compare, a, b)
+
+    if errors:
+        raise AssertionError(
+            "Pytree mismatches found:\n" + "\n".join(errors)
+        )
