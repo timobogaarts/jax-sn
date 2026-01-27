@@ -106,7 +106,7 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinear
         sgop = mgop.to_single_group_operator(i)        
 
         rhs_i = rhs[i] + mgop.moment_operator.mv(sgop.transport_operator.inv(mgop.mass_operator.mv(mgop.discrete_operator.mv(mgop.gather_scatter_operator.gather_forward(solution, i)))))
-        lxsolve = lx.linear_solve(sgop, rhs_i, solver, throw = False)
+        lxsolve = lx.linear_solve(sgop, rhs_i, solver, throw = False, options = {"y0" : rhs_i}) # Solve single group system
         
         return solution.at[i].set(lxsolve.value), n_steps.at[i].set(lxsolve.stats['num_steps'])
     
@@ -153,6 +153,20 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jn
     
     The single group system is then solved with the :class:`SingleGroupOperatorTranspose` for each specific energy group
 
+    Technical note
+    ------------------
+    The single group operator is solved using an iterative solver by definition. We do not have a matrix representation of the single group operator transpose, so we cannot use a direct solver.
+    The lineax linear solvers do not necessarily check whether the right-hand-side is zero, so we do that here to avoid unnecessary work and to avoid NaNs in the solution. 
+    It is an issue here because the differentiating through a forward linear solve involves a solution of the adjoint system, which can have a zero right-hand side in some energy groups (when one of the the objective functions does not depend on that energy group).
+
+    .. math::
+        \mathbf{A}^T x = [1, 0,0,0]
+    This results in a zero right-hand side for all energy groups except the highest one, which can lead to NaNs in the solution if not handled properly.
+
+    Furthermore, we set the initial guess to the right-hand side. The reason is that if we start with all zeros and the objective function only depends on regions where the inscattering is zero (and thus the adjoint source is one only in those regions), the initial BiCGSTAB update 
+    will immediately break (the reason is that in those specific regions, the resulting :math:`p` & :math:`v` will be the same as the initial guess, such that the :math:`s` and :math:`t` vectors become zero in those regions, which makes the updated residual also zero in those regions, leading to <r0, r>=0).
+    By setting the initial guess to the right-hand side, we avoid this issue, as the transport immediately creates a much less sparse residual (r0 = Ay0 - b).
+
     Memory footprint
     ------------------
     Theoretically, it uses (for a discrete angle array :math:`D\in \mathcal{D}\times \mathcal{F}`, and a moment array :math:`M \in \mathcal{<}\times \mathcal{F}` (we don't take into account the batching temporaries from a batched transport operator)):
@@ -190,10 +204,7 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jn
     top_t = sgop_t.transport_operator.transpose()
     dop_t = sgop_t.discrete_operator.transpose()
     mop_t = sgop_t.moment_operator.transpose()
-    hop_t = sgop_t.mass_operator.transpose() 
-    jax.debug.print("Using upper triangular transpose solver for multi-group operator with {n_groups} energy groups.", n_groups = n_groups)
-    jax.debug.print("RSH shape: {rhs_shape}", rhs_shape = rhs.shape)
-    jax.debug.print("RSH shape: {rhs}",rhs= rhs)
+    hop_t = sgop_t.mass_operator.transpose()     
 
     def body_fun(i, state):                
         solution, xi_g, n_steps = state        
@@ -207,18 +218,11 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jn
             return jnp.zeros_like(rhs_i), 0
         
         def nonzero_rhs(rhs_i):
-            lxsolve = lx.linear_solve(sgop_gi, rhs_i, solver, throw = False) # Solve single group transpose system
+            lxsolve = lx.linear_solve(sgop_gi, rhs_i, solver, throw = False, options = {"y0" : rhs_i}) # Solve single group transpose system
             return lxsolve.value, lxsolve.stats['num_steps']
         
-        jax.debug.print("Solving group {g_i} with rhs norm {rhs_norm}", g_i = g_i, rhs_norm = jnp.linalg.norm(rhs_i))
-        jax.debug.print("RHS: {rhs_i}", rhs_i = rhs_i)
-
         lxsolvevalue, nsteps = jax.lax.cond(jnp.all(rhs_i == 0.0), zero_rhs, nonzero_rhs,  operand = rhs_i)
-        jax.debug.print("Solved group {g_i} in {nsteps} steps.", g_i = g_i, nsteps = nsteps)
-        jax.debug.print("Solution: {lxsolvevalue}", lxsolvevalue = lxsolvevalue)
         
-        # lxsolve = lx.linear_solve(sgop_gi, rhs_i, solver, throw = False) # Solve single group transpose system
-
         xi_new       = xi_g.at[g_i].set(dop_t.mv(hop_t.mv(top_t.to_energy_group(g_i).inv(mop_t.mv(lxsolvevalue))))) # D^T H^T (T_g^{-1})^T M^T [phi_g]
         solution_new = solution.at[g_i].set(lxsolvevalue)
 
@@ -227,7 +231,7 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jn
     solution          = jnp.zeros_like(rhs)
     xi_g              = jnp.zeros_like(rhs) # Intermediate values to store D^T H^T (T_g^{-1})^T M^T [phi_g]
     n_steps           = jnp.zeros(n_groups, dtype = mgop.gather_scatter_operator.cross_sections_indexed.indices.dtype)    
-    solution, _,  n_steps =  jax.lax.fori_loop(0, n_groups, body_fun, (solution, xi_g, n_steps) )
+    solution, _,  n_steps =  jax.lax.fori_loop(0, n_groups, body_fun, (solution, xi_g, n_steps) )    
     # Simple check just if the solution converged within max steps for all groups. TODO improve in future? raise runtime in the loop?
     result = lx.RESULTS.where( jnp.all(n_steps < solver.max_steps), lx.RESULTS.successful, lx.RESULTS.max_steps_reached)
     return  solution, result, {'num_steps_per_group' : n_steps}

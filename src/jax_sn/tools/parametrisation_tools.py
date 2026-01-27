@@ -122,23 +122,28 @@ class ParametrisedModuleObjective(ParametrisedObjective):
 class ParametrisedScipyInterface:
 
     parametrised_objective : ParametrisedObjective
-    _cache_theta           : ParametrisationValues = None
+    f_theta_parametrisation_values : Callable[[jnp.ndarray], ParametrisationValues] 
+    _cache_theta           : jnp.ndarray  = None # This cannot be a ParametrisationValues; scipy doesn't know what a eqx.Module is!
     _cache_result          : tuple = None
-
-    def __init__(self, parametrised_objective : ParametrisedObjective):
+    
+    def __init__(self, parametrised_objective : ParametrisedObjective, f_theta_parametrisation_values : Tuple[Callable[[jnp.ndarray], ParametrisationValues], Callable[[ParametrisationValues], jnp.ndarray]]):
         self.parametrised_objective = parametrised_objective
+        self.f_theta_parametrisation_values = f_theta_parametrisation_values
         self._cache_theta = None
         self._cache_result = None
 
     def evaluate_all(self, theta):
-        theta_i = jnp.array(theta)
+        theta_i = jnp.array(theta)        
         if self._cache_theta is None or not jnp.allclose(theta_i, self._cache_theta):                                    
-            self._cache_theta = jnp.copy(theta_i)            
-            f_values, df_dtheta = Compute_Full(theta_i, self.base_parameters, self.static_opt_settings,
-                                                self.array_opt_settings, self.global_settings, self.matrix_settings, self.f_obj, self.df_dtheta, self.df_dx)
-            self._cache_result = (f_values[0], df_dtheta[0], f_values[1:], df_dtheta[1:])
-            
+            self._cache_theta = theta_i
+            parametrisation_values = self.f_theta_parametrisation_values[0](self._cache_theta)
+            f_values = self.parametrised_objective.objective_and_constraints(parametrisation_values)
+            # TODO optimize: avoid double evaluation using some thing like value_and_jacrev? mostly relevant for functions with a few outputs; otherwise the vjp will dominate anyway
+            df_dtheta = self.parametrised_objective.grad_objective_and_constraints(parametrisation_values)
 
+            df_dtheta_array = self.f_theta_parametrisation_values[1](df_dtheta)
+            self._cache_result = (f_values[0], df_dtheta_array[0], f_values[1:], df_dtheta_array[1:])
+        
         return self._cache_result
 
     def objective(self, x):
