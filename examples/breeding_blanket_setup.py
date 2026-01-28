@@ -495,3 +495,30 @@ def recreate_symmetric_vertices(size_layers, resolution_layers):
     plasma_to_blanket_edge =  jnp.concatenate([jnp.linspace(cumsum_nodes[i], cumsum_nodes[i+1], resolution_layers[i], endpoint=False) for i in range(n_regions_dim)] + [jnp.array([cumsum_nodes[-1]])])
     blanket_size = cumsum_nodes[-1] - cumsum_nodes[1] 
     return jnp.concatenate([plasma_to_blanket_edge[-1] - jnp.flip(plasma_to_blanket_edge)[:-resolution_layers[0]], plasma_to_blanket_edge[1:] + blanket_size], axis=0)
+
+
+import mcbb 
+from typing import Tuple, Iterable
+from functools import lru_cache
+
+
+def create_openmc_data(blanket : mcbb.linear_blanket.Blanket1D, groups_list : list, settings : mcbb.blanket_base.OpenMCSettingsBlanket, l_order, n_x_tally = 200) -> Tuple[dict, dict, dict]:
+    
+    simulation_symm = mcbb.linear_blanket.OpenMCSymmetricLinearBlanketSimulation(blanket, settings, n_x_tally, groups_list)
+    mgxs_lib, tally_result_dict =simulation_symm.create_mgxs_library(onp.flip(groups_list), l_order)
+    mgxs_lib_new = mcbb.openmc_base_functions.mgxs_lib_to_standard_formatting(mgxs_lib)
+    new_bb_data_dict = {key : (mgxs_lib_new[key]['total'], mgxs_lib_new[key]['nu-scatter matrix']) for key in bb_data_dict().keys()}
+    new_aux_data_dict = {key : {'nt' : mgxs_lib_new[key]['(n,Xt)']} for key in aux_data_dict().keys()}
+    return new_bb_data_dict, new_aux_data_dict, tally_result_dict
+
+@lru_cache(maxsize=  4)
+def _get_hcpb_data_openmc(d_elem_regions : Iterable[float], l_order : int, n_samples_per_batch : int, groups_list : Iterable[float]) -> Tuple[dict, dict, dict]:
+    # Returns bb_data_dict, aux_data_dict, tally_result_dict
+    hcpb_blanket = mcbb.examples.hcpb()
+    for i, layer in enumerate(hcpb_blanket.layers):
+        if i == 0:
+            layer.thickness = 0.5 * d_elem_regions[i]
+        else:
+            layer.thickness = d_elem_regions[i]
+    settings = mcbb.blanket_base.OpenMCSettingsBlanket(True, "openmc_data/", 10, n_samples_per_batch)
+    return create_openmc_data(hcpb_blanket, groups_list, settings, l_order)
