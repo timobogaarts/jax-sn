@@ -450,6 +450,22 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
         Number of angles in the transport operator.
         '''
         return self.transport_operator.topological_sorted_angle.angle.shape[0]
+    
+    def __getitem__(self, idx):
+        '''
+        Get a transport operator for a specific angle by indexing.
+
+        Parameters
+        ----------
+        idx : int
+            Energy group index.
+
+        Returns
+        -------
+        TransportOperator
+            Transport operator for the specified energy group.
+        '''        
+        return eqx.tree_at(lambda t_operator : t_operator.topological_sorted_angle, self.transport_operator, self.transport_operator.topological_sorted_angle[idx])
 
 @lx.is_symmetric.register(TransportOperatorMultipleAngles)
 def _(operator : TransportOperator):
