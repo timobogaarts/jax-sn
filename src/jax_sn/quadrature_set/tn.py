@@ -1,3 +1,4 @@
+from typing import Literal
 import jax 
 import jax.numpy as jnp
 from functools import partial
@@ -75,7 +76,7 @@ def _create_tn_octants( N : int):
     return points, interleave_vertices(vertices_double_down, vertices_right_same)
     
 @partial(jax.jit, static_argnums= 0)
-def create_tn_quadrature_set(N : int):
+def create_tn_quadrature_set(N : int) -> QuadratureSet:
     '''
     Creates a TN quadrature set with N levels per octant. See [1].
 
@@ -96,8 +97,7 @@ def create_tn_quadrature_set(N : int):
         Array of shape [8 * N**2, 3] containing the discrete ordinate angles.
     total_weights : jnp.ndarray
         Array of shape [8 * N**2] containing the weights.
-    '''
-    
+    '''    
     points, vertices = _create_tn_octants(N)
     
     def create_angle_area(vertex : jnp.ndarray) -> jnp.ndarray:
