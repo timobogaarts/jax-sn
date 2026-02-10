@@ -41,3 +41,33 @@ def test_lm_expansion(l_max, _expected_function = _expected_sb_function):
 
     check_ylm_real_to_sb(yklm_jsn, yklm_expected, l_max)
 
+def mu_func(quadrature_set):
+    return 1 - quadrature_set.angles[:,0]**2 + quadrature_set.angles[:,0]
+
+def mu_zeta_func(quadrature_set):
+    return 1 - quadrature_set.angles[:,0]**2 + quadrature_set.angles[:,0] + quadrature_set.angles[:,1]**2 - quadrature_set.angles[:,1]
+
+def integrate_quad_set_lm(quadrature_set, func, lmax = 3):
+    wkyklm = quadrature_set.wk_ylm_real(lmax)
+    return jnp.einsum("kl, k, k-> l", wkyklm, func(quadrature_set), quadrature_set.weights)
+
+def test_reduction_1d():
+    tn_set = 8 
+    qs_jsn   = jax_sn.quadrature_set.create_tn_quadrature_set(tn_set)
+    reduced_qs = jax_sn.quadrature_set.quadrature_set_base.QuadratureSetReduced.from_quadrature_set(qs_jsn, 1)
+    original_integral = integrate_quad_set_lm(qs_jsn, mu_func, lmax = 3)
+    reduced_integral = integrate_quad_set_lm(reduced_qs, mu_func, lmax = 3)
+    onp.testing.assert_allclose(original_integral, reduced_integral, atol=1e-12)
+
+def test_reduction_2d():
+    tn_set = 8 
+    qs_jsn   = jax_sn.quadrature_set.create_tn_quadrature_set(tn_set)
+    reduced_qs = jax_sn.quadrature_set.quadrature_set_base.QuadratureSetReduced.from_quadrature_set(qs_jsn, 2)
+    original_integral = integrate_quad_set_lm(qs_jsn, mu_zeta_func, lmax = 3)
+    reduced_integral = integrate_quad_set_lm(reduced_qs, mu_zeta_func, lmax = 3)
+    onp.testing.assert_allclose(original_integral, reduced_integral, atol=1e-12)
+
+
+    
+
+    

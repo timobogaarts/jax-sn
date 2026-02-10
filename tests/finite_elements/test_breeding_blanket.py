@@ -504,3 +504,58 @@ def test_mg_with_and_without_checkpoint(_setup_bb):
     x2 = MGOP.transpose().mv(rhs_rng)
     x2_cp = MGOP_cp.transpose().mv(rhs_rng) 
     onp.testing.assert_allclose(onp.array(x2), onp.array(x2_cp), rtol=1e-12, atol = 1e-12)
+
+def test_mg_reduced_quadrature(_setup_bb):
+
+    MGOP, _, solution_domain, ani_args = _setup_bb
+    
+
+    from jax_sn.operators.multi_group_operator.multi_group_operator_creation import create_multi_group_operator
+    from jax_sn.operators.multi_group_operator.multi_group_operator_imp import _solve_multigroup_operator_rhs_scan
+    from jax_sn.operators.multi_group_operator import MultiGroupLowerTriangularBlockSolver
+    from jax_sn.quadrature_set import QuadratureSetReduced
+    import lineax as lx
+    onp.random.seed(14012026)
+
+    qset_1d    = QuadratureSetReduced.from_quadrature_set(MGOP.moment_operator.quadrature_set, 1)
+    qset_2d      = QuadratureSetReduced.from_quadrature_set(MGOP.moment_operator.quadrature_set, 2)
+
+    dim = ani_args[0]
+
+    if dim == 1:
+        mgop_1d = create_multi_group_operator(solution_domain, qset_1d)
+        mgop_2d = create_multi_group_operator(solution_domain, qset_2d)
+        mgop_3d = create_multi_group_operator(solution_domain, MGOP.moment_operator.quadrature_set)
+
+        rhs_rng = jnp.array(onp.random.rand(MGOP.n_energy_groups, solution_domain.n_elements, solution_domain.n_basis))
+        rhs_1d_stack = jnp.broadcast_to(rhs_rng[:, None, :,:], (mgop_1d.n_energy_groups, qset_1d.n_angles, solution_domain.n_elements, solution_domain.n_basis))
+        rhs_2d_stack = jnp.broadcast_to(rhs_rng[:, None, :,:], (mgop_2d.n_energy_groups, qset_2d.n_angles, solution_domain.n_elements, solution_domain.n_basis))
+        rhs_3d_stack = jnp.broadcast_to(rhs_rng[:, None, :,:], (mgop_3d.n_energy_groups, MGOP.moment_operator.quadrature_set.n_angles, solution_domain.n_elements, solution_domain.n_basis))
+
+        solver = MultiGroupLowerTriangularBlockSolver(lx.BiCGStab(rtol=1e-12, atol=1e-15, max_steps=160))
+        result_1d = _solve_multigroup_operator_rhs_scan(mgop_1d, rhs_1d_stack, solver).value
+        result_2d = _solve_multigroup_operator_rhs_scan(mgop_2d, rhs_2d_stack, solver).value
+        result_3d = _solve_multigroup_operator_rhs_scan(mgop_3d, rhs_3d_stack, solver).value
+
+        onp.testing.assert_allclose(onp.array(result_1d), onp.array(result_2d), rtol=1e-12, atol=1e-12)
+        onp.testing.assert_allclose(onp.array(result_1d), onp.array(result_3d), rtol=1e-12, atol=1e-12)
+    elif dim == 2:
+         
+        mgop_2d = create_multi_group_operator(solution_domain, qset_2d)
+        mgop_3d = create_multi_group_operator(solution_domain, MGOP.moment_operator.quadrature_set)
+
+        rhs_rng = jnp.array(onp.random.rand(MGOP.n_energy_groups, solution_domain.n_elements, solution_domain.n_basis))
+        
+        rhs_2d_stack = jnp.broadcast_to(rhs_rng[:, None, :,:], (mgop_2d.n_energy_groups, qset_2d.n_angles, solution_domain.n_elements, solution_domain.n_basis))
+        rhs_3d_stack = jnp.broadcast_to(rhs_rng[:, None, :,:], (mgop_3d.n_energy_groups, MGOP.moment_operator.quadrature_set.n_angles, solution_domain.n_elements, solution_domain.n_basis))
+
+        solver = MultiGroupLowerTriangularBlockSolver(lx.BiCGStab(rtol=1e-12, atol=1e-15, max_steps=160))        
+        result_2d = _solve_multigroup_operator_rhs_scan(mgop_2d, rhs_2d_stack, solver).value
+        result_3d = _solve_multigroup_operator_rhs_scan(mgop_3d, rhs_3d_stack, solver).value
+        
+        onp.testing.assert_allclose(onp.array(result_2d), onp.array(result_3d), rtol=1e-12, atol=1e-12)
+    else:
+        pass
+
+        
+    

@@ -1,6 +1,8 @@
 Multigroup discretisation
 ===========================
 
+THIS IS WRONG!
+
 We wish to prove the multigroup formm of the neutron transport equation.
 We will show this for the general case (where multiple unknowns per group are allowed) and then specialize it to the standard multigroup transport equation.
 

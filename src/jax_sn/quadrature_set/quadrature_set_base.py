@@ -1,12 +1,12 @@
 import jax 
 from dataclasses import dataclass
 import jax.numpy as jnp
-from typing import Tuple
+from typing import Literal, Tuple
 from functools import partial
+import equinox as eqx
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class QuadratureSet:
+
+class QuadratureSet(eqx.Module):
     r'''
     Represents a quadrature set with angles and weights. This class provides methods to compute spherical harmonics expansions based on the quadrature set.    
     '''
@@ -16,6 +16,10 @@ class QuadratureSet:
 
     weights : jnp.ndarray
     r'''        The weights associated with each angle. Shape [n_angles]. Should sum to 4pi (such that :math:`\sum_{i} w_i 1 = \int d\Omega = 4 \pi`).'''
+
+    def __check_init__(self):
+        assert self.angles.shape[-1] == 3, f"Only three-dimensional quadrature sets are currently supported but got {self.angles.shape[-1]}. The angles should be given in Cartesian coordinates (x,y,z) on the unit sphere."
+        assert self.angles.shape[0] == self.weights.shape[0], f"The number of angles and weights must be the same but got {self.angles.shape[0]} angles and {self.weights.shape[0]} weights."
 
     @property 
     def n_angles(self) -> int:
@@ -28,21 +32,52 @@ class QuadratureSet:
         r'''
         Compute the weighted real spherical harmonic expansion coefficients :math:`\sqrt{w_k} Y_{lm}(\Omega_k)` for this quadrature set up to degree l_max.
         See :func:`compute_3d_wk_yklm_real_from_quadrature_set` for details.
-        '''
-        if self.angles.shape[1] == 3:
-            return compute_3d_wk_yklm_real_from_quadrature_set(self, l_max)
-        else:
-            raise NotImplementedError("Moment operator only implemented for 3D quadrature sets.")
+        '''        
+        return compute_3d_wk_yklm_real_from_quadrature_set(self, l_max)
+        
     def ylm_real(self, l_max : int) -> jnp.ndarray:
-        '''
+        r'''
         Compute the real spherical harmonic expansion coefficients :math:`Y_{lm}(\Omega_k)` for this quadrature set up to degree l_max.
         See :func:`compute_3d_yklm_real_from_quadrature_set` for details.
-        '''
-        if self.angles.shape[1] == 3:
-            return compute_3d_yklm_real_from_quadrature_set(self, l_max)
-        else:
-            raise NotImplementedError("Moment operator only implemented for 3D quadrature sets.")
+        '''        
+        return compute_3d_yklm_real_from_quadrature_set(self, l_max)
     
+
+class QuadratureSetReduced(QuadratureSet):
+    r'''
+    Represents a reduced quadrature set, where only unique angles are stored. The original quadrature set can be reconstructed from the unique angles and the indices to reconstruct the original set from the unique set.
+    '''    
+    angles_original         : jnp.ndarray
+    weights_original        : jnp.ndarray
+    original_angles_indices : jnp.ndarray
+
+    def __getitem__(self, idx):
+        raise ValueError("Cannot get a single angle from a QuadratureSetReduced!")
+        return super().__getitem__(idx)
+    
+    @classmethod
+    def from_quadrature_set(cls, quadrature_set : QuadratureSet, n_dim : Literal[1,2,3], rounding_tolerance : int = 10):
+        return cls(*_extract_nD_quadrature_set(quadrature_set, n_dim, rounding_tolerance))
+
+    
+    def wk_ylm_real(self, l_max : int) -> jnp.ndarray:        
+        wk_yklm_real_original = compute_3d_wk_yklm_real_from_quadrature_set(QuadratureSet(self.angles_original, self.weights_original), l_max)
+
+        wk_yklm_reduced = jnp.zeros((self.n_angles, wk_yklm_real_original.shape[1]))
+        wk_yklm_reduced = wk_yklm_reduced.at[self.original_angles_indices].add(wk_yklm_real_original)
+        return wk_yklm_reduced
+
+def _extract_nD_quadrature_set(quadrature_set : QuadratureSet, n_dim : Literal[1,2,3], rounding_tolerance : int = 10):        
+    unique_angles        = jnp.unique(quadrature_set.angles[:, :n_dim].round(rounding_tolerance), return_index=True, return_inverse= True, axis=0) 
+    # angles [n_unique, n_dim], indices of unique angles in original set [n_unique], indices to reconstruct original set from unique set [n_angles]        
+    angles_red  = quadrature_set.angles[unique_angles[1]]
+    weights_red = quadrature_set.weights[unique_angles[1]]
+
+    #onp.testing.assert_allclose(weights_red[unique_angles[2]], quadrature_set.weights, rtol=1e-10)
+    
+    weights_red = quadrature_set.weights[unique_angles[1]]
+    
+    return angles_red, weights_red, quadrature_set.angles,quadrature_set.weights, unique_angles[2]
 #===========================================================================================================================================================================
 # Functions to compute spherical harmonics expansions from quadrature sets
 #===========================================================================================================================================================================

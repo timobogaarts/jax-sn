@@ -13,4 +13,5 @@ Submodules
    :maxdepth: 2
 
    jax_sn.operators.multi_group_operator.lower_triangular_solver
+   jax_sn.operators.multi_group_operator.multi_group_operator_creation
    jax_sn.operators.multi_group_operator.multi_group_operator_imp
