@@ -74,12 +74,12 @@ Under the integral, we are free to multiply with :math:`\sum_{g'p'} \chi_{g'p'}(
 Then, we define:
 
 .. math::
-    \sigma^s_{l, gp, g'p'}(\mathbf{r}; \psi) = \frac{\int_g \int_{g'} \sigma^s_{l}(\mathbf{r}, E' \to E) \chi_{gp}(E) \chi_{g'p'}(E') \psi(\mathbf{r}, \Omega', E') dE dE'}{\int_{g'} Y_{lm}\psi(\mathbf{r}, \Omega', E') dE'}
+    \sigma^s_{lm, gp, g'p'}(\mathbf{r}; \psi) = \frac{\int_{S^2}\int_g \int_{g'}Y_{lm}(\Omega') \sigma^s_{l}(\mathbf{r}, E' \to E) \chi_{gp}(E) \chi_{g'p'}(E') \psi(\mathbf{r}, \Omega', E') dE dE' d\Omega'}{\int_{S^2}\int_{g'} Y_{lm}(\Omega')\psi(\mathbf{r}, \Omega', E') dE'd\Omega'  }
 
 and we obtain:
 
 .. math::
-    \sum_{g'p'} \sum_{lm} Y_{lm}(\Omega) \sigma^s_{l, gp, g'p'}(\mathbf{r}; \psi) \int_{S^2} Y_{lm}(\Omega')  \psi_{g'p'}(\mathbf{r}, \Omega') d\Omega'
+    \sum_{g'p'} \sum_{lm} Y_{lm}(\Omega) \sigma^s_{lm, gp, g'p'}(\mathbf{r}; \psi) \int_{S^2} Y_{lm}(\Omega')  \psi_{g'p'}(\mathbf{r}, \Omega') d\Omega'
 
 External Source term
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -99,7 +99,7 @@ This yields the multigroup transport equation, which is a *nonlinear* equation d
 
 .. math::
     \Omega \cdot \nabla \psi_{gp}(\mathbf{r}, \Omega) + &\sigma_{gp}(\mathbf{r}, \Omega; \psi) \psi_{gp}(\mathbf{r}, \Omega) \\
-     &= \sum_{g'} \sum_{lm} Y_{lm}(\Omega) \sigma^s_{l, gp, g'p'}(\mathbf{r}; \psi) \int_{S^2} Y_{lm}(\Omega')  \psi_{g'p'}(\mathbf{r}, \Omega') d\Omega' + Q_{gp}(\mathbf{r}, \Omega)
+     &= \sum_{g'} \sum_{lm} Y_{lm}(\Omega) \sigma^s_{lm , gp, g'p'}(\mathbf{r}; \psi) \int_{S^2} Y_{lm}(\Omega')  \psi_{g'p'}(\mathbf{r}, \Omega') d\Omega' + Q_{gp}(\mathbf{r}, \Omega)
 
 The way out is to use a closure relation. This closure relation approximates the dependence of the cross sections on the fluxes by a good guess. If this guess is exactly right, this consistently yields the exact solution.
 In practice, one uses cross sections generated from a different code, possibly in a simplified scenario (e.g. infinite medium, homogeneous material compositions, etc.). If the guess is good, then the closure approximation is good, 
@@ -110,7 +110,7 @@ This yields the standard linear multigroup transport equation used in practice:
 
 .. math::
     \Omega \cdot \nabla \psi_{gp}(\mathbf{r}, \Omega) + &\sigma_{gp}(\mathbf{r}, \Omega) \psi_{gp}(\mathbf{r}, \Omega) \\
-     &= \sum_{g'} \sum_{lm} Y_{lm}(\Omega) \sigma^s_{l, gp, g'p'    }(\mathbf{r}) \int_{S^2} Y_{lm}(\Omega')  \psi_{g'p'}(\mathbf{r}, \Omega') d\Omega' + Q_{gp}(\mathbf{r}, \Omega)
+     &= \sum_{g'} \sum_{lm} Y_{lm}(\Omega) \sigma^s_{lm, gp, g'p'    }(\mathbf{r}) \int_{S^2} Y_{lm}(\Omega')  \psi_{g'p'}(\mathbf{r}, \Omega') d\Omega' + Q_{gp}(\mathbf{r}, \Omega)
 
 Now, there is no dependence of the cross sections on the fluxes anymore. This can be self-consistenly solved by providing appropriate cross sections.
 
@@ -122,25 +122,24 @@ If we assume that there is only a single unknown per group (i.e., :math:`p=1`), 
 
 .. math::
     \Omega \cdot \nabla \psi_{gp}(\mathbf{r}, \Omega) + &\sigma_{g}(\mathbf{r}, \Omega) \psi_{  g}(\mathbf{r}, \Omega) \\
-            &= \sum_{g'} \sum_{lm} Y_{lm}(\Omega) \sigma^s_{l, g, g'    }(\mathbf{r}) \int_{S^2} Y_{lm}(\Omega')  \psi_{g'}(\mathbf{r}, \Omega') d\Omega' + Q_{gp}(\mathbf{r}, \Omega)
+            &= \sum_{g'} \sum_{lm} Y_{lm}(\Omega) \sigma^s_{lm, g, g'    }(\mathbf{r}) \int_{S^2} Y_{lm}(\Omega')  \psi_{g'}(\mathbf{r}, \Omega') d\Omega' + Q_{gp}(\mathbf{r}, \Omega)
 
 with the multigroup cross sections defined as:
 
 .. math::
     \sigma_{g}(\mathbf{r}, \Omega) &= \frac{\int_{g} \sigma(\mathbf{r}, \Omega, E) \psi(\mathbf{r}, \Omega, E) dE}{\int_{g} \psi(\mathbf{r}, \Omega, E) dE}\\
-    \sigma^s_{l, g, g'    }(\mathbf{r}) &= \frac{\int_g \int_{g'} \sigma^s_{l}(\mathbf{r}, E' \to E) \psi(\mathbf{r}, \Omega', E') dE dE'}{\int_{g'} \psi(\mathbf{r}, \Omega', E') dE'}
+    \sigma^s_{lm, g, g'    }(\mathbf{r}) &= \frac{\int_{S^2}\int_g \int_{g'} Y_{lm}(\Omega')\sigma^s_{l  }   (\mathbf{r}, E' \to E) \psi(\mathbf{r}, \Omega', E') dE dE' d\Omega'}{\int_{S^2}\int_{g'} Y_{lm}(\Omega')\psi(\mathbf{r}, \Omega', E') dE'd\Omega'  }
 
 
+It is somewhat surpsising that the total cross sections depends on the angle :math:`\Omega`. 
+This is because the spectrum is not constant in all directions: then, the flux weighing will yield different results for different angles.
+In practice, the total cross section is implemented as independent of angle. A correction can be applied (see Lewis & Miller, pg 76) in the scattering operator.
 
+Furthermore, the scattering cross section is now a function of both :math:`l` and :math:`m` for a similar reason.
+Physically, this means that neutrons propagating in different directions will have different scattering cross sections. This is unphysical 
+in the first expansion (the material doesn't care which direction the neutron comes from except for crystals and other anisotropic materials),
+however, here it arises due to the flux weighing again. In practice, this is not always taken into account and all :math:`m` moments are set equal.
 
-
-Estimating multigroup cross sections
-------------------------------------
-
-In practice, multigroup cross sections can be obtained by continuous energy monte carlo methods in simplified geometry. The tallies required are simply the ones already shown:
-
-
-.. math::
-    \sigma_{gp}(\mathbf{r}, \Omega) = \frac{\int_{g} \chi_{gp} \sigma(\mathbf{r}, \Omega, E) \psi(\mathbf{r}, \Omega, E) dE}{\int_{g} \chi_{gp} \psi(\mathbf{r}, \Omega, E) dE}
-
-
+Finally, the OpenMC tallies for the scattering cross sections are different: they do not weigh with :math:`Y_{lm}` at all. This is somewhat confusing to me, as 
+even in the 1D case in Lewis & Miller eq. 2-57, the cross section is weighed by :math:`\phi_l`  (and thus with :math:`P_l`). My guess is that if the flux profile is 
+sufficiently flat, (:math:`\phi_{lm}(E)\approx \phi_{lm}` within the energy group) then both result in the same result, and thus the OpenMC tallies are a good approximation.
