@@ -295,6 +295,14 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     @property 
     def n_basis(self):
         return self.transport_operator.solution_domain_data.n_basis
+    
+    @property 
+    def domain(self):
+        return self.transport_operator.solution_domain_data.domain
+    
+    @property
+    def quadrature_set(self):
+        return self.moment_operator.quadrature_set
         
     @property
     def cross_sections_indexed_loc(self):

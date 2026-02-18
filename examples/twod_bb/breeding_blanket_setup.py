@@ -528,8 +528,12 @@ def _get_mesh_and_source(d_regions_base : Iterable[int], n_elem_regions : Iterab
     s_power_sampling = 2
     regions_dim = [(sz, res) for sz, res in zip(d_regions_base, n_elem_regions)]
     cumsum_nodes  = jnp.concatenate([jnp.array([0]), jnp.cumsum(jnp.array([sz for sz, res in regions_dim]))])        
+    print(cumsum_nodes)
+    s_base = jnp.linspace(cumsum_nodes[0], cumsum_nodes[1], n_elem_regions[0], endpoint=False)
 
-    s_base = [jnp.linspace(cumsum_nodes[0], cumsum_nodes[1], n_elem_regions[0], endpoint=False)**s_power_sampling]
+    s_base = [jnp.where(s_base < 1.0, s_base**2, s_base)]
+    
+    print(s_base)
     s_from_edge = [jnp.linspace(cumsum_nodes[i], cumsum_nodes[i+1], n_elem_regions[i], endpoint=False) for i in range(1, len(regions_dim))] + [jnp.array([cumsum_nodes[-1]])]
     if normalise_distance is not None:
         assert isinstance(normalise_distance, float), f"normalise_distance should be a float but is {type(normalise_distance)}"
@@ -538,7 +542,7 @@ def _get_mesh_and_source(d_regions_base : Iterable[int], n_elem_regions : Iterab
         s_array = jnp.where(s_array_base < 1.0, s_array_base, 1.0 + (s_array_base - 1.0) / (normalise_distance ))
     else:
         s_array = jnp.concatenate(s_base + s_from_edge)
-
+    print(s_array)
     mesh_pol = jsb.flux_surfaces.flux_surface_meshing.mesh_poloidal_plane(flux_surface_extended,s_array, phi, n_theta )
     coordinates_pol = jsb.flux_surfaces.flux_surface_meshing._mesh_poloidal_points_coordinates(flux_surface_extended, s_array, phi, n_theta, True)
     region_plasma_indices = jnp.concatenate([jnp.zeros(n_theta), jnp.zeros(2 * n_theta * (n_elem_regions[0]-1))])
@@ -584,6 +588,35 @@ def line_interpolate(s_values, theta, phi, fs_base, solution_domain, solution_to
     lines_rzp = fs_base.cylindrical_position(s_values, theta, phi)
     flux_interp = [solution_domain.interpolate(lines_rzp[:,0:2], solution_total.value[i,0]) for i in range(solution_total.value.shape[0])]
     return jnp.stack(flux_interp, axis=0)
+
+
+#=======================================================================================================================================
+# Plotting function for domain and flux lines
+#=======================================================================================================================================
+def plot_domain(domain):
+    from matplotlib.tri import Triangulation
+    import matplotlib.pyplot as plt
+    import jax_sn
+    """
+    Plot the domain with element regions on left and flux plots in a grid on right.
+    """
+    
+    fig = plt.figure(figsize=(20, 10))
+        
+    
+    ax_domain = plt.gca()    
+    vertices = domain.vertices
+    connectivity = domain.connectivity
+    indices = domain.cross_sections_indexed.indices
+
+    triang = Triangulation(vertices[:, 0], vertices[:, 1], connectivity)
+    tripcolor = ax_domain.tripcolor(triang, indices, cmap='tab20', shading='flat', vmin=0, vmax=max(indices), edgecolor = 'black')
+    ax_domain.set_xlabel('R')
+    ax_domain.set_ylabel('Z')
+    ax_domain.set_title('Domain with Element Regions and Flux Lines')
+    ax_domain.set_aspect('equal', adjustable='box')
+    fig.show()
+    #plt.colorbar(tripcolor, ax=ax_domain, label='Region Index')
 
 
 def plot_domain_with_lines_grid(solution_domain, solution_total, fs_base, phi, groups_list, n_lines=4, grid_cols=2):
@@ -634,8 +667,12 @@ def plot_domain_with_lines_grid(solution_domain, solution_total, fs_base, phi, g
         solution_collapsed.append(jnp.einsum("ig, gj->ij", overlap_matrix, line_values))
 
     ylims = onp.nanmin(solution_collapsed), onp.nanmax(solution_collapsed)
-    
-    smax =slines[ onp.max([onp.where(onp.isnan(i[0]))[0][0] for i in solution_collapsed])] - 1.0
+
+    def first_nan_or_len(arr):
+        nan_idx = onp.where(onp.isnan(arr))[0]
+        return nan_idx[0] if nan_idx.size > 0 else arr.size
+    nan_positions = [first_nan_or_len(i[0]) for i in solution_collapsed]
+    smax = slines[onp.max(nan_positions)] - 1.0
     xlims = 0.0, smax
     
     for i, theta_val in enumerate(theta_values):
@@ -653,6 +690,63 @@ def plot_domain_with_lines_grid(solution_domain, solution_total, fs_base, phi, g
 
     plt.tight_layout()
     plt.show()
+
+#=======================================================================================================================================
+# Plotting function for domain and flux lines
+#=======================================================================================================================================
+def plot_periodic_spline_with_controls(c, k, color_ctrl_by_index=False):
+    import matplotlib.pyplot as plt
+    import jax_sbgeom as jsb
+    n = c.shape[0]
+    # control point locations: evenly spaced in [0, 2pi)    
+    
+    
+    theta_ctrl = jsb.jax_utils.splines.greville_abscissa_periodic_bspline(n, k)  # shape (n,)
+    
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    
+    
+    ax = axes[0]
+    
+    
+    if color_ctrl_by_index:
+        colors_ctrl = plt.cm.viridis(onp.linspace(0, 1, n))
+        ax.scatter(theta_ctrl, onp.array(c), c=colors_ctrl, zorder=5, label='control points')
+        ax.scatter(theta_ctrl + 2*onp.pi, onp.array(c), c=colors_ctrl, zorder=5, alpha=1.0)
+    else:
+        ax.scatter(theta_ctrl, onp.array(c), color='red', zorder=5, label='control points')
+        ax.scatter(theta_ctrl + 2*onp.pi, onp.array(c), color='red', zorder=5, alpha=1.0)
+    
+    ax.vlines(theta_ctrl, 0, onp.array(c), color='red', alpha=0.3, linestyle='--')
+    ax.set_xlabel('θ')
+    ax.set_ylabel('d(θ)')
+    ax.set_title('B-spline in parameter domain')    
+    # plot two periods to see the wrap-around clearly
+    theta_ext = jnp.linspace(0, 4 * jnp.pi, 1000, endpoint=False)
+    d_ext = jsb.jax_utils.splines.periodic_bspline(theta_ext, c, k)
+    
+    ax.plot(theta_ext, d_ext, label='spline')
+    ax.axvline(2 * jnp.pi, color='k', linestyle='--', label='period boundary')
+    ax.legend()
+    ax.set_xlim(0, 4 * jnp.pi)
+
+    
+    ax = axes[1]
+    ax = fig.add_subplot(1, 2, 2, projection='polar')
+
+    theta = jnp.linspace(0, 2 * jnp.pi, 1000, endpoint=False)
+    d = jsb.jax_utils.splines.periodic_bspline(theta, c, k)
+    ax.plot(theta, d, label='spline')
+    
+    if color_ctrl_by_index:
+        ax.scatter(theta_ctrl, onp.array(c), c=colors_ctrl, zorder=-1, label='control points')
+    else:
+        ax.scatter(theta_ctrl, onp.array(c), color='red', zorder=-1, label='control points')    
+    ax.set_title('Shape in polar domain')
+    ax.legend()    
+    plt.tight_layout()
+    plt.show()
+
 
 
 # def extend_to_3d_mesh(mesh_pol):
