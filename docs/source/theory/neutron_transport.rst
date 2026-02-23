@@ -41,7 +41,16 @@ plus the neutrons created by scattering and external sources minus the neutrons 
 This equation is 6-dimensional (3 spatial dimensions, 2 angular dimensions, 1 energy dimension) and integro-differential. It 
 is often solved using Monte-Carlo methods, where the above equation is sampled. 
 
-In deterministic methods, instead, the equation is fully discretised. We proceed by discretising each of the dimensions in turn.
+In deterministic methods, instead, the equation is fully discretised in all 6 dimensions. Since the neutron transport equation is linear, 
+the discetised version will also be a linear system, which will need to be efficiently solved. Furthermore,
+in the end, we are also interested in obtaining derivatives of a function solution of this equation with respect to some parameters (e.g., 
+how the tritium breeding ratio in fusion blankets changes with respect to material composition or even 3D geometry). 
+
+We want to keep this in mind when deriving a formulation of the neutron transport equation, and thus, before discretising, we will review some linear algebra.
+
+
+
+
 
 
 

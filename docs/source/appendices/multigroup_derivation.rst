@@ -1,9 +1,14 @@
+.. _appendix_multigroup_derivation:
+
 Multigroup discretisation
 ===========================
 
-THIS IS WRONG!
+We wish to prove the multigroup formm of the neutron transport equation:
 
-We wish to prove the multigroup formm of the neutron transport equation.
+.. math::
+    \Omega \cdot \nabla \psi_{g}(\mathbf{r}, \Omega) + &\sigma_{g}(\mathbf{r}, \Omega) \psi_{  g}(\mathbf{r}, \Omega) \\
+            &= \sum_{g'} \sum_{lm} Y_{lm}(\Omega) \sigma^s_{lm, g, g'    }(\mathbf{r}) \int_{S^2} Y_{lm}(\Omega')  \psi_{g'}(\mathbf{r}, \Omega') d\Omega' + Q_{gp}(\mathbf{r}, \Omega)
+
 We will show this for the general case (where multiple unknowns per group are allowed) and then specialize it to the standard multigroup transport equation.
 
 Proof 
@@ -121,7 +126,7 @@ Simplification to single unknown per group
 If we assume that there is only a single unknown per group (i.e., :math:`p=1`), then we can drop the :math:`p` index everywhere. This yields the standard multigroup transport equation as used in many textbooks:
 
 .. math::
-    \Omega \cdot \nabla \psi_{gp}(\mathbf{r}, \Omega) + &\sigma_{g}(\mathbf{r}, \Omega) \psi_{  g}(\mathbf{r}, \Omega) \\
+    \Omega \cdot \nabla \psi_{g}(\mathbf{r}, \Omega) + &\sigma_{g}(\mathbf{r}, \Omega) \psi_{  g}(\mathbf{r}, \Omega) \\
             &= \sum_{g'} \sum_{lm} Y_{lm}(\Omega) \sigma^s_{lm, g, g'    }(\mathbf{r}) \int_{S^2} Y_{lm}(\Omega')  \psi_{g'}(\mathbf{r}, \Omega') d\Omega' + Q_{gp}(\mathbf{r}, \Omega)
 
 with the multigroup cross sections defined as:
