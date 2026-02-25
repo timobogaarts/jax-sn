@@ -114,6 +114,7 @@ Thumbs.db
 *.hdf5
 *.pkl
 *.pickle
+*.vtk
 
 # Logs
 *.log

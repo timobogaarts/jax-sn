@@ -8,10 +8,10 @@ The spherical harmonics used in this work are defined as
 .. math::
     Y_{lm}(\theta, \phi)= \begin{cases} \sqrt{2} \mathcal{I}(Y_l^{|m|}(\theta,\phi)) & m < 0 \\ Y_l^0(\theta, \phi) & m =0 \\ \sqrt{2} \mathcal{R}(Y_l^m(\theta, \phi)) & m >0 \end{cases}
     
-where :math:`Y_{lm}` are the complex spherical harmonics defined as per jax.scipy.special.sph_harm_y (including Condon-Shortley phase which is included in the :math:`P_l^m` definition):
+where :math:`Y_{l}^{m}` are the complex spherical harmonics defined as per jax.scipy.special.sph_harm_y (including Condon-Shortley phase which is included in the :math:`P_l^m` definition):
 
 .. math::
-    Y_{l}^m(theta, phi) = \sqrt{\frac{2l+1}{4\pi} \cdot \frac{(l-m)!}{(l+m)!}} \cdot P_l^m(\cos(\theta)) \cdot e^{i m \phi}
+    Y_{l}^m(\theta, \phi) = \sqrt{\frac{2l+1}{4\pi} \cdot \frac{(l-m)!}{(l+m)!}} \cdot P_l^m(\cos(\theta)) \cdot e^{i m \phi}
 
 If we assume that :math:`\int d\Omega = 4 \pi`, then the normalization is such that:
 

@@ -1,7 +1,7 @@
 Angular discretisation
 --------------------------
 
-We are now going to expand the :math:`\psi(\mathbf{r}, \Omega)` angular flux in terms of the legendre moments:
+We are now going to expand the :math:`\psi(\mathbf{r}, \Omega)` angular flux in terms of the Legendre moments:
 
 .. math::
     \psi_g(\mathbf{r}, \Omega) = \sum_{lm} Y_{lm}(\Omega) \phi_{glm}(\mathbf{r})
@@ -41,10 +41,10 @@ described in detail :ref:`here <pn_methods>`. This yields the total linear syste
     \{Q_{G,lm}\}
     \end{bmatrix}
 
-with :math:`\boldsymbol{\tau}_g` a operator (coupling :math:`l,m` modes) mapping a set of spatially varying legendre moments to another set of spatially varying legendre moments. 
-Its precise definition is given in the :ref:`appendix <pn_methods>`, but we won't use that here. It is the discretised version of :math:`\mathcal{T}_g = \Omega \cdot \nabla + \sigma_g`.
-Furthermore :math:`\mathbf{S}_{gg'}` a diagonal operator (it does not couple different :math:`l,m` modes) that maps a set of spatially varying legendre moments 
-to another set of spatially varying legendre moments by multiplying with the scattering cross section in the legendre moment space:
+with :math:`\boldsymbol{\tau}_g` a operator (coupling :math:`l,m` modes) mapping a set of spatially varying Legendre moments to another set of spatially varying Legendre moments. 
+Its precise definition is given in the :ref:`appendix <pn_methods>`, but we won't use that here. It is the Legendre moments discretised version of :math:`\mathcal{T}_g = \Omega \cdot \nabla + \sigma_g`.
+Furthermore :math:`\mathbf{S}_{gg'}` a diagonal operator (it does not couple different :math:`l,m` modes) that maps a set of spatially varying Legendre moments 
+to another set of spatially varying Legendre moments by multiplying with the scattering cross section in the Legendre moment space:
 
 .. math::
     \mathbf{S}_{gg'}[\{\phi_{g,lm}\}] = \{\sigma_{lm,gg'}(\mathbf{r}) \phi_{g'lm}(\mathbf{r}) \}
@@ -56,7 +56,9 @@ Conditioning
 ==================
 
 Although this can work, we want to exploit the structure of the transport operator in order to arrive at a very well conditioned system (i.e. where we know that it is quite 
-close to the identity matrix!). To do this, multiply both sides of the equation by a diagonal inverse of the transport operator of each group:
+close to the identity matrix!). Well conditioned systems have the attractive property that the iterative solvers converge and that they converge quickly.
+
+To do this, multiply both sides of the equation by a diagonal inverse of the transport operator of each group:
 
 .. math::
     \begin{bmatrix}
@@ -89,7 +91,6 @@ Now, very handwavey, we have that the spectral radius of the diagonal elements i
     \rho(\boldsymbol{\tau}_g^{-1} \mathbf{S}_{gg}) = \rho((\Omega \cdot \nabla + \sigma_g)^{-1} \mathbf{S}_{gg'}) \approx \frac{1}{\sigma_g} \sigma_{gg,00} < 1 
 
 where the last inequality holds by definition in non-multiplying systems (in multiplying systems, one should solve an eigenvalue problem, and not this fixed source problem).
-A well-conditioned system ensures the iterative solvers converge and that they converge quickly.
 
 So, in e.g. a lower triangular (downscattering system), we can solve by foward substitution and solve a particularly well-conditioned single-group system. 
 
@@ -116,7 +117,7 @@ This uses the following operators (the notation is slightly different than in th
 .. math::
     \mathbf{M} : \mathcal{D} \to \mathcal{M} \text{ with } \mathbf{M}[\{z_{k}(\mathbf{r})\}] = \sum_k w_k z_k(\mathbf{r}) Y_{\lambda\mu}(\Omega_k)
 
-which is the discrete to moment (very simmilar to the quadrature!) operator, mapping functions in the discrete angle space to functions in the Legendre moment space, 
+which is the discrete to moment (very simmilar to the quadrature!) operator, mapping functions in the discrete angle space :math:`\mathcal{D}` to functions in the Legendre moment space :math:`\mathcal{M}`.,  
 and the moment to discrete operator:
 
 .. math::
@@ -167,7 +168,7 @@ It may seem that there are :math:`K` \times G^2` operator inversions required, b
 We can just collapse the product of the operators on the left-hand side as (let us just look at the first row for simplicity):
 
 .. math::
-    \small
+    \scriptsize    
     &\mathbf{I} - \mathbf{M} \circ \mathbf{T}_0^{-1} \circ \mathbf{D} \circ \mathbf{S}_{00}[\{\phi_{0,lm}\}] -\mathbf{M} \circ \mathbf{T}_0^{-1} \circ \mathbf{D} \circ \mathbf{S}_{01}[\{\phi_{1,lm}\}] -\cdots -\mathbf{M} \circ \mathbf{T}_0^{-1} \circ \mathbf{D} \circ \mathbf{S}_{0G}[\{\phi_{G,lm}\}] \\
     &=  \mathbf{I} -  \mathbf{M} \circ \mathbf{T}_0^{-1} \circ \mathbf{D}  \left[\sum_{g'}\mathbf{S}_{0g'}[\{\phi_{g',lm}\}]\right]
 
