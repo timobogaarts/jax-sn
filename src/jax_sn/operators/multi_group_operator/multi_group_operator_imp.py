@@ -303,6 +303,10 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     @property
     def quadrature_set(self):
         return self.moment_operator.quadrature_set
+    
+    @property
+    def solution_domain_data(self):
+        return self.transport_operator.solution_domain_data
         
     @property
     def cross_sections_indexed_loc(self):

@@ -206,7 +206,7 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jn
     mop_t = sgop_t.moment_operator.transpose()
     hop_t = sgop_t.mass_operator.transpose()     
 
-    def body_fun(i, state):                
+    def body_fun(i, state):                        
         solution, xi_g, n_steps = state        
         
         g_i     = n_groups - i - 1 # Upper triangular, so we go from high to low energy group
@@ -224,8 +224,7 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jn
         lxsolvevalue, nsteps = jax.lax.cond(jnp.all(rhs_i == 0.0), zero_rhs, nonzero_rhs,  operand = rhs_i)
         
         xi_new       = xi_g.at[g_i].set(dop_t.mv(hop_t.mv(top_t.to_energy_group(g_i).inv(mop_t.mv(lxsolvevalue))))) # D^T H^T (T_g^{-1})^T M^T [phi_g]
-        solution_new = solution.at[g_i].set(lxsolvevalue)
-
+        solution_new = solution.at[g_i].set(lxsolvevalue)        
         return solution_new, xi_new, n_steps.at[g_i].set(nsteps)
     
     solution          = jnp.zeros_like(rhs)

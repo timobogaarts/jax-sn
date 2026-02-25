@@ -6,6 +6,7 @@ from jaxtyping import PyTree
 from dataclasses import dataclass
 import jax
 import jax.numpy as jnp
+import numpy as onp
 
 class ParametrisedModule(ABC):
     '''
@@ -123,41 +124,61 @@ class ParametrisedScipyInterface:
 
     parametrised_objective : ParametrisedObjective
     f_theta_parametrisation_values : Callable[[jnp.ndarray], ParametrisationValues] 
-    _cache_theta           : jnp.ndarray  = None # This cannot be a ParametrisationValues; scipy doesn't know what a eqx.Module is!
-    _cache_result          : tuple = None
+
+    _cache_theta_val : jnp.ndarray = None
+    _cache_val       : jnp.ndarray = None
+
+    _cache_theta_jac : jnp.ndarray = None
+    _cache_jac       : jnp.ndarray = None
+    
     
     def __init__(self, parametrised_objective : ParametrisedObjective, f_theta_parametrisation_values : Tuple[Callable[[jnp.ndarray], ParametrisationValues], Callable[[ParametrisationValues], jnp.ndarray]]):
         self.parametrised_objective = parametrised_objective
         self.f_theta_parametrisation_values = f_theta_parametrisation_values
-        self._cache_theta = None
+        self._cache_theta_val = None
         self._cache_result = None
 
-    def evaluate_all(self, theta):
-        theta_i = jnp.array(theta)        
-        if self._cache_theta is None or not jnp.allclose(theta_i, self._cache_theta):                                    
-            self._cache_theta = theta_i
-            parametrisation_values = self.f_theta_parametrisation_values[0](self._cache_theta)
-            f_values = self.parametrised_objective.objective_and_constraints(parametrisation_values)
-            # TODO optimize: avoid double evaluation using some thing like value_and_jacrev? mostly relevant for functions with a few outputs; otherwise the vjp will dominate anyway
-            df_dtheta = self.parametrised_objective.grad_objective_and_constraints(parametrisation_values)
+    def evaluate_values(self, theta):
+        theta = jnp.asarray(theta)
 
-            df_dtheta_array = self.f_theta_parametrisation_values[1](df_dtheta)
-            self._cache_result = (f_values[0], df_dtheta_array[0], f_values[1:], df_dtheta_array[1:])
-        
-        return self._cache_result
+        print("Evaluating values for theta:", theta[0:10])        
+        if self._cache_theta_val is None or not onp.array_equal(theta, self._cache_theta_val):
+            print("\t cache miss, calculating")
+            self._cache_theta_val = onp.array(theta).copy()
+            pv = self.f_theta_parametrisation_values[0](theta)
+            f_values = self.parametrised_objective.objective_and_constraints(pv)
+
+            self._cache_val = onp.array(f_values).copy()
+            print("\tValues: ", f_values)
+
+        return self._cache_val
+    
+    def evaluate_jac(self, theta):
+        theta = jnp.asarray(theta)
+        print("Evaluating jac for theta:", theta[0:10])
+        if self._cache_theta_jac is None or not onp.array_equal(theta, self._cache_theta_jac):
+            print("\t cache miss, calculating")
+            self._cache_theta_jac = onp.array(theta).copy()
+
+            pv = self.f_theta_parametrisation_values[0](theta)
+            df = self.parametrised_objective.grad_objective_and_constraints(pv)
+            self._cache_jac = onp.array(self.f_theta_parametrisation_values[1](df)).copy()
+
+        return self._cache_jac
+
 
     def objective(self, x):
-        obj, *_ = self.evaluate_all(x)
-        return float(obj)
-
-    def grad_objective(self, x):
-        _, grad_obj, _, _ = self.evaluate_all(x)
-        return jnp.array(grad_obj).astype(float)
+        f, *_ = self.evaluate_values(x)
+        return float(f)
 
     def constraints(self, x):
-        _, _, cons, _ = self.evaluate_all(x)
-        return [float(c) for c in cons]
+        _, *c = self.evaluate_values(x)
+        return onp.asarray(c, float)
+
+    def grad_objective(self, x):
+        g, *_ = self.evaluate_jac(x)
+        return onp.asarray(g, float)
 
     def jac_constraints(self, x):
-        _, _, _, jac_cons = self.evaluate_all(x)
-        return [jnp.array(j).astype(float) for j in jac_cons]
+        _, *J = self.evaluate_jac(x)
+        return onp.asarray(J, float)
