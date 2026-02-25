@@ -33,7 +33,11 @@ This scattering operator provides the coupling between different energy groups.
 
 The multigroup transport equation structure is then as (note that all terms, and in fact operators themselves, still depend on :math:`\mathbf{r}` and :math:`\Omega`):
 
+
+
 .. math::
+    :label: eq:multigroup
+
     \begin{bmatrix} \mathcal{T}_0  - \mathcal{S}_{00} & -\mathcal{S}_{01} & \cdots & -\mathcal{S}_{0G} \\ -\mathcal{S}_{10} & \mathcal{T}_1  - \mathcal{S}_{11}& \cdots & -\mathcal{S}_{1G  } \\ \vdots & \vdots & \ddots & \vdots \\ -\mathcal{S}_{G0} & -\mathcal{S}_{G1} & \cdots & \mathcal{T}_G-  \mathcal{S}_{GG}\end{bmatrix}  \cdot \begin{bmatrix} \psi_0 \\ \psi_1 \\ \vdots \\ \psi_G\end{bmatrix} =  \begin{bmatrix} Q_0 \\ Q_1 \\ \vdots \\ Q_G\end{bmatrix}
 
 Now, if the scattering operator only has downscatter, this implies that all :math:`S_{gg'}` with :math:`g' > g` are zero. This results in a lower-triangular operator structure, which can be solved by forward substitution (note the transpose can be solved by backward substitution!).

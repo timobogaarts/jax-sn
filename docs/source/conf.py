@@ -39,6 +39,7 @@ html_static_path = ['_static']
 
 
 
+html_css_files = ["css/custom.css"]
 
 autodoc_default_options = {
     "members": True, # documents all members, including dataclasses fields
