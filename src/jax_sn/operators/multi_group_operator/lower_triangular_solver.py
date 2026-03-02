@@ -21,17 +21,11 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver):
             return solve_lower_triangular(solver_state, self.single_group_solver, rhs)
         
     
-    def allow_dependent_columns(self, operator):
+    def assume_full_rank() -> bool:
         '''
-        Dependent columns are not allowed (and not possible with a multigroup operator).
+        The operator is assumed to be full rank, as it is a lower triangular operator with non-singular diagonal blocks (the single group operators).
         '''
-        return False
-
-    def allow_dependent_rows(self, operator):
-        '''
-        Dependent rows are not allowed (and not possible with a multigroup operator).
-        '''
-        return False
+        return True    
 
     def transpose(self, solver_state : MultiGroupOperator, options):
         '''

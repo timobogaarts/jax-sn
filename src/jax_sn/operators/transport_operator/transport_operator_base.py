@@ -39,17 +39,11 @@ class TransportOperatorSolver(lx.AbstractLinearSolver):
         '''
         return solver_state._invert_internal(rhs), lx.RESULTS.successful, {}
 
-    def allow_dependent_columns(self, operator):
+    def assume_full_rank(self):
         '''
-        Dependent columns are not allowed (and not possible with a transport operator).
+        Assumes that the operator is full rank, which is true for the transport operator.
         '''
-        return False
-    
-    def allow_dependent_rows(self, operator):
-        '''
-        Dependent rows are not allowed (and not possible with a transport operator).
-        '''
-        return False
+        return True
     
     def transpose(self, solver_state, options):
         '''

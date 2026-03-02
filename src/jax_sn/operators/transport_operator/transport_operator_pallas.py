@@ -14,6 +14,8 @@ from .transport_operator_base import TransportOperator, SolutionDomainData
 
 from jax.experimental import pallas as pl
 
+from jax.experimental.pallas import triton as pltriton
+
 #======================================================================================================================================
 #  Pallas versions of batched and complete vmap sweeps
 #======================================================================================================================================
@@ -370,7 +372,8 @@ def sweep_pl_update(elements_toposort, gij_inv_all_ref,  qm_i_all_ref, dij_f_p_f
   '''
   return pl.pallas_call(_sweep_pl_update_kernel,
                         out_shape=jax.ShapeDtypeStruct(sweep_result.shape, sweep_result.dtype),
-                        grid=(1,), input_output_aliases={6: 0})(elements_toposort, gij_inv_all_ref,  qm_i_all_ref, dij_f_p_fm_all_ref, etoe_ref, abs_omega_dot_n_Je_ref, sweep_result)
+                        grid=(1,), input_output_aliases={6: 0},
+                        compiler_params = pltriton.CompilerParams())(elements_toposort, gij_inv_all_ref,  qm_i_all_ref, dij_f_p_fm_all_ref, etoe_ref, abs_omega_dot_n_Je_ref, sweep_result)
 
 def _next_power_of_two(n: int) -> int:
     """Return next power-of-two >= n."""
