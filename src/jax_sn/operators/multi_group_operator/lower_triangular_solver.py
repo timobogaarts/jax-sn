@@ -21,7 +21,7 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver):
             return solve_lower_triangular(solver_state, self.single_group_solver, rhs)
         
     
-    def assume_full_rank() -> bool:
+    def assume_full_rank(self) -> bool:
         '''
         The operator is assumed to be full rank, as it is a lower triangular operator with non-singular diagonal blocks (the single group operators).
         '''
