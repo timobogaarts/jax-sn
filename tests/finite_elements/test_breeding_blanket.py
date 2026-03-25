@@ -1,11 +1,23 @@
 import numpy as onp
 import jax.numpy as jnp
 import jax 
+from jax_sn.operators.multi_group_operator.adjoint_multigroup_operator import solve_multigroup_operator_rhs_adjoint
+from jax_sn.operators.multi_group_operator.right_hand_side import TotalSource, solve_multigroup_operator_rhs
 import pytest
 
 jax.config.update("jax_enable_x64", True)
 
 def bb_data_dict():
+    '''
+    4-group multigroup cross-section data for a simplified ITER-like breeding blanket slab geometry.
+
+    Each material entry is a tuple of:
+      - total cross-sections: shape (n_groups,)
+      - scattering matrix:    shape (n_l_moments, n_groups, n_groups), lower-triangular (downscattering only, except VVShield which has thermal upscattering)
+
+    Materials (in order along the slab, plasma-side to back):
+      Plasma, TungstenArmor, FirstWall, BreedingZone, BackSupportingStructure, VVWallFront, VVShield, VVWallBack
+    '''
     data_dict = {
         'BackSupportingStructure': (
             onp.array([14.77209636, 22.96845169, 54.47200191, 55.70180008]),
@@ -267,13 +279,16 @@ def bb_data_dict():
     return data_dict
 
 def base_region_sizes():
+    '''Physical widths (m) of each slab region: Plasma, TungstenArmor, FirstWall, BreedingZone, BackSupportingStructure, VVWallFront, VVShield, VVWallBack.'''
     region_sizes = [0.2, 0.002, 0.025, 0.5, 0.385, 0.06, 0.2, 0.06]
     return region_sizes
 
 def base_resolutions():
+    '''Number of elements per region along the transport direction.'''
     return [5,1,1,5,5,1,5,2]
 
 def _interp_x():
+    '''1000 interpolation points spanning the full slab, slightly inset from the boundaries.'''
     return onp.linspace(0 + 1e-5, onp.sum(base_region_sizes()) - 1e-5, 1000)
 
 def _bb_sb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order):    
@@ -304,6 +319,7 @@ def _bb_sb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim
 
 
 def setup_bb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order):
+    '''Build the jax-sn SolutionDomain, isotropic flat source, and TN quadrature set for the breeding blanket problem.'''
 
     from jax_sn.domain.geometric_domain import CrossSectionData
     from jax_sn.domain.domain_generation import create_cartesian_setup
@@ -339,6 +355,7 @@ def setup_bb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_d
     return solution_domain, sources, create_tn_quadrature_set(tn_order)
 
 def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order):
+    '''Construct all operators (transport, mass, moment, scatter) and the MultiGroupOperatorScan for the breeding blanket problem.'''
     from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
     from jax_sn.operators.transport_operator import TransportOperatorMultipleAnglesVmap, TransportOperatorVmap
     from jax_sn.operators.mass_operator import MassOperatorVmap
@@ -403,9 +420,43 @@ def _get_expected_values_sb_bb(dim, degree):
     phisb = [SB.Generic_Elements.Interpolate_Moments(xyz, nte.global_moment_solution, nte.energy_set[i], 0, 0) * onp.sqrt(4 * onp.pi) for i in range(n_groups)]
     return phisb
 
+def test_bb_right_hand_side(_setup_bb):
+    '''
+    Verify that IsotropicSourceSingleGroup + solve_multigroup_operator_rhs produces the same
+    solution as manually constructing the preconditioned RHS and calling solve_lower_triangular.
+    '''
+    import lineax as lx
+    MGOP, source_eg0, solution_domain, bb_args = _setup_bb
+    rhs_eg0 = MGOP.moment_operator.mv(MGOP.transport_operator.to_energy_group(0).inv(MGOP.mass_operator.mv(source_eg0)))
+    rhs_total = jnp.stack([rhs_eg0] + [jnp.zeros_like(rhs_eg0) for _ in range(MGOP.n_energy_groups -1)], axis =0)
+    bicgstab_solver = lx.BiCGStab(1e-20, 1e-20, max_steps = 300)
 
+    from jax_sn.operators.multi_group_operator import solve_lower_triangular
+
+    values_lower_triangular = solve_lower_triangular(MGOP, bicgstab_solver, rhs_total)[0]
+
+    from jax_sn.operators.multi_group_operator.right_hand_side import IsotropicSourceSingleGroup, solve_multigroup_operator_rhs
+    rhs_impl = IsotropicSourceSingleGroup.from_operator(MGOP, source_eg0[0] * onp.sqrt(onp.pi * 4), 0)
+
+    from jax_sn.operators.multi_group_operator import MultiGroupLowerTriangularBlockSolver
+    solver_lt = MultiGroupLowerTriangularBlockSolver(bicgstab_solver)
+    solution2 = solve_multigroup_operator_rhs(MGOP, rhs_impl, solver_lt)
+
+    onp.testing.assert_allclose(onp.array(values_lower_triangular), onp.array(solution2.value), rtol=1e-12, atol = 1e-12)
+
+
+
+    
 
 def test_bb(_setup_bb, expected_value_function = _get_expected_values_sb_bb):
+    '''
+    Accuracy test against a StellBlanket reference solution for a 4-group isotropic-source breeding blanket problem.
+
+    Checks both solve_lower_triangular and lx.linear_solve (global BiCGStab) against interpolated
+    scalar flux moments from StellBlanket along 1000 points spanning the slab.
+
+    Tolerances: dim=1,2 use rtol=1e-10 (accuracy); dim=3 uses a coarser mesh so rtol~0.38 (regression only).
+    '''
     import lineax as lx
     MGOP, source_eg0, solution_domain, bb_args = _setup_bb
 
@@ -442,6 +493,10 @@ def test_bb(_setup_bb, expected_value_function = _get_expected_values_sb_bb):
 
 
 def test_bb_moment_operator_transpose(_setup_bb):
+    '''
+    Verify the Euclidean adjointness of the MultiGroupOperator: checks <y, Ax> == <A^T y, x>
+    to rtol=1e-12 with random vectors, using the breeding blanket operator.
+    '''
     MGOP, source_eg0, solution_domain, bb_args = _setup_bb
     onp.random.seed(13012026)
     x = onp.random.rand(*MGOP.in_structure().shape)
@@ -453,6 +508,13 @@ def test_bb_moment_operator_transpose(_setup_bb):
 
 
 def test_solving_mg_total_single_and_transpose(_setup_bb):
+    '''
+    Check that the lower-triangular block solver and the global BiCGStab solver agree to rtol=1e-12
+    for both the forward and transposed operator. Also verifies the residual is near zero.
+
+    Uses convert_to_lower_block_triangular() since the full BB problem has thermal upscattering
+    which breaks strict lower-triangularity.
+    '''
     import lineax as lx 
     MGOP,_, _, _ = _setup_bb
     MGOP = MGOP.convert_to_lower_block_triangular() # the example isn't actually lower block triangular due to thermal scattering. we just remove it for this test
@@ -483,10 +545,14 @@ def test_solving_mg_total_single_and_transpose(_setup_bb):
 
     
 def test_mg_with_and_without_checkpoint(_setup_bb):
+    '''
+    Check that MultiGroupOperatorScanCheckpoint (gradient-checkpointed) gives identical matvec
+    results to MultiGroupOperatorScan for both forward and transpose, to rtol=1e-12.
+    '''
 
     MGOP, _, _, _ = _setup_bb
 
-    MGOP.convert_to_lower_block_triangular()
+    
 
     from jax_sn.operators.multi_group_operator.multi_group_operator_imp import MultiGroupOperatorScanCheckpoint
 
@@ -506,6 +572,14 @@ def test_mg_with_and_without_checkpoint(_setup_bb):
     onp.testing.assert_allclose(onp.array(x2), onp.array(x2_cp), rtol=1e-12, atol = 1e-12)
 
 def test_mg_reduced_quadrature(_setup_bb):
+    '''
+    Verify that a reduced quadrature set (fewer angular dimensions than the full 3D set) gives
+    identical solutions to the full set when solving in lower spatial dimensions.
+
+    - dim=1: 1D, 2D, and 3D quadrature sets should all agree (all reduce to the same 1D problem)
+    - dim=2: 2D and 3D quadrature sets should agree
+    - dim=3: skipped (no reduction possible)
+    '''
 
     MGOP, _, solution_domain, ani_args = _setup_bb
     
@@ -558,4 +632,52 @@ def test_mg_reduced_quadrature(_setup_bb):
         pass
 
         
+def test_continuous_adjoint_implementation(_setup_bb):
+    '''
+    Verify that the adjoint operator works in 1D. Instead of a full phase-space integral, we just perform a 1D integral of solution in both cases by interpolating both solution and source.
+    Note that because the source is isotropic, we can just test only the scalar flux; the other moments are zeroed out by the application of the source.
+
+    This is not expected to hold to numerical accuracy: the discrete adjoint is not the adjoint of the discrete operator. Furthermore, the integral is on a set of quadrature points.
+    Finally, the random source can be very noisy; it's not guaranteed that the solution will be converged spatially.
     
+    '''
+    import lineax as lx
+    MGOP, _, solution_domain, _ = _setup_bb
+
+    if solution_domain.dimension != 1:
+        pytest.skip("Continuous adjoint test only implemented for 1D: it interpolates along a line instead of a full 6D space integral")
+
+    onp.random.seed(16012026)
+    x = onp.random.rand(*MGOP.in_structure().shape)
+
+    seed = onp.random.seed(25032026)
+
+    source_shape_isotropic = (MGOP.n_energy_groups, MGOP.n_elements, MGOP.n_basis)
+
+    source_total = onp.random.random(source_shape_isotropic)
+    source_dagger_total = onp.random.random(source_shape_isotropic)
+
+    from jax_sn.operators.multi_group_operator.adjoint_multigroup_operator import AdjointMultiGroupOperatorScan
+    from jax_sn.operators.multi_group_operator.right_hand_side import TotalSource
+
+    rhs = TotalSource.from_operator_and_isotropic_source(MGOP, source_total* onp.sqrt(onp.pi * 4))
+    rhs_dagger = TotalSource.from_operator_and_isotropic_source(MGOP, source_dagger_total* onp.sqrt(onp.pi * 4))
+
+    solver = lx.BiCGStab(rtol=1e-12, atol=1e-15, max_steps=160)
+
+    adjoint_op = AdjointMultiGroupOperatorScan.from_multigroup_operator(MGOP)
+    
+    solution_adjoint = solve_multigroup_operator_rhs_adjoint(adjoint_op, rhs_dagger, solver)
+    solution         =  solve_multigroup_operator_rhs(MGOP, rhs, solver)
+
+    
+    x = jnp.linspace(0, jnp.max(MGOP.domain.vertices), 800)
+    result = solution_domain.interpolate(x[:,None], solution.value[:,0])
+    result_adjoint = solution_domain.interpolate(x[:,None], solution_adjoint.value[:,0])
+    source_interp = solution_domain.interpolate(x[:,None], source_total)
+    source_interp_dagger = solution_domain.interpolate(x[:,None], source_dagger_total)
+
+    psidagger_q = jnp.sum(result_adjoint * source_interp)
+    psi_qdagger = jnp.sum(result * source_interp_dagger)
+
+    onp.testing.assert_allclose(onp.array(psidagger_q), onp.array(psi_qdagger), rtol=1e-2, atol = 1e-2) # this is not expected to be very accurate for reasons described above; just checking the implementation is correct and gives a non-trivial result    

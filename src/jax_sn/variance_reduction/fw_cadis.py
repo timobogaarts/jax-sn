@@ -3,52 +3,42 @@ from ..operators.multi_group_operator.multi_group_operator_imp import _solve_mul
 import jax.numpy as jnp
 import lineax as lx
 import jax
+from jax_sn.operators.multi_group_operator.right_hand_side import RightHandSide, solve_multigroup_operator_rhs, TotalSource
+from jax_sn.operators.multi_group_operator.adjoint_multigroup_operator import solve_multigroup_operator_rhs_adjoint, AdjointMultiGroupOperator, AdjointMultiGroupOperatorScan
+from typing import Type
+import equinox as eqx
 
-
-
-def run_fw_cadis(operator : MultiGroupOperator, rhs : jnp.ndarray, solver : lx.AbstractLinearSolver):
+@eqx.filter_jit
+def fw_cadis_scalar_flux(operator : MultiGroupOperator, rhs : RightHandSide, solver : lx.AbstractLinearSolver, adjoint_operator_cls : Type[AdjointMultiGroupOperator] = AdjointMultiGroupOperatorScan) -> jnp.ndarray:
     r'''
     Runs the FW-CADIS algorithm to compute an importance map for variance reduction.
-
-    We compute the forward solution to obtain a value :math:`\phi_{g,lm,e,i}`.
-
-    This is averaged over each element to obtain a positive definite value for the scalar flux.
-
-    We then discretize this lm bsed value to obtain a psi value. This can be rather unstable:
-    the expansion of the coefficients can be very close to zero.
-
-    We use the adjoint of the discrete operator. This is not necessarily equal to the discrete of the adjoint.
     
     Parameters
     ----------
     operator : MultiGroupOperator
         The multi-group operator for which to compute the importance map.
-    rhs : jnp.ndarray
-        The right-hand side of the equation to solve, typically representing a response function. 
-        Must have shape [n_energy_groups, n_angles, n_elements, n_basis] matching the operator structure.
+    rhs : RightHandSide
+        The right-hand side of the equation to solve, typically representing a response function.         
     solver : lx.AbstractLinearSolver
         The linear solver to use for solving the linear systems in the FW-CADIS algorithm.
     
     Returns
     -------
     '''
-    forward_result = _solve_multigroup_operator_rhs_scan(operator, rhs, solver)
+    assert isinstance(operator, MultiGroupOperator), f"operator must be an instance of MultiGroupOperator, but got {type(operator)}."
+    assert isinstance(adjoint_operator_cls, type) and issubclass(adjoint_operator_cls, AdjointMultiGroupOperator), f"adjoint_operator_cls must be a subclass of AdjointMultiGroupOperator, but got {adjoint_operator_cls}."
+    adjoint_mgop = adjoint_operator_cls.from_multigroup_operator(operator)
+    forward_result = solve_multigroup_operator_rhs(operator, rhs, solver)
 
     integration_coeff = operator.solution_domain_data.fem_matrices.integration_coeff
+    forward_average_result = jnp.einsum("gei,i->ge", forward_result.value[:,0,...], integration_coeff) # scalar flux [n_groups, n_elements]
 
-    forward_average_result = jnp.einsum("glei,i->gle", forward_result.value, integration_coeff)
+    one_over_phi = 1.0 / forward_average_result
 
-    def _scan_fn(carry, x):
-        operator, forward_average_result = carry
-        g = x
-        psi_average_g = operator.discrete_operator.mv(forward_average_result[g]) # [l, e] -> [k, e]
-        return (operator, forward_average_result), psi_average_g
+    qdagger_isotropic = jnp.stack([one_over_phi] * adjoint_mgop.n_basis, axis = -1)
 
-    _, psi_average = jax.lax.scan(_scan_fn, (operator, forward_average_result), jnp.arange(operator.n_energy_groups))
-    
-    one_d_psi_average =  1.0 / psi_average # [g, l, e] 
+    qdagger_rhs = TotalSource.from_operator_and_isotropic_source(adjoint_mgop, qdagger_isotropic)
 
-    adjoint_source = jnp.stack([one_d_psi_average] * operator.n_basis, axis=-1)
+    adjoint_result = solve_multigroup_operator_rhs_adjoint(adjoint_mgop, qdagger_rhs, solver)
 
-    
-    mgop_adjoint = operator.transpose() # THIS IS NOT THE
+    return adjoint_result.value

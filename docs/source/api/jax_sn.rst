@@ -21,3 +21,4 @@ Subpackages
    jax_sn.solution_domain
    jax_sn.source
    jax_sn.tools
+   jax_sn.variance_reduction

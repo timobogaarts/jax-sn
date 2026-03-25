@@ -1,5 +1,5 @@
-from . import fw_cadis
+from .fw_cadis import fw_cadis_scalar_flux
 
 __all__ = [
-    "fw_cadis"
+    "fw_cadis_scalar_flux"
 ]

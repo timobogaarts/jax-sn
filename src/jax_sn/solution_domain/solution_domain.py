@@ -80,7 +80,12 @@ class SolutionDomain(eqx.Module):
         
     def interpolate(self, points : jnp.ndarray, solution : jnp.ndarray):
         assert points.ndim == 2 and points.shape[1] == self.dimension, f"Points must be of shape (n_points, dimension) but got {points.shape} with domain dimension {self.dimension}"
-        return _interpolate_from_solution_domain(points, self, solution)
+        assert solution.shape[-2:] == self.elements_basis_shape.shape, f"Solution must be of shape {self.elements_basis_shape} but got {solution.shape}"
+        assert solution.ndim in (2,3), f"Solution must be of shape (n_elements, n_basis) or (n_solutions, n_elements, n_basis) but got {solution.shape}"
+        if solution.ndim == 2:
+            return _interpolate_from_solution_domain(points, self, solution)
+        else:
+            return _interpolate_from_solution_domain_solution_batch(points, self, solution)
     
     @property
     def domain(self) -> Domain:
@@ -114,11 +119,21 @@ class SolutionDomain(eqx.Module):
         return self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group)
     
 
-
 def _interpolate_from_solution_domain(points, solution_domain : SolutionDomain, solution : jnp.ndarray):
     '''
     Interpolate the solution at given points from the solution domain
     '''
     indices_elem = solution_domain.domain.containing_cell(points)
     return jnp.where(indices_elem >=0, solution_domain.element.interpolate_from_real_coordinate(points, indices_elem, solution_domain.domain, solution_domain.precomputed_geometric_data, solution), jnp.nan)
+
+
+def _interpolate_from_solution_domain_solution_batch(points, solution_domain : SolutionDomain, solution : jnp.ndarray):
+    '''
+    Interpolate the solution at given points from the solution domain for a batch of solutions
+    '''
+    indices_elem = solution_domain.domain.containing_cell(points)
+    
+    return jax.vmap(lambda solution_i: jnp.where(indices_elem >=0, solution_domain.element.interpolate_from_real_coordinate(points, indices_elem, solution_domain.domain, solution_domain.precomputed_geometric_data, solution_i), jnp.nan), in_axes=0)(solution)
+
+
     

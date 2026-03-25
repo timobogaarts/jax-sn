@@ -62,8 +62,8 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinear
 
     The single group system is then solved with the :class:`SingleGroupOperator` for energy group g.
 
-    Memory footprint
-    ------------------
+    *Memory footprint*
+    
     Theoretically, it uses (for a discrete angle array :math:`D\in \mathcal{D}\times \mathcal{F}`, and a moment array :math:`M \in \mathcal{<}\times \mathcal{F}` (we don't take into account the batching temporaries from a batched transport operator)):
 
     .. math::
@@ -114,7 +114,7 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinear
     return  solution, result, {'num_steps_per_group' : n_steps}
 
 @eqx.filter_jit
-def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jnp.ndarray) -> jnp.ndarray:
+def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver : lx.AbstractLinearSolver, rhs : jnp.ndarray) -> jnp.ndarray:
     r'''
     Solve the linear system using a given solver, assuming the multi-group operator is lower triangular.
     This is useful for e.g. downscattering only problems. 
@@ -147,8 +147,8 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jn
     
     The single group system is then solved with the :class:`SingleGroupOperatorTranspose` for each specific energy group
 
-    Technical note
-    ------------------
+    *Technical note*
+    
     The single group operator is solved using an iterative solver by definition. We do not have a matrix representation of the single group operator transpose, so we cannot use a direct solver.
     The lineax linear solvers do not necessarily check whether the right-hand-side is zero, so we do that here to avoid unnecessary work and to avoid NaNs in the solution. 
     It is an issue here because the differentiating through a forward linear solve involves a solution of the adjoint system, which can have a zero right-hand side in some energy groups (when one of the the objective functions does not depend on that energy group).
@@ -161,8 +161,8 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver, rhs : jn
     will immediately break (the reason is that in those specific regions, the resulting :math:`p` & :math:`v` will be the same as the initial guess, such that the :math:`s` and :math:`t` vectors become zero in those regions, which makes the updated residual also zero in those regions, leading to <r0, r>=0).
     By setting the initial guess to the right-hand side, we avoid this issue, as the transport immediately creates a much less sparse residual (r0 = Ay0 - b).
 
-    Memory footprint
-    ------------------
+    *Memory footprint*
+    
     Theoretically, it uses (for a discrete angle array :math:`D\in \mathcal{D}\times \mathcal{F}`, and a moment array :math:`M \in \mathcal{<}\times \mathcal{F}` (we don't take into account the batching temporaries from a batched transport operator)):
 
     .. math::

@@ -23,12 +23,12 @@ class GatherScatterOperator(eqx.Module):
     ============
 
     .. math::
-        \mathbf{U}_{g_{out}} = \bar{\matbhf{U}}_{g_{out}} \otimes \mathbf{I}_{\mathcal{B}} :\mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B} \to \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B}
+        \mathbf{U}_{g_{out}} = \bar{\mathbf{U}}_{g_{out}} \otimes \mathbf{I}_{\mathcal{B}} :\mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B} \to \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B}
 
     with 
 
     .. math::
-        \mathbf{\mathbf{U}}_{g_{out}} [\psi] = \sum_{g_{in}} \sigma_{\ell g_{out} g_{in},e} \psi_{g_{in}\ell e}
+        \mathbf{U}_{g_{out}} [\psi] = \sum_{g_{in}} \sigma_{\ell g_{out} g_{in},e} \psi_{g_{in}\ell e}
 
     for some :math:`\psi\in \mathcal{M} \otimes \mathcal{E}` (we use :math:`\ell` to denote :math:`(l,m)` moment index for brevity; for :math:`\sigma_{\ell}` this just equals :math:`\sigma_{l}` for all :math:`m`).  It acts trivially on the basis functions in each element.
 
@@ -36,12 +36,12 @@ class GatherScatterOperator(eqx.Module):
     ============
 
     .. math::
-        \mathbf{V}_{g_{in}} = \bar{\matbhf{V}}_{g_{out}} \otimes \mathbf{I}_{\mathcal{B}} : \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B} \to  \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B}
+        \mathbf{V}_{g_{in}} = \bar{\mathbf{V}}_{g_{out}} \otimes \mathbf{I}_{\mathcal{B}} : \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B} \to  \mathcal{M} \otimes \mathcal{E}\otimes \mathcal{B}
 
     with
     
     .. math::
-        \mathbf{\mathbf{V}}_{g_{in}} [\psi] = \sum_{g_{out}} \sigma_{\ell g_{out} g_{in},e} \psi_{g_{out}\ell e}
+       \mathbf{V}_{g_{in}} [\psi] = \sum_{g_{out}} \sigma_{\ell g_{out} g_{in},e} \psi_{g_{out}\ell e}
     
     '''
     cross_sections_indexed : CrossSectionsIndexed

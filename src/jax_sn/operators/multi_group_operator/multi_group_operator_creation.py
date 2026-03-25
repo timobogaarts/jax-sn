@@ -9,8 +9,8 @@ from typing import Dict, Type
 from jax_sn.solution_domain import SolutionDomain
 import jax.numpy as jnp
 
-def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set : QuadratureSet, 
-                                single_angle_transport_operator_cls : Type[TransportOperator] = TransportOperatorVmap, 
+def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set : QuadratureSet,
+                                single_angle_transport_operator_cls : Type[TransportOperator] = TransportOperatorVmap,
                                 single_angle_transport_operator_cls_kwargs : Dict = {},
                                 multi_angle_transport_operator_cls : Type[TransportOperatorMultipleAngles] = TransportOperatorMultipleAnglesVmap,
                                 multi_angle_transport_operator_cls_kwargs : Dict = {},
@@ -21,8 +21,38 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
                                 multi_group_operator_cls : Type[MultiGroupOperatorScan] = MultiGroupOperatorScan,
                                 multi_group_operator_cls_kwargs : Dict = {}
                                 ) -> MultiGroupOperator:
-    '''
+    r'''
     Create a MultiGroupOperator for the given solution domain and quadrature set. Can provide custom types for each of the sub-operators, including possible kwargs.
+
+    Parameters
+    ----------
+    solution_domain : SolutionDomain
+        The solution domain for which to create the multi group operator.
+    quadrature_set : QuadratureSet
+        The quadrature set for which to create the multi group operator.
+    single_angle_transport_operator_cls : Type[TransportOperator], optional
+        The class to use for the single angle transport operator, by default :class:`TransportOperatorVmap`
+    single_angle_transport_operator_cls_kwargs : Dict, optional
+        The kwargs to use for the single angle transport operator, by default {}
+    multi_angle_transport_operator_cls : Type[TransportOperatorMultipleAngles], optional
+        The class to use for the multi angle transport operator, by default :class:`TransportOperatorMultipleAnglesVmap`
+    multi_angle_transport_operator_cls_kwargs : Dict, optional
+        The kwargs to use for the multi angle transport operator, by default {}
+    mass_operator_cls : Type[MassOperator], optional
+        The class to use for the mass operator, by default :class:`MassOperatorVmap`
+    mass_operator_cls_kwargs : Dict, optional
+        The kwargs to use for the mass operator, by default {}
+    gather_scatter_operator_cls : Type[GatherScatterOperator], optional
+        The class to use for the gather scatter operator, by default :class:`GatherScatterOperatorBroadcasted`
+    gather_scatter_operator_cls_kwargs : Dict, optional
+        The kwargs to use for the gather scatter operator, by default {}
+    multi_group_operator_cls : Type[MultiGroupOperatorScan], optional
+        The class to use for the multi group operator, by default :class:`MultiGroupOperatorScan`
+
+    Returns
+    -------
+    MultiGroupOperator
+        The created multi group operator.
     '''
     
     n_energy_groups           = solution_domain.domain.cross_sections_indexed.n_energy_groups
