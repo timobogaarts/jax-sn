@@ -79,6 +79,7 @@ class SolutionDomain(eqx.Module):
             element)
         
     def interpolate(self, points : jnp.ndarray, solution : jnp.ndarray):
+        assert points.ndim == 2 and points.shape[1] == self.dimension, f"Points must be of shape (n_points, dimension) but got {points.shape} with domain dimension {self.dimension}"
         return _interpolate_from_solution_domain(points, self, solution)
     
     @property
@@ -97,6 +98,9 @@ class SolutionDomain(eqx.Module):
     @property 
     def n_elements(self) -> int:
         return self.solution_domain_data.domain.n_elements
+    @property 
+    def dimension(self) -> int:
+        return self.solution_domain_data.domain.vertices.shape[-1]
     
     @property 
     def elements_basis_shape(self) -> jax.ShapeDtypeStruct:

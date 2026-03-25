@@ -495,8 +495,56 @@ def _solve_multigroup_operator_rhs_scan(operator : MultiGroupOperator, rhs : jnp
     lx.LinearSolveOutput
         The solution output from lineax.
     '''
+    expected_shape = tuple([operator.out_structure().shape[0]] + [operator.n_angles] + [operator.n_elements] + [operator.n_basis])
+    assert rhs.shape == expected_shape, f"RHS shape {rhs.shape} does not match expected operator structure [n_energy_groups, n_angles, n_elements, n_basis]: \
+                                                        {expected_shape}."
+
     def body_fn(_, g_i):        
         return None, operator.moment_operator.mv(operator.transport_operator.to_energy_group(g_i).inv(operator.mass_operator.mv(rhs[g_i])))
 
-    rhs_mtinvh = jax.lax.scan(body_fn, None, jnp.arange(operator.n_energy_groups))[1]    
+    rhs_mtinvh = jax.lax.scan(body_fn, None, jnp.arange(operator.n_energy_groups))[1]
     return lx.linear_solve(operator, rhs_mtinvh, solver)
+
+
+@eqx.filter_jit
+def _solve_multigroup_operator_rhs_scan_adjoint(operator : MultiGroupOperator, rhs : jnp.ndarray, solver : lx.AbstractLinearSolver):
+    r'''
+    Solve the adjoint multi-group operator system :math:`A^T \xi = f^\dagger` using an iterative solver.
+
+    The right-hand side preprocessing mirrors the forward case but uses the adjoint operators:
+
+    .. math::
+        f^\dagger_g = D^T (T_g^T)^{-1} H \, q_{d,g}
+
+    where :math:`D^T` maps angles to moments without quadrature weights (contrast with :math:`M` in the forward,
+    which includes weights). This follows from the structure of :math:`A^T = I - S^T D^T H (T^T)^{-1} M^T`,
+    whose generation chain ends with :math:`D^T`.
+
+    Parameters
+    ----------
+    operator : MultiGroupOperator
+        The multi-group operator. The adjoint operator :math:`A^T` is formed internally via ``operator.transpose()``.
+    rhs : jnp.ndarray
+        The adjoint source (e.g. detector response) in angular flux space.
+        Must have shape ``[n_energy_groups, n_angles, n_elements, n_basis]``.
+    solver : lx.AbstractLinearSolver
+        The lineax solver to use.
+
+    Returns
+    -------
+    lx.LinearSolveOutput
+        The solution output from lineax, with value :math:`\xi` in moment space
+        ``[n_energy_groups, n_moments, n_elements, n_basis]``.
+    '''
+    expected_shape = tuple([operator.out_structure().shape[0]] + [operator.n_angles] + [operator.n_elements] + [operator.n_basis])
+    assert rhs.shape == expected_shape, f"RHS shape {rhs.shape} does not match expected operator structure [n_energy_groups, n_angles, n_elements, n_basis]: \
+                                                        {expected_shape}."
+
+    transport_operator_t = operator.transport_operator.transpose()
+    discrete_operator_t  = operator.discrete_operator.transpose()
+
+    def body_fn(_, g_i):
+        return None, discrete_operator_t.mv(transport_operator_t.to_energy_group(g_i).inv(operator.mass_operator.mv(rhs[g_i])))
+
+    rhs_dtinvh = jax.lax.scan(body_fn, None, jnp.arange(operator.n_energy_groups))[1]
+    return lx.linear_solve(operator.transpose(), rhs_dtinvh, solver)
