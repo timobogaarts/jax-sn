@@ -98,7 +98,7 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinear
     def body_fun(i, state):                
         solution, n_steps = state
         sgop = mgop.to_single_group_operator(i)        
-
+        jax.debug.print("Solving energy group {eg}. Total n_steps so far: {n_steps}", eg = i, n_steps = n_steps[:])
         rhs_i = rhs[i] + mgop.moment_operator.mv(sgop.transport_operator.inv(mgop.mass_operator.mv(mgop.discrete_operator.mv(mgop.gather_scatter_operator.gather_forward(solution, i)))))
         lxsolve = lx.linear_solve(sgop, rhs_i, solver, throw = False, options = {"y0" : rhs_i}) # Solve single group system
         
