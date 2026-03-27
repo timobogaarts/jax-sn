@@ -41,7 +41,7 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver):
 
 
 @eqx.filter_jit
-def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinearSolver, rhs : jnp.ndarray) -> jnp.ndarray:
+def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinearSolver, rhs : jnp.ndarray, diagnostic : bool = False) -> jnp.ndarray:
     r'''
     Solve the linear system using a given solver, assuming the multi-group operator is lower triangular.
     This is useful for e.g. downscattering only problems. 
@@ -98,7 +98,8 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinear
     def body_fun(i, state):                
         solution, n_steps = state
         sgop = mgop.to_single_group_operator(i)        
-        jax.debug.print("Solving energy group {eg}. Total n_steps so far: {n_steps}", eg = i, n_steps = n_steps[:])
+        if diagnostic:
+            jax.debug.print("Solving energy group {eg}. Total n_steps so far: {n_steps}", eg = i, n_steps = n_steps[:])
         rhs_i = rhs[i] + mgop.moment_operator.mv(sgop.transport_operator.inv(mgop.mass_operator.mv(mgop.discrete_operator.mv(mgop.gather_scatter_operator.gather_forward(solution, i)))))
         lxsolve = lx.linear_solve(sgop, rhs_i, solver, throw = False, options = {"y0" : rhs_i}) # Solve single group system
         
@@ -114,7 +115,7 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinear
     return  solution, result, {'num_steps_per_group' : n_steps}
 
 @eqx.filter_jit
-def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver : lx.AbstractLinearSolver, rhs : jnp.ndarray) -> jnp.ndarray:
+def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver : lx.AbstractLinearSolver, rhs : jnp.ndarray, diagnostic : bool = False) -> jnp.ndarray:
     r'''
     Solve the linear system using a given solver, assuming the multi-group operator is lower triangular.
     This is useful for e.g. downscattering only problems. 
@@ -186,6 +187,8 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver : lx.Abst
         The linear solver to use.
     rhs : jnp.ndarray
         The right-hand side.
+    diagnostic : bool, optional
+        Whether to print diagnostic information, by default False.
     Returns
     -------
     jnp.ndarray
@@ -204,6 +207,9 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver : lx.Abst
         solution, xi_g, n_steps = state        
         
         g_i     = n_groups - i - 1 # Upper triangular, so we go from high to low energy group
+
+        if diagnostic:
+            jax.debug.print("Solving energy group {eg}. Total n_steps so far: {n_steps}", eg = g_i, n_steps = n_steps[:])
         sgop_gi = sgop_t.to_energy_group(g_i)
 
         rhs_i   = rhs[g_i] + mgop.gather_scatter_operator.gather_backward(xi_g, g_i)
