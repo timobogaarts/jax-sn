@@ -86,6 +86,33 @@ class GeometricDomain:
             *_compute_domain_setup_from_mesh(mesh, face_template),
             face_template=face_template
         )
+    
+    @classmethod 
+    def from_mesh_numpy(cls, mesh : Tuple[jnp.ndarray, jnp.ndarray], face_template : jnp.ndarray):
+        '''
+        Constructs a GeometricDomain from a mesh and a face template (see `jax_sn.tools.mesh_tools._face_template` for an example template).
+
+        Uses a numpy implementation of the domain setup. This avoids compilation overheads of especially the lexsort, which can take significant time.
+        
+        Parameters
+        ----------
+        mesh : tuple
+            A tuple containing vertices and connectivity of the mesh. vertices is a jnp.ndarray of shape [n_vertices, n_dim] and connectivity is a jnp.ndarray of shape [n_elements, n_vertices_per_element].
+        face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
+            A 2D array representing the face template.
+        Returns
+        -------
+        domain : GeometricDomain
+            The constructed GeometricDomain.
+        '''
+        from jax_sn.tools.mesh_tools_numpy import _compute_domain_setup_from_mesh_numpy
+
+        domain_setup = _compute_domain_setup_from_mesh_numpy(mesh, face_template)
+
+        return cls(
+            *[jnp.array(x) for x in domain_setup],
+            face_template=jnp.array(face_template)
+        )
     @property
     def n_elements(self):
         '''Number of elements in the domain'''
@@ -152,6 +179,37 @@ class Domain(GeometricDomain):
             face_template         = face_template,
             cross_sections_indexed = cross_sections_indexed
         )    
+    
+    @classmethod
+    def from_mesh_and_cross_sections_numpy(cls, mesh : Tuple[jnp.ndarray, jnp.ndarray], face_template : jnp.ndarray, cross_sections_indexed : CrossSectionsIndexed):
+        '''
+        Constructs a Domain from a mesh, face template, and indexed cross sections. Checks compatibility between the mesh and cross sections.
+        Uses a numpy implementation of the domain setup. This avoids compilation overheads of especially the lexsort, which can take significant time.
+
+        Parameters
+        ----------
+        mesh : tuple
+            A tuple containing vertices and connectivity of the mesh. vertices is a jnp.ndarray of shape [n_vertices, n_dim] and connectivity is a jnp.ndarray of shape [n_elements, n_vertices_per_element].
+        face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
+            A 2D array representing the face template.
+        cross_sections_indexed : CrossSectionsIndexed
+            Indexed cross sections for the domain.
+        Returns
+        -------
+        domain : Domain
+            The constructed Domain.
+        '''
+        from jax_sn.tools.mesh_tools_numpy import _compute_domain_setup_from_mesh_numpy
+
+        _check_cross_section_compatibility(mesh[1].shape[0], cross_sections_indexed)
+        domain_setup = _compute_domain_setup_from_mesh_numpy(mesh, face_template)
+
+        return cls(
+            *[jnp.array(x) for x in domain_setup],
+            face_template=jnp.array(face_template),
+            cross_sections_indexed=cross_sections_indexed
+        )
+    
     @classmethod 
     def from_geometric_domain_and_cross_sections(cls, geometric_domain : GeometricDomain, cross_sections_indexed : CrossSectionsIndexed):        
         '''

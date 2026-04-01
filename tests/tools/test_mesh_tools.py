@@ -1,15 +1,64 @@
-import jax_sn 
-import jax 
+import jax_sn
+import jax
 import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
 import numpy as onp
 import pytest
+
+import jax_sn.tools.mesh_tools as mt
+import jax_sn.tools.mesh_tools_numpy as mt_np
+
+
 def n_theta_n_phi():
     return 10, 20
 
 
+# ---------------------------------------------------------------------------
+# Parametrised implementation fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(params=["jax", "numpy"])
+def compute_adjacency_fn(request):
+    if request.param == "jax":
+        return mt._compute_adjacency
+    else:
+        return mt_np._compute_adjacency_numpy
+
+
+@pytest.fixture(params=["jax", "numpy"])
+def compute_normals_fn(request):
+    if request.param == "jax":
+        return mt.compute_face_normal_vectors_from_3d_simplices
+    else:
+        return mt_np._compute_face_normals_numpy
+
+
+# ---------------------------------------------------------------------------
+# Adjacency tests
+# ---------------------------------------------------------------------------
+
+def _get_mesh(elem : str):
+    import jax_sbgeom
+    seed = 31032026
+    onp.random.seed(seed)
+    
+    if elem == "lines":
+        connectivity = jnp.stack([
+            jnp.arange(10),
+            jnp.arange(1, 11)
+        ], axis=-1)
+    elif elem == "triangles":
+        connectivity = jax_sbgeom.flux_surfaces.flux_surface_meshing._mesh_surface_connectivity(*n_theta_n_phi(), True, True)
+    elif elem == "tetrahedra":
+        connectivity = jax_sbgeom.flux_surfaces.flux_surface_meshing._mesh_tetrahedra_connectivity(10, True, False, *n_theta_n_phi())
+
+    n_vertices = onp.max(connectivity) + 1
+    n_dim = connectivity.shape[1] - 1
+    vertices = onp.random.random((n_vertices, n_dim))
+    return vertices, connectivity
+
 @pytest.mark.parametrize("elem", ["lines", "triangles", "tetrahedra"])
-def test_mesh_graph(elem):
+def test_mesh_graph(elem, compute_adjacency_fn):
     import jax_sbgeom
     if elem == "lines":
         connectivity = jnp.stack([
@@ -22,13 +71,13 @@ def test_mesh_graph(elem):
         connectivity = jax_sbgeom.flux_surfaces.flux_surface_meshing._mesh_tetrahedra_connectivity(10, True, False, *n_theta_n_phi())
 
     face_template = jax_sn.tools.mesh_tools._face_template(connectivity.shape[1])
-    
-    etoe, etof = jax_sn.tools.mesh_tools._compute_adjacency(connectivity, face_template)    
 
-    connectivity_i = connectivity[:, face_template] # [n_elements, n_faces_per_element, n_vertices_per_face]
+    etoe, etof = compute_adjacency_fn(connectivity, face_template)
+
+    connectivity_i = connectivity[:, face_template]                                           # [n_elements, n_faces_per_element, n_vertices_per_face]
     connectivity_i_sort = onp.sort(connectivity_i, axis=-1)
 
-    connectivity_j = onp.take_along_axis(connectivity[etoe],  face_template[etof], axis=-1) # [n_elements, n_faces_per_element, n_vertices_per_face]
+    connectivity_j = onp.take_along_axis(connectivity[etoe], face_template[etof], axis=-1)   # [n_elements, n_faces_per_element, n_vertices_per_face]
     connectivity_j_sort = onp.sort(connectivity_j, axis=-1)
 
     onp.where(etoe != -1,
@@ -36,26 +85,26 @@ def test_mesh_graph(elem):
               lambda: None)
 
 
-def test_surface_mesh_graph():
-    import jax_sbgeom 
+def test_surface_mesh_graph(compute_adjacency_fn):
+    import jax_sbgeom
 
     torus = jax_sbgeom.flux_surfaces.FluxSurface.from_rmnc_zmns_settings(Rmnc=jnp.array([5.0, 1.0])[None, :], Zmns=jnp.array([0.0, 1.0])[None, :], settings = jax_sbgeom.flux_surfaces.FluxSurfaceSettings(1, 0, 1))
     mesh  = jax_sbgeom.flux_surfaces.mesh_surface(torus, 1, jax_sbgeom.flux_surfaces.ToroidalExtent.half_module(torus), *n_theta_n_phi())
 
-    import trimesh 
-    
+    import trimesh
+
     tmesh = trimesh.Trimesh(vertices=onp.array(mesh[0]), faces=onp.array(mesh[1]))
     adjacency = tmesh.face_adjacency
 
     connectivity = mesh[1]
     face_template = jax_sn.tools.mesh_tools._face_template(connectivity.shape[1])
-    etoe, etof = jax_sn.tools.mesh_tools._compute_adjacency(connectivity, face_template)
+    etoe, etof = compute_adjacency_fn(connectivity, face_template)
 
     for i in range(adjacency.shape[0]):
         assert adjacency[i,1] in etoe[adjacency[i,0]]
-        
 
-def get_normal_case(plot = False):
+
+def get_normal_case(normals_fn, plot=False):
     '''
     The expected values in the test below where generated using this function with plot = False
     You  can run this function with plot = True to visualize the normals on the mesh.
@@ -76,7 +125,7 @@ def get_normal_case(plot = False):
 
         connectivity_check = mesh[1][i_checks, :]
         positions_simplices = mesh[0][connectivity_check]
-        normal_vecs = jsn.tools.mesh_tools.compute_face_normal_vectors_from_3d_simplices(positions_simplices, jsn.tools.mesh_tools._face_template(mesh[1].shape[1]))
+        normal_vecs = normals_fn(positions_simplices, jsn.tools.mesh_tools._face_template(mesh[1].shape[1]))
         centroids   = jsn.tools.mesh_tools.create_face_centroids_from_simplices(positions_simplices, jsn.tools.mesh_tools._face_template(mesh[1].shape[1]))
         if plot:
             import pyvista as pv
@@ -90,14 +139,14 @@ def get_normal_case(plot = False):
             plotter.add_arrows(onp.array(centroids.reshape(-1,3)), onp.array(normal_vecs.reshape(-1,3)), mag=0.1, color="red")
             plotter.show()
         return normal_vecs, centroids
-    
+
     normals_line, centroids_line = get_normal_centroids(mesh_line, [0,5,8])
     normals_surf, centroids_surf = get_normal_centroids(mesh_surf, [101, 63, 1001])
     normals_tet, centroids_tet   = get_normal_centroids(mesh_tet, [100, 200, 1300])
     return normals_tet, centroids_tet, normals_surf, centroids_surf, normals_line, centroids_line
 
-def test_normals():
-    normals_tet, centroids_tet, normals_surf, centroids_surf, normals_line, centroids_line = get_normal_case()
+def test_normals(compute_normals_fn):
+    normals_tet, centroids_tet, normals_surf, centroids_surf, normals_line, centroids_line = get_normal_case(compute_normals_fn)
 
     normals_tet_expected  = onp.array( [[[-0.48171403420675424, -0.012828024883804719, -0.8762345753426045], [0.9045644984521172, 0.024088515324778122, -0.42565574302424003], [-0.9049630122745709, 0.028706211035570237, 0.4245207884932329], [0.4466963052557006, -0.37449315058618826, 0.8125375628455194]], [[-0.4803485634402602, -0.038447712221161855, 0.8762345753426061], [-0.10629348564736354, 0.9943348002101373, 1.3050445248639804e-15], [-0.8359341549258195, -0.11986616528563952, -0.5355802377311656], [0.9020004121035098, 0.07219726446051544, 0.4256557430242389]], [[-0.43336485391955165, -0.21073175451611229, -0.8762345753426115], [0.8137742185112941, 0.3957129132550689, -0.4256557430242414], [-0.8359525433318875, -0.3478008703756095, 0.42452078849323405], [0.5615223217806451, -0.15644612845041392, 0.8125375628455278]]] )
     centroids_tet_expected= onp.array( [[[4.946275532821327, 0.08786433214808088, -0.09829563075681683], [4.963758795800336, 0.17656795688504529, -0.06702422610859404], [4.959682962340562, 0.17656795688504529, -0.0647835177025198], [4.962022785885564, 0.08870362473696441, -0.0647835177025198]], [[4.9275932998402805, 0.4383903042037992, 0.0982956307568168], [4.936260727126809, 0.5276817814679939, 0.06478351770251979], [4.943273565277761, 0.4400665103155369, 0.06478351770251979], [4.947326308326676, 0.44049974486089455, 0.06702422610859403]], [[4.467943883570577, 2.1238736404774654, -0.09829563075681683], [4.447211332119091, 2.211874542951139, -0.06702422610859404], [4.443499736442254, 2.2101903588983975, -0.0647835177025198], [4.481937073862664, 2.1311448863520237, -0.0647835177025198]]] )
@@ -112,3 +161,17 @@ def test_normals():
     onp.testing.assert_allclose(centroids_surf, centroids_tri_expected, atol = 1e-12)
     onp.testing.assert_allclose(normals_line, normals_lin_expected, atol = 1e-12)
     onp.testing.assert_allclose(centroids_line, centroids_lin_expected, atol = 1e-12)
+
+
+@pytest.mark.parametrize("elem", ["lines", "triangles", "tetrahedra"])
+def test_jax_and_numpy_equal(elem):
+
+    mesh = _get_mesh(elem) # to trigger any lazy compilation in the mesh generation code
+
+    face_template = jax_sn.tools.mesh_tools._face_template(mesh[1].shape[1])
+
+    
+    domain_1 = jax_sn.domain.geometric_domain.GeometricDomain.from_mesh(mesh, face_template)
+    domain_2 = jax_sn.domain.geometric_domain.GeometricDomain.from_mesh_numpy(mesh, face_template)
+
+    jax_sn.tools.assert_pytree_allclose(domain_1, domain_2)
