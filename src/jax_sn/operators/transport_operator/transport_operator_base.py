@@ -385,6 +385,10 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
     def _invert_internal(self, b : jnp.ndarray) -> jnp.ndarray:
         ...
 
+
+    def _base_inv_args(self, b : jnp.ndarray):
+        return self.transport_operator._base_inv_args(b)
+
     def inv(self, b : jnp.ndarray) -> jnp.ndarray:
         r'''
         Solves the system :math:`\mathbf{T}_g x = b` for `x` using the internal sweep inversion for multiple angles.

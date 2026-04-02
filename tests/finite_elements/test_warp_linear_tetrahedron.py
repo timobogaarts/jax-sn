@@ -13,28 +13,6 @@ from jax_sn.operators.transport_operator import (
 )
 from jax_sn.tools.setup_test_mgop import make_xs_test, setup_layered_slab_mgop
 
-
-# ---------------------------------------------------------------------------
-# Operator variants to compare.
-# Each entry: (id, single_cls, multi_cls, single_kwargs, multi_kwargs)
-# ---------------------------------------------------------------------------
-
-OPERATOR_CONFIGS = [
-    pytest.param(
-        TransportOperatorVmap, TransportOperatorMultipleAnglesVmap, {}, {},
-        id="vmap",
-    ),
-    pytest.param(
-        TransportOperatorBatched, TransportOperatorMultipleAnglesVmap, {}, {},
-        id="batched",
-    ),
-    # pytest.param(
-    #     TransportOperatorWarp, TransportOperatorMultipleAnglesVmap, {}, {},
-    #     id="warp",
-    # ),
-]
-
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -53,18 +31,14 @@ def _build_base_mgop():
         transverse_specs=[(2.0, 2), (1.523, 3)],
     )
 
-
-
 class TestWarpTransportOperator:
 
     @pytest.fixture(scope="class", autouse=True)
     def setup_class_fixtures(self, request):
-        from jax_sn.operators.transport_operator.linear_tetrahedron_warp_kernel import WarpSweep
+
         """Build the reference mgop and its solution once for the entire class."""
 
         onp.random.seed(2042026)
-
-
 
         base_mgop = _build_base_mgop()
 
@@ -72,8 +46,7 @@ class TestWarpTransportOperator:
         request.cls.base_mgop      = base_mgop
 
         request.cls.xs_0 = self.base_mgop.domain.cross_sections_indexed.map_to_full_array(0).total
-        request.cls.warpsweep = WarpSweep.from_transport_operator(self.base_mgop.transport_operator)
-
+        
         request.cls.b_apply = jnp.array(b_apply)
         request.cls.result_reference = base_mgop.transport_operator.inv(b_apply)
         
@@ -81,21 +54,29 @@ class TestWarpTransportOperator:
 
     def test_sequential_single_angle_solve(self):
         """Test the sequential solve for a single angle."""
+        angle_i = 4        
+        from jax_sn.operators.transport_operator.linear_tetrahedron_warp_kernel import TransportOperatorSequentialWarpSingleAngle
+        top_2 = TransportOperatorSequentialWarpSingleAngle(self.base_mgop.solution_domain_data, self.base_mgop.transport_operator[angle_i].topological_sorted_angle, 0)
+        onp.testing.assert_allclose(top_2.inv(self.b_apply[angle_i]), self.result_reference[angle_i], rtol=1e-10, atol=1e-10)
 
-        angle_i = 4
+    def test_sequential_single_angle_solve_grad(self):
 
-        result_sa = self.warpsweep.compute_single_angle(self.xs_0, angle_i = angle_i, x_apply = self.b_apply[angle_i])
+        """Test the gradient of the sequential solve for a single angle."""
+        angle_i = 4        
+        from jax_sn.operators.transport_operator.linear_tetrahedron_warp_kernel import TransportOperatorSequentialWarpSingleAngle
+        top_2 = TransportOperatorSequentialWarpSingleAngle(self.base_mgop.solution_domain_data, self.base_mgop.transport_operator[angle_i].topological_sorted_angle, 0)
 
-        onp.testing.assert_allclose(result_sa, self.result_reference[ angle_i], rtol=1e-10, atol=1e-10)
-
+        @eqx.filter_jit
+        def solve_and_sum(top_2 : TransportOperatorSequentialWarpSingleAngle):
+            return jnp.sum(top_2.inv(self.b_apply[angle_i]))
         
-        
-
+        grad_f = eqx.filter_jit(eqx.filter_grad(solve_and_sum))
+        grad_result = grad_f(top_2)
+        grad_reference = grad_f(self.base_mgop.transport_operator[angle_i])
+        from jax_sn.tools import assert_pytree_allclose
+        assert_pytree_allclose(grad_result.solution_domain_data, grad_reference.solution_domain_data, rtol=1e-5, atol=1e-5)
+   
     
-    def test_sequential_solve(self):    
-        result = self.warpsweep.compute_all_angles(self.xs_0, self.b_apply)        
-        onp.testing.assert_allclose(result, self.result_reference, rtol=1e-10, atol=1e-10)
-
     
         
 
