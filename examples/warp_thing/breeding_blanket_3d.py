@@ -62,7 +62,7 @@ def get_blanket_base_case():
      
     resolutions_blanket = [10, 1, 1, 6,4,3,4,3]
     n_theta_blanket = 50
-    n_phi_blanket = 60
+    n_phi_blanket = 120
     
     flux_surface =get_base_flux_surface_layers()
     _, d_physical = _get_base_distance_matrices()
