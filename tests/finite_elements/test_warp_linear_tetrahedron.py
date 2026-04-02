@@ -77,7 +77,28 @@ class TestWarpTransportOperator:
         assert_pytree_allclose(grad_result.solution_domain_data, grad_reference.solution_domain_data, rtol=1e-5, atol=1e-5)
    
     
-    
-        
+    def test_sequential_multi_angle_solve(self):
+        from jax_sn.operators.transport_operator.linear_tetrahedron_warp_kernel import TransportOperatorSequentialWarpSingleAngle, TransportOperatorSequentialWarpMultipleAngles
 
-    
+        top_sa = TransportOperatorSequentialWarpSingleAngle(self.base_mgop.solution_domain_data, self.base_mgop.transport_operator.topological_sorted_angle, 0)
+        top_ma = TransportOperatorSequentialWarpMultipleAngles(top_sa)
+
+        result_warp = top_ma.inv(self.b_apply)
+
+        onp.testing.assert_allclose(result_warp, self.result_reference, rtol=1e-10, atol=1e-10)
+
+    def test_sequential_multi_angle_solve_grad(self):
+        from jax_sn.operators.transport_operator.linear_tetrahedron_warp_kernel import TransportOperatorSequentialWarpSingleAngle, TransportOperatorSequentialWarpMultipleAngles
+
+        top_sa = TransportOperatorSequentialWarpSingleAngle(self.base_mgop.solution_domain_data, self.base_mgop.transport_operator.topological_sorted_angle, 0)
+        top_ma = TransportOperatorSequentialWarpMultipleAngles(top_sa)
+
+        @eqx.filter_jit
+        def solve_and_sum(top_ma : TransportOperatorSequentialWarpMultipleAngles):
+            return jnp.sum(top_ma.inv(self.b_apply))
+        
+        grad_f = eqx.filter_jit(eqx.filter_grad(solve_and_sum))
+        grad_result = grad_f(top_ma)
+        grad_reference = grad_f(self.base_mgop.transport_operator)
+        from jax_sn.tools import assert_pytree_allclose
+        assert_pytree_allclose(grad_result.solution_domain_data, grad_reference.solution_domain_data, rtol=1e-5, atol=1e-5)

@@ -226,7 +226,7 @@ def _sweep_level_kernel_ma(topo_offset_ids : wp.array2d[WARPINDEXDTYPE], padded_
 # Public Python wrapper
 # =============================================================================
 import equinox as eqx
-from .transport_operator_base import TransportOperatorMultipleAngles, TransportOperator
+from .transport_operator_base import TransportOperatorMultipleAngles, TransportOperator, TransportOperatorMultipleAnglesVmap
 
 
     # def single_angle(self, angle : int, xs_wp : wp.array, x_wp: wp.array, level_bounds) -> None:
@@ -430,12 +430,6 @@ def _sequential_single_angle_sweep(
     )
 sweep_sa_jax = jax_callable(_sequential_single_angle_sweep)
 
-@eqx.filter_jit
-def _sweep_sequential_sa_with_warp(top : TransportOperator, x_arr : jnp.ndarray):    
-    sigma_total = top.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(0).total
-    args_flat_ta = _flatten_transport_operator(top)    
-    return sweep_sa_jax(*args_flat_ta,  x_arr, output_dims = {"result" :  x_arr.shape})[0]
-
 def _sequential_multi_angle_sweep(    
     face_normals:       wp.array2d[SPATVECDTYPE],
     face_jacobians_det: wp.array2d[DTYPE],
@@ -490,7 +484,7 @@ def _sweep_sequential_ma_with_warp(top : TransportOperatorMultipleAngles, x_arr 
     
     return sweep_ma_jax(*args_flat_ta, x_arr, output_dims = {"result" :  (x_arr.shape)})[0]
 
-from .transport_operator_base import forward_transport_operator_vmap
+
 
 @eqx.filter_jit
 def single_angle_warp_sweep(                   geometric_domain                : GeometricDomain, 
@@ -504,11 +498,31 @@ def single_angle_warp_sweep(                   geometric_domain                :
     args_flat_ta = _flatten_base_args(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle)
 
     return sweep_sa_jax(*args_flat_ta, x, output_dims = {"result" :  x.shape})[0]
+
+
+@eqx.filter_jit
+def multi_angle_warp_sweep(                    geometric_domain           : GeometricDomain, 
+                                               fem_matrices               : FEMMatrices, 
+                                               precomputed_geometric_data : PrecomputedGeometricData, 
+                                               cross_sections             : CrossSectionDataSingleGroup,                                                
+                                               topological_sorted_angle   : TopologicalSortedAngle, 
+                                               x                          : jnp.ndarray
+                                               ) -> jnp.ndarray:    
+
+    args_flat_ta = _flatten_base_args(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle)
+    return sweep_ma_jax(*args_flat_ta, x, output_dims = {"result" :  x.shape})[0]
     
 
 
+from .transport_operator_base import forward_transport_operator_vmap, vmap_multiple_angles_forward
+
 class TransportOperatorSequentialWarpSingleAngle(TransportOperator):
 
+    def __check_init__(self):
+        assert self.solution_domain_data.precomputed_geometric_data.vol_jacobians_inv.shape[-2:] == (3,3), f"For Warp kernel, expected vol_jacobians_inv shape (3,3), got {self.solution_domain_data.precomputed_geometric_data.vol_jacobians_inv.shape}"
+        assert self.solution_domain_data.n_basis == NBASIS, f"For warp kernel, expected {NBASIS} basis functions, got {self.solution_domatin_data.n_basis}"
+        assert self.solution_domain_data.domain.etoe.shape[-1] == NFACES, f"For warp kernel, expected {NFACES} faces per elements, got {self.solution_domain_data.domain.etoe.shape[-1]}"
+    
     @property 
     def _mv_op_args(self):
         return forward_transport_operator_vmap
@@ -516,6 +530,22 @@ class TransportOperatorSequentialWarpSingleAngle(TransportOperator):
     @property 
     def _inv_op_args(self):
         return single_angle_warp_sweep
+
+
+class TransportOperatorSequentialWarpMultipleAngles(TransportOperatorMultipleAngles):
+    '''
+    Transport operator for multiple angles using vmap over angles.
+    '''
+
+    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
+        return vmap_multiple_angles_forward(self.transport_operator, x)
+    
+    def _invert_internal(self, b : jnp.ndarray) -> jnp.ndarray:
+        return multi_angle_warp_sweep(*self._base_inv_args(b))
+    
+
+
+        
 
 
 
