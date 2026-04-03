@@ -397,7 +397,7 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
         return lx.linear_solve(self, b, solver, throw=False).value
     
     def transpose(self):
-        return eqx.tree_at(lambda t_operator : t_operator.transport_operator.topological_sorted_angle, self, self.transport_operator.topological_sorted_angle.reverse)    
+        return eqx.tree_at(lambda op: op.transport_operator, self, self.transport_operator.transpose())
     
     
     def in_structure(self):        

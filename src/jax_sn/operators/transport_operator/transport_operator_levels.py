@@ -33,7 +33,10 @@ from functools import partial
 
 # It could be improved further by grouping levels with the same size together and processing them in a single batch, but this is not implemented yet.
 # (there are always at least two angles with the same level structure: the angle and its opposite.)
-# Finally, the minimum level size could be used to batch just over that. However, in my testing, the minimum level size is often 1, so this does not help much in practice.
+# Finally, the minimum level size could be used to batch just over that. However, in my testing, the minimum level size is often 1, so this does not help much i practice.
+
+
+# OUTDATED: A NVIDIA Warp based kernel can batch much more conditionally, leading to significantly more efficient level-based parallelism. See transport_operator_warp.
 # --------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 

@@ -1,3 +1,5 @@
+from typing import Union
+
 import jax
 import jax.numpy as jnp
 from functools import partial
@@ -200,4 +202,110 @@ def compute_levels_iterative_jax(dependency_matrix : jnp.ndarray, n_iterations_p
     
     state = error_fn(jax.lax.while_loop(cond_fn, body_fn, state0))
     return _levels_including_dummy_to_levels(state[0])
+
+import numpy as onp
+
+def _multiple_angle_level_bounds_np(levels_np: onp.ndarray, levels_argsort_np: onp.ndarray) -> tuple[onp.ndarray, onp.ndarray, onp.ndarray]:
+    """Return (first_occ, ends, sizes) each of shape [n_angles, max_levels], padded with -1.
+
+    levels_np        : [n_angles, n_elem]  element levels per angle
+    levels_argsort_np: [n_angles, n_elem]  argsort of levels per angle
+    """
+    sorted_levels = onp.take_along_axis(levels_np, levels_argsort_np, axis=-1)
+
+    n_angles = sorted_levels.shape[0]
+
+    first_occ = [onp.unique(sorted_levels[i], return_index=True)[1] for i in range(n_angles)]
+    ends      = [onp.append(occ[1:], sorted_levels.shape[-1]) for occ in first_occ]
+    sizes     = [end - occ for end, occ in zip(ends, first_occ)]
+
+    n_levels_per_angle = onp.array([len(occ) for occ in first_occ])
+    max_levels = int(max(n_levels_per_angle))
+
+    padded_first_occ = onp.full((n_angles, max_levels), -1, dtype=int)
+    padded_ends      = onp.full((n_angles, max_levels), -1, dtype=int)
+    padded_sizes     = onp.full((n_angles, max_levels), -1, dtype=int)
+    for i in range(n_angles):
+        n = n_levels_per_angle[i]
+        padded_first_occ[i, :n] = first_occ[i]
+        padded_ends[     i, :n] = ends[i]
+        padded_sizes[    i, :n] = sizes[i]
+
+    return padded_first_occ, padded_ends, padded_sizes
+
+
+@eqx.filter_jit
+def _multiple_angle_level_bounds(
+    levels: jnp.ndarray,
+    levels_argsort: jnp.ndarray,
+    max_levels: int,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """JAX-compatible level bounds for multi-angle transport kernels.
+
+    Returns (first_occ, ends, sizes) each of shape [n_angles, max_levels], padded
+    with -1 for angles that have fewer than max_levels distinct levels.
+
+    Since level boundaries are found by detecting value changes in sorted_levels,
+    and sorted_levels is sorted ascending per angle, boundaries are positions where
+    consecutive values differ. Valid start indices are < n_elem; invalid (padding)
+    slots are marked with -1.
+
+    Parameters
+    ----------
+    levels        : [n_angles, n_elem]  
+        element levels per angle (in topological sorted angle present)
+    levels_argsort: [n_angles, n_elem]  
+        argsort of levels per angle (in topological sorted angle present)
+    max_levels    : int (static) — output width;
+      must be >= the actual number of distinct levels in any angle. Runtime dependent value.
+    Returns 
+    ----------
+    first_occ : [n_angles, max_levels]  index of first occurrence of each level
+    ends      : [n_angles, max_levels]  index of end of each level (i.e. start of next level)
+    sizes     : [n_angles, max_levels]  size of each level (i.e. ends - first_occ)
+    """
+    n_elem = levels.shape[-1]
+        
+    levels = eqx.error_if( levels, max_levels < jnp.max(levels) + 1, f"max_levels={max_levels} is too small; must be at least the next integer above the maximum level (you have {levels.shape[-1]} elements)")    
+    sorted_levels = jnp.take_along_axis(levels, levels_argsort, axis=-1)  # [n_angles, n_elem]
+
+    def single_angle_bounds(sl):
+      # This search sorted gives the first occurence in the array for all the levels in max levels. For levels that do not occur, this gives n_elem, which we can detect and mark as invalid.
+      first_occ_raw = jnp.searchsorted(sl, jnp.arange(max_levels), )   # [max_levels]
+      next_first    = jnp.concatenate([first_occ_raw[1:], jnp.array([n_elem])])
+      is_valid      = first_occ_raw < n_elem
+      first_occ     = jnp.where(is_valid, first_occ_raw, -1)
+      ends          = jnp.where(is_valid, next_first, -1)
+      sizes         = jnp.where(is_valid, next_first - first_occ_raw, -1)
+      #we convert to the same dtype as levels to avoid any confusion with dtypes. Jax automatically makes ints int64 if you enable 
+      #64 bit mode. However, the output of first_occ_raw will be int32 then, which is confusing.
+      return jnp.array(first_occ, dtype=levels.dtype), jnp.array(ends, dtype=levels.dtype), jnp.array(sizes, dtype=levels.dtype)
+
+    if levels.ndim == 2:
+        return jax.vmap(single_angle_bounds)(sorted_levels)
+    else:
+        return single_angle_bounds(sorted_levels)
+
+
+def multiple_angle_level_bounds_safe(levels: jnp.ndarray, levels_argsort: jnp.ndarray, max_levels: Union[int, None]) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    if max_levels is None:
+        max_levels = int(jnp.max(levels)) + 1    
+    return _multiple_angle_level_bounds(levels, levels_argsort, max_levels)
+
+
+def _multiple_angle_level_bounds_dynamic(
+    levels: jnp.ndarray,
+    levels_argsort: jnp.ndarray,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    """Non-JIT wrapper that infers max_levels from the data.
+
+    Since levels are 0-indexed integers, max_levels = jnp.max(levels) + 1.
+    Not suitable for use inside jax.jit.
+
+    To use inside jit, call _multiple_angle_level_bounds directly with a pre-chosen
+    static max_levels (e.g. the next power of two above the current true maximum).
+    """
+    max_levels = int(jnp.max(levels)) + 1    
+    return _multiple_angle_level_bounds(levels, levels_argsort, max_levels)
+
 

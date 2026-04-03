@@ -6,7 +6,7 @@ from typing import Tuple
 from unittest import result
 
 import jax
-import numpy as np
+import numpy as onp
 import warp as wp
 from dataclasses import dataclass
 import jax.numpy as jnp
@@ -171,7 +171,7 @@ def compute_element_fused_single_angle(elem_idx : WARPINDEXDTYPE, sd : SweepData
 
         neighbour          = sd.sweep_geometric_data.etoe[elem_idx][i]
 
-        if omega_dot_n < wp.float64(0.0):
+        if omega_dot_n < INFLOW_EPSILON:
             if neighbour >= 0: # inflow face with neighbour
                 face_perm = face_perms[i]
                 face_conn = face_conns[i]
@@ -203,13 +203,13 @@ def compute_element_direct_single_angle(elem_in_toposort_idx : WARPINDEXDTYPE, s
 # Sequential Sweep Kernels
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-@wp.kernel
+@wp.kernel(enable_backward=False)
 def sequential_sweep_single_angle(sd : SweepDataSingleAngle, xs : wp.array[DTYPE], result : wp.array[NBASISDTYPE], x_apply : wp.array[NBASISDTYPE]):
     for elem_in_order in range(sd.sweep_geometric_data.face_normals.shape[0]):        
         compute_element_direct_single_angle(WARPINDEXDTYPE(elem_in_order), sd, xs, result, x_apply)
 
     
-@wp.kernel 
+@wp.kernel(enable_backward=False)
 def sequential_sweep_multi_angle(sd : SweepDataMultiAngle, xs : wp.array[DTYPE], result : wp.array2d[NBASISDTYPE], x_apply : wp.array2d[NBASISDTYPE]):
     angle_idx = wp.tid()
     for elem_in_order in range(sd.sweep_geometric_data.face_normals.shape[0]):        
@@ -218,19 +218,24 @@ def sequential_sweep_multi_angle(sd : SweepDataMultiAngle, xs : wp.array[DTYPE],
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # Level-sweep kernels (multi-angle and single-angle variants)
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-@wp.kernel
-def _sweep_level_kernel(topo_offset : WARPINDEXDTYPE, angle_idx : WARPINDEXDTYPE,  sd : SweepDataMultiAngle, xs : wp.array[DTYPE], result : wp.array2d[NBASISDTYPE], x_apply : wp.array2d[NBASISDTYPE]):
-    in_level_id = wp.tid()
-    compute_element_direct_multi_angle(in_level_id + topo_offset, angle_idx, sd, xs, result, x_apply)
+@wp.kernel(enable_backward=False)
+def _sweep_level_kernel(topo_offset : WARPINDEXDTYPE, sd : SweepDataSingleAngle, padded_level_size : wp.array[JAXINDEXDTYPE], current_level : WARPINDEXDTYPE, xs : wp.array[DTYPE], result : wp.array[NBASISDTYPE], x_apply : wp.array[NBASISDTYPE]):
+    elem_in_level_id = wp.tid()
 
-@wp.kernel
-def _sweep_level_kernel_ma(topo_offset_ids : wp.array2d[WARPINDEXDTYPE], padded_level_size : wp.array2d[WARPINDEXDTYPE], current_level : WARPINDEXDTYPE,   sd : SweepDataMultiAngle, xs : wp.array[DTYPE], result : wp.array2d[NBASISDTYPE], x_apply : wp.array2d[NBASISDTYPE]):
+    if elem_in_level_id >= padded_level_size[current_level]:
+        return # out of bounds for this level: this does not happen when the kernel is launched with the exact level size.
+               # It will not even happend in the below jax function since it is skipped conditionally in python if level size is <=0.
+    
+    compute_element_direct_single_angle(elem_in_level_id + topo_offset, sd, xs, result, x_apply)
+
+@wp.kernel(enable_backward=False)
+def _sweep_level_kernel_ma(topo_offset_ids : wp.array2d[JAXINDEXDTYPE], padded_level_size : wp.array2d[JAXINDEXDTYPE], current_level : WARPINDEXDTYPE,   sd : SweepDataMultiAngle, xs : wp.array[DTYPE], result : wp.array2d[NBASISDTYPE], x_apply : wp.array2d[NBASISDTYPE]):
     angle_id, elem_in_level_id = wp.tid()
-    offset_this_angle = topo_offset_ids[angle_id, current_level]
+    offset_this_angle = WARPINDEXDTYPE(topo_offset_ids[angle_id, current_level])
     if offset_this_angle < 0:
         return # no work for this angle
     else:
-        if elem_in_level_id >= padded_level_size[angle_id, current_level]:
+        if elem_in_level_id >= WARPINDEXDTYPE(padded_level_size[angle_id, current_level]):
             return # out of bounds for this angle
         compute_element_direct_multi_angle(elem_in_level_id + offset_this_angle, angle_id, sd, xs, result, x_apply)
 
@@ -241,119 +246,6 @@ import equinox as eqx
 from .transport_operator_base import TransportOperatorMultipleAngles, TransportOperator, TransportOperatorMultipleAnglesVmap
 
 
-    # def single_angle(self, angle : int, xs_wp : wp.array, x_wp: wp.array, level_bounds) -> None:
-    #     """Run the sweep in-place on pre-allocated Warp arrays (no host copies)."""
-    #     x_apply_bc = x_wp[None, ...]
-    #     x_apply_wp = wp.from_jax(x_apply_bc, dtype=NBASISDTYPE)
-    #     result = wp.zeros_like(x_apply_wp)
-    #     for start, end in level_bounds:
-    #         wp.launch(kernel = _sweep_level_kernel,
-    #             dim=end - start,
-    #             inputs=[
-    #                 start,
-    #                 wp.int32(angle),
-    #                 self._data,
-    #                 xs_wp,
-    #                 result, 
-    #                 x_apply_wp,
-    #                 ],
-    #             device=self.device
-    #         )
-
-    #     wp.synchronize()
-    #     return result
-
-    # def multi_angle_levels(self, xs : jnp.ndarray, x_apply : jnp.ndarray, levelbased_setup : LevelBasedParallelismSetup):
-        
-    #     """Run the multi-angle level-sweep in-place on pre-allocated Warp arrays (no host copies)."""
-    #     xs_wp      = wp.from_jax(xs, dtype=DTYPE)
-    #     x_apply_wp = wp.from_jax(x_apply, dtype=NBASISDTYPE)
-    #     result     =   wp.zeros_like(x_apply_wp)
-    #     n_angles   = self._data.angles.shape[0]
-
-    #     padded_occ_wp = wp.from_numpy(np.array(levelbased_setup.padded_first_occ, dtype=np.int32), dtype=wp.int32)
-
-    #     padded_level_size = wp.from_numpy(np.array(levelbased_setup.padded_sizes, dtype=np.int32), dtype=wp.int32)
-
-
-    #     for levels in range(levelbased_setup.n_levels):
-    #             n_work = levelbased_setup.max_level_size(levels)                
-    #             wp.launch(kernel = _sweep_level_kernel_ma,
-    #                 dim=(n_angles, n_work),
-    #                 inputs=[
-    #                     padded_occ_wp,
-    #                     padded_level_size,
-    #                     wp.int32(levels), 
-    #                     self._data,
-    #                     xs_wp,
-    #                     result,
-    #                     x_apply_wp
-    #                 ]
-    #             )
-
-    #     wp.synchronize()
-    #     return result
-    
-    # def multi_angle_levels_prealloc(self, xs : jnp.ndarray, x_apply : jnp.ndarray, levelbased_setup : LevelBasedParallelismSetup, result_array : jnp.ndarray):
-        
-    #     """Run the multi-angle level-sweep in-place on pre-allocated Warp arrays (no host copies)."""
-    #     xs_wp      = wp.from_jax(xs, dtype=DTYPE)
-    #     x_apply_wp = wp.from_jax(x_apply, dtype=NBASISDTYPE)
-    #     result     = wp.from_jax(result_array, dtype=NBASISDTYPE)
-    #     n_angles   = self._data.angles.shape[0]
-    #     padded_occ_wp = wp.from_numpy(np.array(levelbased_setup.padded_first_occ, dtype=np.int32), dtype=wp.int32)
-        
-    #     padded_level_size = wp.from_numpy(np.array(levelbased_setup.padded_sizes, dtype=np.int32), dtype=wp.int32)
-
-    #     for levels in range(levelbased_setup.n_levels):
-    #             n_work = levelbased_setup.max_level_size(levels)                
-    #             wp.launch(kernel = _sweep_level_kernel_ma,
-    #                 dim=(n_angles, n_work),
-    #                 inputs=[
-    #                     padded_occ_wp,
-    #                     padded_level_size,
-    #                     wp.int32(levels), 
-    #                     self._data,
-    #                     xs_wp,
-    #                     result,
-    #                     x_apply_wp
-    #                 ]
-    #             )
-
-    #     wp.synchronize()
-    #     return result
-    
-def _multiple_angle_level_bounds(levels_np: np.ndarray, levels_argsort_np: np.ndarray) -> list[tuple[int, int]]:
-    """Return [(start, end), ...] index slices into levels_argsort, one per level.
-
-    This is for the multi-angle kernel where levels_argsort is 2D with shape [n_angles, n_elem].
-    We assume that the levels are the same for each angle, so we just look at the first angle's levels.
-    """
-    #levels_np[levels_argsort_np]    
-    sorted_levels = np.take_along_axis(levels_np, levels_argsort_np, axis=-1)    
-
-    n_angles = sorted_levels.shape[0]
-    
-    first_occ = [np.unique(sorted_levels[i],return_index=True)[1] for i in range(sorted_levels.shape[0])]
-    ends      = [ np.append(occ[1:], sorted_levels.shape[-1]) for occ in first_occ]    
-    sizes     = [end - occ for end, occ in zip(ends, first_occ)]
-
-    # We now need to pad such that we have a 2D array of shape [n_angles, n_levels], where each row is the (start, end) pairs for that angle, padded with -1 if that angle has fewer levels than the max.
-
-    n_levels_per_angle = np.array([len(occ) for occ in first_occ])
-    max_levels = max(n_levels_per_angle)
-    
-    padded_first_occ = np.full((n_angles, max_levels), -1, dtype=int) # [n_angles, max_levels]
-    padded_ends      = np.full((n_angles, max_levels), -1, dtype=int)
-    padded_sizes     = np.full((n_angles, max_levels), -1, dtype=int)
-    for i in range(n_angles):
-        n_levels_in_this_angle = n_levels_per_angle[i]
-        
-        padded_first_occ[i, :n_levels_in_this_angle] = first_occ[i]
-        padded_ends[     i, :n_levels_in_this_angle] = ends[i]
-        padded_sizes[    i, :n_levels_in_this_angle] = sizes[i]
-
-    return padded_first_occ, padded_ends, padded_sizes
 
 # =============================================================================
 # Utilities to map from transport operator to flattened array
@@ -489,17 +381,7 @@ def _sequential_multi_angle_sweep(
 sweep_ma_jax = jax_callable(_sequential_multi_angle_sweep)
 
 @eqx.filter_jit
-def _sweep_sequential_ma_with_warp(top : TransportOperatorMultipleAngles, x_arr : jnp.ndarray):    
-    assert x_arr.shape == top.out_structure().shape, f"Expected x_arr shape {top.out_structure().shape}, got {x_arr.shape}"
-    
-    args_flat_ta = _flatten_transport_operator(top)        
-    
-    return sweep_ma_jax(*args_flat_ta, x_arr, output_dims = {"result" :  (x_arr.shape)})[0]
-
-
-
-@eqx.filter_jit
-def single_angle_warp_sweep(                   geometric_domain                : GeometricDomain, 
+def single_angle_warp_sweep(                   geometric_domain           : GeometricDomain, 
                                                fem_matrices               : FEMMatrices, 
                                                precomputed_geometric_data : PrecomputedGeometricData, 
                                                cross_sections             : CrossSectionDataSingleGroup,                                                
@@ -508,7 +390,6 @@ def single_angle_warp_sweep(                   geometric_domain                :
                                                ) -> jnp.ndarray:    
 
     args_flat_ta = _flatten_base_args(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle)
-
     return sweep_sa_jax(*args_flat_ta, x, output_dims = {"result" :  x.shape})[0]
 
 
@@ -522,159 +403,176 @@ def multi_angle_warp_sweep(                    geometric_domain           : Geom
                                                ) -> jnp.ndarray:    
 
     args_flat_ta = _flatten_base_args(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle)
-    return sweep_ma_jax(*args_flat_ta, x, output_dims = {"result" :  x.shape})[0]
+    return sweep_ma_jax(*args_flat_ta, x, output_dims = {"result" :  x.shape})[0]    
+
+#==============================================================================
+# Levels based
+#==============================================================================
+
+def _level_single_angle_sweep(    
+    face_normals:       wp.array2d[SPATVECDTYPE],
+    face_jacobians_det: wp.array2d[DTYPE],
+    vol_jacobians_det:  wp.array[DTYPE],
+    vol_jacobians_inv:  wp.array[SPATMATDTYPE],
+    etoe:               wp.array[NFACESINTTYPE],
+    etof:               wp.array[NFACESINTTYPE],
+    face_perm_idx:      wp.array[NFACESINTTYPE],
+    mass_matrix:        wp.array[NMATRIXDTYPE],
+    derivative_matrix:  wp.array[NMATRIXDTYPE],
+    outflow_matrices:   wp.array[NMATRIXDTYPE],
+    inflow_matrices:    wp.array3d[NMATRIXDTYPE],
+    angle:              wp.array[SPATVECDTYPE],
+    levels_argsort:     wp.array[JAXINDEXDTYPE],        
+    xs:                 wp.array[DTYPE],
+    levels_first_occ :  wp.array[JAXINDEXDTYPE],
+    levels_ends      :  wp.array[JAXINDEXDTYPE],
+    levels_sizes     :  wp.array[JAXINDEXDTYPE],
+    x_apply:            wp.array[NBASISDTYPE],
+    result:             wp.array[NBASISDTYPE],
+) -> None:
+    sd = SweepGeometricData()
+    sd.face_normals       = face_normals
+    sd.face_jacobians_det = face_jacobians_det
+    sd.vol_jacobians_det  = vol_jacobians_det
+    sd.vol_jacobians_inv  = vol_jacobians_inv
+    sd.etoe               = etoe
+    sd.etof               = etof
+    sd.face_perm_idx      = face_perm_idx
+    sd.mass_matrix        = mass_matrix
+    sd.derivative_matrix  = derivative_matrix
+    sd.outflow_matrices   = outflow_matrices
+    sd.inflow_matrices    = inflow_matrices
+    sd_tot = SweepDataSingleAngle()
+    sd_tot.sweep_geometric_data = sd
+    sd_tot.angles               = angle    
+    sd_tot.levels_argsort       = levels_argsort
+
+    wp.synchronize()
+    
+    level_start_np = levels_first_occ.numpy()    
+    level_sizes_np    = levels_sizes.numpy()
+
+    for level in range(level_start_np.shape[0]):
+        level_start = level_start_np[level]        
+        level_size   = level_sizes_np[level]
+        if level_size <= 0:
+            continue # no work for this level
+
+        wp.launch(kernel = _sweep_level_kernel,
+            dim=(level_size,),
+            inputs=[
+                level_start,                
+                sd_tot,
+                levels_sizes,
+                wp.int32(level),
+                xs,
+                result, 
+                x_apply,
+                ]    
+        )    
+    wp.synchronize()
+    
+level_sweep_sa_jax = jax_callable(_level_single_angle_sweep, graph_mode=GraphMode.NONE)
+
+
+from jax_sn.domain import LevelBasedParallelism
+
+@eqx.filter_jit
+def level_single_angle_warp_sweep(             geometric_domain           : GeometricDomain, 
+                                               fem_matrices               : FEMMatrices, 
+                                               precomputed_geometric_data : PrecomputedGeometricData, 
+                                               cross_sections             : CrossSectionDataSingleGroup,                                                
+                                               topological_sorted_angle   : TopologicalSortedAngle, 
+                                               x                          : jnp.ndarray,
+                                               levelsetup                 : LevelBasedParallelism
+                                               ) -> jnp.ndarray:    
+    
+    args_flat_ta = _flatten_base_args(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle)
+    return level_sweep_sa_jax(*args_flat_ta, levelsetup.first_occurences, levelsetup.ends, levelsetup.sizes, x, output_dims = {"result" :  x.shape})[0]
+
+
+
+def _level_multi_angles_sweep(    
+    face_normals:       wp.array2d[SPATVECDTYPE],
+    face_jacobians_det: wp.array2d[DTYPE],
+    vol_jacobians_det:  wp.array[DTYPE],
+    vol_jacobians_inv:  wp.array[SPATMATDTYPE],
+    etoe:               wp.array[NFACESINTTYPE],
+    etof:               wp.array[NFACESINTTYPE],
+    face_perm_idx:      wp.array[NFACESINTTYPE],
+    mass_matrix:        wp.array[NMATRIXDTYPE],
+    derivative_matrix:  wp.array[NMATRIXDTYPE],
+    outflow_matrices:   wp.array[NMATRIXDTYPE],
+    inflow_matrices:    wp.array3d[NMATRIXDTYPE],
+    angles:             wp.array[SPATVECDTYPE],
+    levels_argsort:     wp.array2d[JAXINDEXDTYPE],
+    xs:                 wp.array[DTYPE],
+    levels_first_occ :  wp.array2d[JAXINDEXDTYPE],
+    levels_ends      :  wp.array2d[JAXINDEXDTYPE],
+    levels_sizes     :  wp.array2d[JAXINDEXDTYPE],
+    x_apply:            wp.array2d[NBASISDTYPE],
+    result:             wp.array2d[NBASISDTYPE],
+) -> None:
+    sd = SweepGeometricData()
+    sd.face_normals       = face_normals
+    sd.face_jacobians_det = face_jacobians_det
+    sd.vol_jacobians_det  = vol_jacobians_det
+    sd.vol_jacobians_inv  = vol_jacobians_inv
+    sd.etoe               = etoe
+    sd.etof               = etof
+    sd.face_perm_idx      = face_perm_idx
+    sd.mass_matrix        = mass_matrix
+    sd.derivative_matrix  = derivative_matrix
+    sd.outflow_matrices   = outflow_matrices
+    sd.inflow_matrices    = inflow_matrices
+
+    sd_tot = SweepDataMultiAngle()
+    sd_tot.sweep_geometric_data = sd
+    sd_tot.angles               = angles    
+    sd_tot.levels_argsort       = levels_argsort
+
+    result.zero_()
     
 
-
-from .transport_operator_base import forward_transport_operator_vmap, vmap_multiple_angles_forward, TransportOperatorBatched
-
-class TransportOperatorSequentialWarpSingleAngle(TransportOperatorBatched):
-    '''
-    Transport operator for a single angle using a sequential sweep in Warp.
-
-    Forward mode is using batched forward as in :class:`TransportOperatorBatched`, while inverse mode is using the single-angle sequential sweep kernel in Warp.
-    The inverse does not use any batching.
-    '''
-
-    def __check_init__(self):
-        assert self.solution_domain_data.precomputed_geometric_data.vol_jacobians_inv.shape[-2:] == (3,3), f"For Warp kernel, expected vol_jacobians_inv shape (3,3), got {self.solution_domain_data.precomputed_geometric_data.vol_jacobians_inv.shape}"
-        assert self.solution_domain_data.n_basis == NBASIS, f"For warp kernel, expected {NBASIS} basis functions, got {self.solution_domatin_data.n_basis}"
-        assert self.solution_domain_data.domain.etoe.shape[-1] == NFACES, f"For warp kernel, expected {NFACES} faces per elements, got {self.solution_domain_data.domain.etoe.shape[-1]}"
+    wp.synchronize()
     
+    level_start_np = levels_first_occ.numpy()    
+    level_sizes_np    = levels_sizes.numpy()
+    
+    n_work_per_level = onp.max(level_sizes_np, axis=0)
+    
+    n_angles = angles.shape[0]
+    n_levels = level_start_np.shape[-1]    
 
-    @property 
-    def _inv_op_args(self):
-        return single_angle_warp_sweep
-    
-    def _inv_args(self, b):
-        return self._base_inv_args(b)
-    
-    @property
-    def _vmap_for_inv_multiple_angles(self):
-        return (None, None, None, None, 0,0)
+    for level in range(n_levels):
 
-class TransportOperatorSequentialWarpMultipleAngles(TransportOperatorMultipleAngles):
-    '''
-    Transport operator for multiple angles using vmap over angles.
-    '''
-    def __check_init__(self):
-        assert isinstance(self.transport_operator, TransportOperatorSequentialWarpSingleAngle), f"Expected transport_operator to be a TransportOperatorSequentialWarpSingleAngle, got {type(self.transport_operator)}"
+        n_work = n_work_per_level[level] # Total work i.e. maximum over angles
 
-    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        return vmap_multiple_angles_forward(self.transport_operator, x)
-    
-    def _invert_internal(self, b : jnp.ndarray) -> jnp.ndarray:
-        return multi_angle_warp_sweep(*self._base_inv_args(b))
-    
+        wp.launch(kernel = _sweep_level_kernel_ma,
+            dim=(n_angles, n_work),
+            inputs=[
+                levels_first_occ,                
+                levels_sizes,
+                WARPINDEXDTYPE(level),
+                sd_tot,                
+                xs,
+                result, 
+                x_apply,
+                ]    
+        )    
+    wp.synchronize()
 
+levels_sweep_ma_jax = jax_callable(_level_multi_angles_sweep, graph_mode=GraphMode.NONE)
 
-        
+@eqx.filter_jit
+def level_multi_angle_warp_sweep(              geometric_domain           : GeometricDomain,
+                                               fem_matrices               : FEMMatrices,
+                                               precomputed_geometric_data : PrecomputedGeometricData,
+                                               cross_sections             : CrossSectionDataSingleGroup,
+                                               topological_sorted_angle   : TopologicalSortedAngle,
+                                               x                          : jnp.ndarray,
+                                               levelsetup                 : LevelBasedParallelism
+                                               ) -> jnp.ndarray:
 
-
-
-#     def _assert_shape_base(self):
-#         assert self.topological_sorted_angle.ndim==1, "topological_sorted_angle must be 1D for base TransportOperator"
-    
-#     def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-#         return self._mv_op_args(*self._forward_args(x))
-    
-#     def _invert_internal(self, b : jnp.ndarray) -> jnp.ndarray:
-#         return self._inv_op_args(*self._inv_args(b))
-        
-#     @property
-#     @abstractmethod
-#     def _mv_op_args(self):
-#         ...
-
-#     @property 
-#     @abstractmethod
-#     def _inv_op_args(self):
-#         ...
-    
-
-#     def transpose(self):
-#         return eqx.tree_at(lambda t_operator : t_operator.topological_sorted_angle, self, self.topological_sorted_angle.reverse)
-    
-#     def inv(self, b : jnp.ndarray) -> jnp.ndarray:
-#         r'''
-#         Solves the system :math:`\mathbf{T} x = b` for `x` using the internal sweep inversion.
-
-#         Parameters
-#         ----------
-#         b : jnp.ndarray
-#             Right-hand side array.
-#         Returns
-#         -------
-#         jnp.ndarray
-#             Solution array `x`.
-#         '''
-#         solver = TransportOperatorSolver()
-#         return lx.linear_solve(self, b, solver, throw=False).value
-  
-#     def in_structure(self):        
-#         return self._shape_inout
-    
-#     def out_structure(self):
-#         return self._shape_inout
-    
-#     @property 
-#     def _shape_inout(self):
-#         n_elements = self.solution_domain_data.domain.n_elements
-#         n_basis = self.solution_domain_data.fem_matrices.n_basis        
-#         return jax.ShapeDtypeStruct((n_elements, n_basis), self.solution_domain_data.fem_matrices.mass_matrix.dtype)
-    
-#     def _base_forward_args(self, x):
-#         return (
-#             *self.solution_domain_data,
-#             self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(self.energy_group),
-#             self.topological_sorted_angle.angle,
-#             x
-#         )
-#     def _base_inv_args(self, x):
-#         return (
-#             *self.solution_domain_data,
-#             self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(self.energy_group),
-#             self.topological_sorted_angle,
-#             x
-#         )    
-    
-#     def _forward_args(self, x):
-#         return self._base_forward_args(x)
-    
-#     def _inv_args(self, b):
-#         return self._base_inv_args(b)
-    
-#     @property
-#     def _vmap_for_forward_multiple_angles(self):
-#         return (None, None, None, None, 0,0)
-    
-#     @property
-#     def _vmap_for_inv_multiple_angles(self):
-#         return (None, None, None, None, 0,0)
-    
-#     @property 
-#     def n_angles(self):
-#         '''
-#         Number of angles in the transport operator. Here is just one.
-#         '''
-#         return 1
-# class TransportOperatorSequentialWarp(TransportOperator):
-
-
-@dataclass
-class LevelBasedParallelismSetup:
-    padded_first_occ: np.ndarray #[n_angles, n_max_levels]
-    padded_ends: np.ndarray
-    padded_sizes: np.ndarray
-
-    @classmethod
-    def from_transport_operator(cls, transport_operator):
-        return cls(*_multiple_angle_level_bounds(np.array(transport_operator.topological_sorted_angle.levels), np.array(transport_operator.topological_sorted_angle.levels_argsort)))
-    @property 
-    def n_levels(self):
-        return self.padded_first_occ.shape[1]
-    
-    def max_level_size(self, level):
-        return self.padded_sizes[:, level].max()
-
-
+    args_flat_ta = _flatten_base_args(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle)
+    return levels_sweep_ma_jax(*args_flat_ta, levelsetup.first_occurences, levelsetup.ends, levelsetup.sizes, x, output_dims = {"result" :  x.shape})[0]

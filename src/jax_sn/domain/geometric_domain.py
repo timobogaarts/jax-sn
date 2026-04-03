@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp 
 from dataclasses import dataclass
+from jax_sn.tools.graph_tools import multiple_angle_level_bounds_safe
 from jax_sn.tools.mesh_tools import compute_face_normal_vectors_from_3d_simplices, _compute_adjacency, _compute_face_permutations, _pad_last_dimension
 from functools import lru_cache
 from typing import Tuple
@@ -8,6 +9,7 @@ from .cross_sections import CrossSectionDataSingleGroup
 from jax_sn.quadrature_set import QuadratureSet
 from typing import Tuple 
 import equinox as eqx
+from typing import Union
 
 @jax.jit
 def _compute_domain_setup_from_mesh(mesh : Tuple[jnp.ndarray, jnp.ndarray], face_template : jnp.ndarray):
@@ -296,32 +298,6 @@ class TopologicalSortedAngle:
         levels_argsort = jnp.argsort(levels)
         return cls(levels=levels, angle=angle, levels_argsort=levels_argsort)
     
-    # @classmethod
-    # def from_domain_quadrature_set(cls, geometric_domain : GeometricDomain, quadrature_set : QuadratureSet, n_iterations_per_loop : int = 100):
-    #     '''
-    #     Computes topological sorts for all angles in the given quadrature set and geometric domain.
-    #     This function is not jittable because it uses Python control flow to safely compute levels, which can throw if there is a cycle in the graph.
-
-    #     Parameters
-    #     ----------
-    #     geometric_domain : GeometricDomain
-    #         The geometric domain for which to compute the topological sorts.
-    #     quadrature_set : QuadratureSet
-    #         The quadrature set containing the angles for which to compute the topological sorts.
-    #     n_iterations_per_loop : int, optional
-    #         The number of iterations per loop for the level computation. The default is 100.
-    #     Returns
-    #     -------
-    #     toposorts : TopologicalSortedAngle
-    #         The computed topological sorts for all angles in the quadrature set. Batched over angles.
-    #     '''
-    #     from .graph_generation import compute_levels_domain_safe
-    #     levels = [compute_levels_domain_safe(geometric_domain, angle, n_iterations_per_loop) for angle in quadrature_set.angles]
-
-    #     levels = jnp.stack(levels, axis=0) #[n_angles, n_elements]
-    #     levels_argsort = jnp.argsort(levels, axis=-1) #[n_angles, n_elements]
-    #     return cls(levels=levels, angle=quadrature_set.angles, levels_argsort=levels_argsort)
-    
     @classmethod
     def from_domain_quadrature_set(cls, geometric_domain : GeometricDomain, quadrature_set : QuadratureSet, n_iterations_per_loop : int = 100):
         '''
@@ -487,4 +463,54 @@ def _check_point_in_element(point : jnp.ndarray, element : int, geometric_domain
     return jnp.all(inside)
 
 _check_point_in_element_vec = jnp.vectorize(_check_point_in_element, excluded=(2,), signature='(n_dim),()->()')
+    
+
+class LevelBasedParallelism(eqx.Module):
+    '''
+    Class providing utilities for level-based parallelism in the context of transport sweeps. Stores the first occurrence, end, and size of each level for each angle, based on the topological sorted angles provided by the transport operator.
+
+    Since JAX does not allow dynamic shapes, the class method `from_topological_sorted_angle` optionally is given a maximum number of levels, which is used to pad the resulting arrays to a fixed shape. If this is not 
+    sufficiently high enough, an equinox error is given.
+        
+    '''
+    first_occurences : jnp.ndarray 
+    '''
+    First occurrence of each level, per angle. Shape [..., max_levels]
+    '''
+    ends : jnp.ndarray 
+    '''
+    End of each level (i.e. start of next level), per angle. Shape [..., max_levels]
+    '''
+    sizes : jnp.ndarray 
+    '''
+    Number of elements in each level, per angle. Shape [..., max_levels]
+    '''
+
+    @classmethod
+    def from_topological_sorted_angle(cls, topological_sorted_angle : TopologicalSortedAngle, maximum_number_of_levels : Union[int, None] = None):
+        '''
+        Create a LevelBasedParallelism instance from a TopologicalSortedAngle, which contains the levels and their argsort for each angle. Optionally, a maximum number of levels can be provided to pad the resulting arrays to a fixed shape. This has 
+        the advantage that array sizes are known at compile time. If not sufficiently high enough, it will raise an equinox error.
+
+        Parameters
+        ----------
+        topological_sorted_angle : TopologicalSortedAngle
+            The topological sorted angle containing the levels and their argsort for each angle.
+        maximum_number_of_levels : int, optional
+            The maximum number of levels to pad to. If None, it will be set to the maximum number of levels present in the topological sorted angle. Default is None.   
+
+        Returns 
+        -------
+        LevelBasedParallelism
+            An instance of LevelBasedParallelism containing the first occurrence, end, and size of each level for each angle, based on the topological sorted angles provided by the transport operator.
+        '''
+        first_occurences, ends, sizes = multiple_angle_level_bounds_safe(topological_sorted_angle.levels, topological_sorted_angle.levels_argsort, maximum_number_of_levels)
+        return cls(first_occurences=first_occurences, ends=ends, sizes=sizes)
+    
+    @property 
+    def n_levels(self):
+        '''
+        Number of distinct levels
+        '''
+        return self.first_occurences.shape[-1]
     
