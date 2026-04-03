@@ -28,6 +28,18 @@ NFACESINTTYPE     = wp.vec4l
 JAXINDEXDTYPE    = wp.int64
 WARPINDEXDTYPE   = wp.int32
 
+INFLOW_EPSILON = DTYPE(-1e-12) 
+'''
+Floating point differences can lead to JAX and Warp disagreeing on whether a face is inflow or outflow.
+Then, an element can access a non-computed face neighbour as inflow in Warp (trying to get non-computed elements).
+This leads to NaNs in the solution. Although, in principle, one could set the whole result array to zero before the sweep to avoid NaNs, 
+this would not work for level-based parallelism, where the levels could *in principle* have two of these neighbours on the same level,
+which could lead to a race condition. Although extremely rare, we don't want to introduce the possibility. This epsilon guards 
+agains this by treaing faces with angle.face_normal > -INFLOW_EPSILON as outflow faces. Since the contribution is multiplied 
+by this dot-product, even if it were physical, the contribution would be on the order of the INFLOW_EPSILON, which should
+be chosen to be on the order of floating point errors.
+'''
+
 @wp.struct 
 class SweepGeometricData:
     """All arrays needed to compute gij_inv and dij_face on-the-fly inside a kernel.
@@ -118,7 +130,7 @@ def compute_element_fused_multi_angle(elem_idx : WARPINDEXDTYPE, angle_idx : WAR
 
         neighbour          = sd.sweep_geometric_data.etoe[elem_idx][i]
 
-        if omega_dot_n < DTYPE(0.0):
+        if omega_dot_n < INFLOW_EPSILON:
             if neighbour >= 0: # inflow face with neighbour
                 face_perm = face_perms[i]
                 face_conn = face_conns[i]
@@ -346,7 +358,7 @@ def _multiple_angle_level_bounds(levels_np: np.ndarray, levels_argsort_np: np.nd
 # =============================================================================
 # Utilities to map from transport operator to flattened array
 # =============================================================================
-from warp.jax_experimental import jax_callable
+from warp.jax_experimental import jax_callable, GraphMode
 from typing import Union
 from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup, TopologicalSortedAngle
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
@@ -514,28 +526,39 @@ def multi_angle_warp_sweep(                    geometric_domain           : Geom
     
 
 
-from .transport_operator_base import forward_transport_operator_vmap, vmap_multiple_angles_forward
+from .transport_operator_base import forward_transport_operator_vmap, vmap_multiple_angles_forward, TransportOperatorBatched
 
-class TransportOperatorSequentialWarpSingleAngle(TransportOperator):
+class TransportOperatorSequentialWarpSingleAngle(TransportOperatorBatched):
+    '''
+    Transport operator for a single angle using a sequential sweep in Warp.
+
+    Forward mode is using batched forward as in :class:`TransportOperatorBatched`, while inverse mode is using the single-angle sequential sweep kernel in Warp.
+    The inverse does not use any batching.
+    '''
 
     def __check_init__(self):
         assert self.solution_domain_data.precomputed_geometric_data.vol_jacobians_inv.shape[-2:] == (3,3), f"For Warp kernel, expected vol_jacobians_inv shape (3,3), got {self.solution_domain_data.precomputed_geometric_data.vol_jacobians_inv.shape}"
         assert self.solution_domain_data.n_basis == NBASIS, f"For warp kernel, expected {NBASIS} basis functions, got {self.solution_domatin_data.n_basis}"
         assert self.solution_domain_data.domain.etoe.shape[-1] == NFACES, f"For warp kernel, expected {NFACES} faces per elements, got {self.solution_domain_data.domain.etoe.shape[-1]}"
     
-    @property 
-    def _mv_op_args(self):
-        return forward_transport_operator_vmap
 
     @property 
     def _inv_op_args(self):
         return single_angle_warp_sweep
-
+    
+    def _inv_args(self, b):
+        return self._base_inv_args(b)
+    
+    @property
+    def _vmap_for_inv_multiple_angles(self):
+        return (None, None, None, None, 0,0)
 
 class TransportOperatorSequentialWarpMultipleAngles(TransportOperatorMultipleAngles):
     '''
     Transport operator for multiple angles using vmap over angles.
     '''
+    def __check_init__(self):
+        assert isinstance(self.transport_operator, TransportOperatorSequentialWarpSingleAngle), f"Expected transport_operator to be a TransportOperatorSequentialWarpSingleAngle, got {type(self.transport_operator)}"
 
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:
         return vmap_multiple_angles_forward(self.transport_operator, x)
