@@ -148,6 +148,8 @@ def _mv_single_group_operator(moment_operator, transport_operator, mass_operator
 
     # switching out mass & discrete does nothing: then you need 2 temporaries for the input output of the transport operator, so you gain absolutely nothing.
     # This is the absolute best you can do (and it's the same actually as in the old stell-blanket.): the transport operator inverse is non local, so you can't merge or fuse the kernels any further.
+    
+    return x - moment_operator.mv(transport_operator.inv(discrete_operator.mv(mass_operator.mv(inscatter_operator.mv(x)))))
     return x - moment_operator.mv(transport_operator.inv(mass_operator.mv(discrete_operator.mv(inscatter_operator.mv(x)))))
 
 
