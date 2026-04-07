@@ -17,7 +17,7 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver):
 
     single_group_solver : lx.AbstractLinearSolver    
 
-    solver_diagnostics : SolverDiagnostics
+    solver_diagnostics : SolverDiagnostics = SolverDiagnostics(print_sweep = False, print_single_group = False)
 
     def init(self, operator : MultiGroupOperator, options ):
         assert isinstance(operator, MultiGroupOperator), f"MultiGroupLowerTriangularSolver can only be used with MultiGroupOperator but got operator of type {type(operator)}."
