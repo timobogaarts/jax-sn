@@ -6,19 +6,28 @@ from typing import Tuple
 
 import equinox as eqx
 
+class SolverDiagnostics(eqx.Module):
+    print_sweep : bool 
+    print_single_group : bool
+
+
+
+
 class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver):
 
     single_group_solver : lx.AbstractLinearSolver    
 
-    def init(self, operator : MultiGroupOperator, options):
+    solver_diagnostics : SolverDiagnostics
+
+    def init(self, operator : MultiGroupOperator, options ):
         assert isinstance(operator, MultiGroupOperator), f"MultiGroupLowerTriangularSolver can only be used with MultiGroupOperator but got operator of type {type(operator)}."
         return operator
     
-    def compute(self, solver_state : MultiGroupOperator, rhs : jnp.ndarray, options):        
+    def compute(self, solver_state : MultiGroupOperator, rhs : jnp.ndarray, options ):        
         if solver_state.transpose_bool:
-            return solve_upper_triangular_transpose(solver_state, self.single_group_solver, rhs)
+            return solve_upper_triangular_transpose(solver_state, self.single_group_solver, rhs, self.solver_diagnostics)
         else:
-            return solve_lower_triangular(solver_state, self.single_group_solver, rhs)
+            return solve_lower_triangular(solver_state, self.single_group_solver, rhs, self.solver_diagnostics)
         
     
     def assume_full_rank(self) -> bool:
@@ -27,13 +36,13 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver):
         '''
         return True    
 
-    def transpose(self, solver_state : MultiGroupOperator, options):
+    def transpose(self, solver_state : MultiGroupOperator, options ):
         '''
         Returns the transposed solver state and options. (the solver_state is simply the operator here, so that is what is transposed).
         '''
         return solver_state.transpose(), options
 
-    def conj(self, solver_state, options):
+    def conj(self, solver_state : SolverDiagnostics, options ):
         '''
         Returns the conjugated solver state and options. (the solver_state is simply the operator here, so that is what is conjugated).
         '''
@@ -41,7 +50,7 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver):
 
 
 @eqx.filter_jit
-def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinearSolver, rhs : jnp.ndarray, diagnostic : bool = False) -> jnp.ndarray:
+def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinearSolver, rhs : jnp.ndarray, diagnostic : SolverDiagnostics) -> jnp.ndarray:
     r'''
     Solve the linear system using a given solver, assuming the multi-group operator is lower triangular.
     This is useful for e.g. downscattering only problems. 
@@ -95,13 +104,18 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinear
     n_groups = mgop.n_energy_groups        
     assert not mgop.transpose_bool, "The multi-group operator must not be transposed to use the lower triangular transpose solver."
 
+    if diagnostic.print_single_group:
+        jax.debug.print("Using lower triangular transpose solver for multi-group operator with {n_groups} energy groups.", n_groups = n_groups)
+
     def body_fun(i, state):                
         solution, n_steps = state
         sgop = mgop.to_single_group_operator(i)        
-        if diagnostic:
-            jax.debug.print("Solving energy group {eg}. Total n_steps so far: {n_steps}", eg = i, n_steps = n_steps[:])
+        
         rhs_i = rhs[i] + mgop.moment_operator.mv(sgop.transport_operator.inv(mgop.mass_operator.mv(mgop.discrete_operator.mv(mgop.gather_scatter_operator.gather_forward(solution, i)))))
         lxsolve = lx.linear_solve(sgop, rhs_i, solver, throw = False, options = {"y0" : rhs_i}) # Solve single group system
+
+        if diagnostic.print_single_group:
+            jax.debug.print("Solved energy group {eg} in {n_steps} steps", eg = i, n_steps = lxsolve.stats['num_steps'])
         
         return solution.at[i].set(lxsolve.value), n_steps.at[i].set(lxsolve.stats['num_steps'])
     
@@ -115,7 +129,7 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinear
     return  solution, result, {'num_steps_per_group' : n_steps}
 
 @eqx.filter_jit
-def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver : lx.AbstractLinearSolver, rhs : jnp.ndarray, diagnostic : bool = False) -> jnp.ndarray:
+def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver : lx.AbstractLinearSolver, rhs : jnp.ndarray, diagnostic : SolverDiagnostics) -> jnp.ndarray:
     r'''
     Solve the linear system using a given solver, assuming the multi-group operator is lower triangular.
     This is useful for e.g. downscattering only problems. 
@@ -203,13 +217,15 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver : lx.Abst
     mop_t = sgop_t.moment_operator.transpose()
     hop_t = sgop_t.mass_operator.transpose()     
 
+    if diagnostic.print_single_group:
+        jax.debug.print("Using upper triangular transpose solver for multi-group operator with {n_groups} energy groups.", n_groups = n_groups)
+
     def body_fun(i, state):                        
         solution, xi_g, n_steps = state        
         
         g_i     = n_groups - i - 1 # Upper triangular, so we go from high to low energy group
 
-        if diagnostic:
-            jax.debug.print("Solving energy group {eg}. Total n_steps so far: {n_steps}", eg = g_i, n_steps = n_steps[:])
+        
         sgop_gi = sgop_t.to_energy_group(g_i)
 
         rhs_i   = rhs[g_i] + mgop.gather_scatter_operator.gather_backward(xi_g, g_i)
@@ -225,6 +241,8 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver : lx.Abst
         
         xi_new       = xi_g.at[g_i].set(dop_t.mv(hop_t.mv(top_t.to_energy_group(g_i).inv(mop_t.mv(lxsolvevalue))))) # D^T H^T (T_g^{-1})^T M^T [phi_g]
         solution_new = solution.at[g_i].set(lxsolvevalue)        
+        if diagnostic.print_single_group:
+            jax.debug.print("Solved energy group {eg} in {n_steps} steps", eg = g_i, n_steps = nsteps)
         return solution_new, xi_new, n_steps.at[g_i].set(nsteps)
     
     solution          = jnp.zeros_like(rhs)
