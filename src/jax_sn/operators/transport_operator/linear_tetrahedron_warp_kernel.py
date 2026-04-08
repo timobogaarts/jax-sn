@@ -548,6 +548,9 @@ def _level_multi_angles_sweep(
 
         n_work = n_work_per_level[level] # Total work i.e. maximum over angles
 
+        if n_work <= 0:
+            break # no work for this level -> no work for next levels either.
+
         wp.launch(kernel = _sweep_level_kernel_ma,
             dim=(n_angles, n_work),
             inputs=[
