@@ -514,3 +514,10 @@ class LevelBasedParallelism(eqx.Module):
         '''
         return self.first_occurences.shape[-1]
     
+    def __getitem__(self, idx : int) -> "LevelBasedParallelism":
+        return eqx.tree_at(
+            lambda lbp: (lbp.first_occurences, lbp.ends, lbp.sizes),
+            self,
+            (self.first_occurences[idx], self.ends[idx], self.sizes[idx])
+        )
+    

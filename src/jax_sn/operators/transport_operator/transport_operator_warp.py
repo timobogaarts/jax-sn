@@ -85,8 +85,7 @@ class TransportOperatorLevelsWarpSingleAngle(TransportOperatorBatched):
 
     def _inv_args(self, b):
         return (*self._base_inv_args(b), self.levelsetup)
-    
-
+        
 class TransportOperatorLevelsWarpMultipleAngles(TransportOperatorMultipleAngles):
     '''
     Transport operator for multiple angles using vmap over angles.
@@ -99,4 +98,11 @@ class TransportOperatorLevelsWarpMultipleAngles(TransportOperatorMultipleAngles)
 
     def _invert_internal(self, b : jnp.ndarray) -> jnp.ndarray:
         return level_multi_angle_warp_sweep(*self.transport_operator._inv_args(b))
+    
+    def __getitem__(self, idx):
+        '''Overloads for the level based parallelism transport operator.'''   
+        return eqx.tree_at(lambda t_operator : [t_operator.topological_sorted_angle, t_operator.levelsetup, t_operator.levelsetup_reverse], self.transport_operator, 
+                           [self.transport_operator.topological_sorted_angle[idx], self.transport_operator.levelsetup[idx], self.transport_operator.levelsetup_reverse[idx]])
+    
+
     
