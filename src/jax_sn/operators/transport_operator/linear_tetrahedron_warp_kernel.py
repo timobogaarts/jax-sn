@@ -456,7 +456,7 @@ def _level_single_angle_sweep(
         level_start = level_start_np[level]        
         level_size   = level_sizes_np[level]
         if level_size <= 0:
-            continue # no work for this level
+            break # no work for this level -> no work for next levels either.
 
         wp.launch(kernel = _sweep_level_kernel,
             dim=(level_size,),
