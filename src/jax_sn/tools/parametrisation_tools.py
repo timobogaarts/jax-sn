@@ -182,3 +182,10 @@ class ParametrisedScipyInterface:
     def jac_constraints(self, x):
         _, *J = self.evaluate_jac(x)
         return onp.asarray(J, float)
+    
+
+
+def ks_agg(x, alpha=50.0):
+    n = x.shape[0]
+    m = jnp.max(x)
+    return m + jnp.log(jnp.sum(jnp.exp(alpha * (x - m)))) / alpha - jnp.log(n) / alpha
