@@ -183,6 +183,7 @@ class ParametrisedScipyInterface:
         _, *J = self.evaluate_jac(x)
         return onp.asarray(J, float)
 
+@dataclass
 class DiagParametrisedScipyInterface:
 
     iteration_i : int = 0 
