@@ -144,12 +144,15 @@ def compute_levels_iterative(dependency_matrix : jnp.ndarray, n_iterations_per_l
     n_elements_computed    = 0 
     for _ in range(absolute_maximum_loops):                                
         levels = _scan_loop_levels_including_dummy(levels, dependency_matrix, n_iterations_per_loop)
-        n_elements_computed_new = jnp.sum(levels < n_elements)        
+        n_elements_computed_new = jnp.sum(levels[:-1] < n_elements)
         if n_elements_computed_new >= n_elements:
             break
         if n_elements_computed_new == n_elements_computed:
             raise RuntimeError("No new elements are in the next level while not all elements can be computed. Graph cannot be computed: there are cycles present in the graph.")
         n_elements_computed = n_elements_computed_new
+
+    print(n_elements_computed_new)
+    
     return _levels_including_dummy_to_levels(levels)
         
 
@@ -171,7 +174,7 @@ def compute_levels_iterative_jax(dependency_matrix : jnp.ndarray, n_iterations_p
     n_elements             = dependency_matrix.shape[0]    
     absolute_maximum_loops = (n_elements + 1) // n_iterations_per_loop + 1
     levels0                = _setup_levels_including_dummy(dependency_matrix)
-    n_computed_0           = jnp.sum(levels0 < n_elements)
+    n_computed_0           = jnp.sum(levels0[:-1] < n_elements)
 
     state0 = (
         levels0,                                          # levels start
@@ -187,7 +190,7 @@ def compute_levels_iterative_jax(dependency_matrix : jnp.ndarray, n_iterations_p
     def body_fn(state):
         levels, loop_idx, n_computed, n_computed_prev = state
         levels_new = _scan_loop_levels_including_dummy(levels, dependency_matrix, n_iterations_per_loop)
-        n_computed_new = jnp.sum(levels_new < n_elements)
+        n_computed_new = jnp.sum(levels_new[:-1] < n_elements)
         return (
             levels_new,
             loop_idx + 1,
