@@ -184,7 +184,7 @@ class ParametrisedScipyInterface:
         return onp.asarray(J, float)
 
 @dataclass
-class DiagParametrisedScipyInterface:
+class DiagParametrisedScipyInterface(ParametrisedScipyInterface):
 
     iteration_i : int = 0 
     n_in_iteration : int = 0
