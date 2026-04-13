@@ -180,7 +180,7 @@ def compute_levels_iterative_jax(dependency_matrix : jnp.ndarray, n_iterations_p
         levels0,                                          # levels start
         0,                                                # loop idx
         n_computed_0,                                     # n_computed_0
-        0                                                 # n_computed_prev        
+        -1                                                # n_computed_prev
         )   
     
     def cond_fn(state):
