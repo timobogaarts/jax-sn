@@ -182,6 +182,46 @@ class ParametrisedScipyInterface:
     def jac_constraints(self, x):
         _, *J = self.evaluate_jac(x)
         return onp.asarray(J, float)
+
+class DiagParametrisedScipyInterface:
+
+    iteration_i : int = 0 
+    n_in_iteration : int = 0
+    save_dir : str = "iterations/"
+
+    @classmethod 
+    def from_scipy_interface(cls, scipy_interface : ParametrisedScipyInterface):
+        return cls(scipy_interface.parametrised_objective, scipy_interface.f_theta_parametrisation_values)
+    
+    def evaluate_values(self, theta):
+            theta = jnp.asarray(theta)
+            
+            print("Evaluating values for theta:", theta)        
+            if self._cache_theta_val is None or not onp.array_equal(theta, self._cache_theta_val):
+                
+                jnp.save(self.save_dir + f"theta_{self.iteration_i}_{self.n_in_iteration}.npy", theta)
+                self._cache_theta_val = onp.array(theta).copy()
+                pv = self.f_theta_parametrisation_values[0](theta)
+                f_values = self.parametrised_objective.objective_and_constraints(pv)
+                self._cache_val = onp.array(f_values).copy()
+                print("\tValues: ", f_values)
+                jnp.save(self.save_dir + f"f_values_{self.iteration_i}_{self.n_in_iteration}.npy", f_values)
+                self.n_in_iteration += 1
+            return self._cache_val
+        
+    def evaluate_jac(self, theta):
+        theta = jnp.asarray(theta)
+        print("Evaluating jac for theta:", theta[0:10])
+        if self._cache_theta_jac is None or not onp.array_equal(theta, self._cache_theta_jac):
+            print("\t cache miss, calculating")
+            jnp.save(self.save_dir + f"theta_{self.iteration_i}_{self.n_in_iteration}_jac.npy", theta)
+            self._cache_theta_jac = onp.array(theta).copy()
+            pv = self.f_theta_parametrisation_values[0](theta)
+            df = self.parametrised_objective.grad_objective_and_constraints(pv)
+            self._cache_jac = onp.array(self.f_theta_parametrisation_values[1](df)).copy()
+            jnp.save(self.save_dir + f"jac_{self.iteration_i}_{self.n_in_iteration}.npy", self._cache_jac)
+
+        return self._cache_jac   
     
 
 
