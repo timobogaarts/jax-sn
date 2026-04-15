@@ -432,8 +432,11 @@ def test_bb_right_hand_side(_setup_bb):
     bicgstab_solver = lx.BiCGStab(1e-20, 1e-20, max_steps = 300)
 
     from jax_sn.operators.multi_group_operator import solve_lower_triangular
+    from jax_sn.operators.multi_group_operator.lower_triangular_solver import SolverDiagnostics
 
-    values_lower_triangular = solve_lower_triangular(MGOP, bicgstab_solver, rhs_total)[0]
+    diags = SolverDiagnostics(False, False)
+
+    values_lower_triangular = solve_lower_triangular(MGOP, bicgstab_solver, rhs_total, diags)[0]
 
     from jax_sn.operators.multi_group_operator.right_hand_side import IsotropicSourceSingleGroup, solve_multigroup_operator_rhs
     rhs_impl = IsotropicSourceSingleGroup.from_operator(MGOP, source_eg0[0] * onp.sqrt(onp.pi * 4), 0)
@@ -465,8 +468,11 @@ def test_bb(_setup_bb, expected_value_function = _get_expected_values_sb_bb):
     bicgstab_solver = lx.BiCGStab(1e-20, 1e-20, max_steps = 300)
 
     from jax_sn.operators.multi_group_operator import solve_lower_triangular
+    from jax_sn.operators.multi_group_operator.lower_triangular_solver import SolverDiagnostics
 
-    values_lower_triangular = solve_lower_triangular(MGOP, bicgstab_solver, rhs_total)[0]
+    diag =  SolverDiagnostics(False, False)
+
+    values_lower_triangular = solve_lower_triangular(MGOP, bicgstab_solver, rhs_total, diag)[0]
     values_total            = lx.linear_solve(MGOP,  rhs_total, bicgstab_solver).value
 
     x = _interp_x()    

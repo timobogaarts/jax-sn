@@ -6,7 +6,7 @@ from .transport_operator_imp import (
     transport_inverse_sweep_multiple_angles_batched,
 )
 
-from . import transport_operator_levels, transport_operator_pallas
+from . import transport_operator_levels, transport_operator_pallas, transport_operator_warp
 
 __all__ = [
     'TransportOperator',
@@ -20,5 +20,6 @@ __all__ = [
     'transport_inverse_sweep_batched',
     'transport_inverse_sweep_multiple_angles_batched',
     'transport_operator_levels',
-    'transport_operator_pallas'
+    'transport_operator_pallas',
+    'transport_operator_warp'
 ]

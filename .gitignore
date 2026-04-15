@@ -127,3 +127,4 @@ temp/
 # OpenMC data
 examples/openmc_data/
 *.xml
+CLAUDE.MD

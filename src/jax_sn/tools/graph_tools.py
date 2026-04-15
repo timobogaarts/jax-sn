@@ -36,7 +36,7 @@ def _while_loop_levels_including_dummy(levels_elements : jnp.ndarray, dependency
     Possibly significantly slower than the scan version; use with care. Does not check for cycles in the graph.    
     '''
     def cond(state):
-        return jnp.any(state[0][:-1] >= dependency_matrix.shape[0]) & (state[-1] < n_max_iterations)    
+        return jnp.any(state[0][:-1] > dependency_matrix.shape[0]) & (state[-1] < n_max_iterations)
     def body(state):        
         return _increment_levels_including_dummy(state[0], dependency_matrix), state[1] + 1    
     levels_final, _ = jax.lax.while_loop(cond, body, (levels_elements, 0))
@@ -47,11 +47,12 @@ def _setup_levels_including_dummy(dependency_matrix : jnp.ndarray) -> jnp.ndarra
     '''
     *internal* 
     Setup initial levels of elements in a graph defined by dependency_matrix.   
-    Initial levels of all elements is set to n_elements (one larger than would be actually possible!).
+    Initial levels of all elements is set to n_elements + 1 (strictly larger than any valid encoded level,
+    which tops out at n_elements for a fully-linear chain, so this sentinel is always distinguishable).
     A dummy element is added at the end that is always computable (i.e. no connection -> level 0 available).
     '''
     n_elements = dependency_matrix.shape[0]
-    levels_elements  = jnp.full(n_elements + 1, n_elements, dtype = dependency_matrix.dtype)
+    levels_elements  = jnp.full(n_elements + 1, n_elements + 1, dtype = dependency_matrix.dtype)
     levels_elements  = levels_elements.at[-1].set(0) # dummy element that is always computable (i.e. no connection -> level 0 available)    
     return levels_elements
 
@@ -144,7 +145,7 @@ def compute_levels_iterative(dependency_matrix : jnp.ndarray, n_iterations_per_l
     n_elements_computed    = 0 
     for _ in range(absolute_maximum_loops):                                
         levels = _scan_loop_levels_including_dummy(levels, dependency_matrix, n_iterations_per_loop)
-        n_elements_computed_new = jnp.sum(levels[:-1] < n_elements)
+        n_elements_computed_new = jnp.sum(levels[:-1] <= n_elements)
         if n_elements_computed_new >= n_elements:
             break
         if n_elements_computed_new == n_elements_computed:
@@ -174,7 +175,7 @@ def compute_levels_iterative_jax(dependency_matrix : jnp.ndarray, n_iterations_p
     n_elements             = dependency_matrix.shape[0]    
     absolute_maximum_loops = (n_elements + 1) // n_iterations_per_loop + 1
     levels0                = _setup_levels_including_dummy(dependency_matrix)
-    n_computed_0           = jnp.sum(levels0[:-1] < n_elements)
+    n_computed_0           = jnp.sum(levels0[:-1] <= n_elements)
 
     state0 = (
         levels0,                                          # levels start
@@ -190,7 +191,7 @@ def compute_levels_iterative_jax(dependency_matrix : jnp.ndarray, n_iterations_p
     def body_fn(state):
         levels, loop_idx, n_computed, n_computed_prev = state
         levels_new = _scan_loop_levels_including_dummy(levels, dependency_matrix, n_iterations_per_loop)
-        n_computed_new = jnp.sum(levels_new[:-1] < n_elements)
+        n_computed_new = jnp.sum(levels_new[:-1] <= n_elements)
         return (
             levels_new,
             loop_idx + 1,
@@ -198,7 +199,7 @@ def compute_levels_iterative_jax(dependency_matrix : jnp.ndarray, n_iterations_p
             n_computed
         )
     
-    def error_fn(state):
+    def error_fn(state):        
         state = eqx.error_if(state, jnp.logical_and(state[2] < n_elements, state[1] >= absolute_maximum_loops), f"Absolute maximum number of loops {absolute_maximum_loops} reached while not all elements could be computed. Graph cannot be computed: there may be cycles present in the graph.")
         state = eqx.error_if(state, jnp.logical_and(state[2] < n_elements, state[2] == state[3]), f"No new elements are in the next level while not all elements can be computed. Graph cannot be computed: there are cycles present in the graph.")
         return state 
