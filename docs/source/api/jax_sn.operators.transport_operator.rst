@@ -12,8 +12,10 @@ Submodules
 .. toctree::
    :maxdepth: 2
 
+   jax_sn.operators.transport_operator.linear_tetrahedron_warp_kernel
    jax_sn.operators.transport_operator.transport_operator_base
    jax_sn.operators.transport_operator.transport_operator_forward
    jax_sn.operators.transport_operator.transport_operator_imp
    jax_sn.operators.transport_operator.transport_operator_levels
    jax_sn.operators.transport_operator.transport_operator_pallas
+   jax_sn.operators.transport_operator.transport_operator_warp

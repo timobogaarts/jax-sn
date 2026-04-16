@@ -15,5 +15,7 @@ Submodules
    jax_sn.tools.graph_tools
    jax_sn.tools.memory_analysis
    jax_sn.tools.mesh_tools
+   jax_sn.tools.mesh_tools_numpy
    jax_sn.tools.parametrisation_tools
    jax_sn.tools.permutation_tools
+   jax_sn.tools.setup_test_mgop
