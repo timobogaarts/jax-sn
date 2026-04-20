@@ -293,8 +293,8 @@ class TopologicalSortedAngle:
         toposort : TopologicalSortedAngle
             The computed topological sort.
         '''
-        from .graph_generation import compute_levels_domain_safe
-        levels = compute_levels_domain_safe(geometric_domain, angle, n_iterations_per_loop)
+        from .graph_generation import compute_levels_domain_safe, compute_levels_domain_safe_jax
+        levels = compute_levels_domain_safe_jax(geometric_domain, angle, n_iterations_per_loop)
         levels_argsort = jnp.argsort(levels)
         return cls(levels=levels, angle=angle, levels_argsort=levels_argsort)
     
