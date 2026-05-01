@@ -29,6 +29,20 @@ class MultigroupOperatorParametrisedVerticesXS(ParametrisedModule):
     @staticmethod
     def reconstruct_operator(operator : MultiGroupOperator, theta : VerticesXSTheta) -> MultiGroupOperator:
         return reconstruct_multigroup_operator_including_toposort(operator, theta)
+    
+
+class MultigroupOperatorParametrisedXS(ParametrisedModule):
+    '''
+    Parametrisation case for a MultiGroupOperator parameterised by both the vertices and the cross section data.
+    '''
+    @staticmethod
+    def theta_base(operator : MultiGroupOperator ):
+        return operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data
+    
+    @staticmethod
+    def reconstruct_operator(operator : MultiGroupOperator, theta : CrossSectionData) -> MultiGroupOperator:
+        return reconstruct_multigroup_operator_xs(operator, theta)
+
 
 
 
@@ -96,7 +110,13 @@ class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
 
 
 
+@eqx.filter_jit
+def reconstruct_multigroup_operator_xs(operator : MultiGroupOperator, cross_section_data : CrossSectionData) -> MultiGroupOperator:
+        xs_idxed             = eqx.tree_at(lambda xs_idx : xs_idx.cross_section_data, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed, replace = cross_section_data)                
+        operator_xs_replaced =  eqx.tree_at(operator.cross_sections_indexed_loc, operator, replace_fn= lambda _ :  xs_idxed)
+        return operator_xs_replaced
 
+    
 
 @eqx.filter_jit
 def reconstruct_multigroup_operator_including_toposort(operator : MultiGroupOperator, theta : VerticesXSTheta, replace_topological_sort : bool = True) -> MultiGroupOperator:

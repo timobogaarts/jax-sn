@@ -34,11 +34,34 @@ class ParametrisedModule(ABC):
 class ParametrisationValues(eqx.Module):
     ...
 
+def obj_constraint(theta, mod):
+    return mod.objective_and_constraints(theta)
+
+grad_obj_constraint = eqx.filter_jit(eqx.filter_jacrev(obj_constraint))
+
+
 class ParametrisedObjective(eqx.Module):
         
     @abstractmethod
     def objective_and_constraints(self, theta : ParametrisationValues) -> Tuple[Union[float, PyTree]]:
         ...
+
+
+    def grad_objective_and_constraints(self, theta : ParametrisationValues) -> Tuple[Union[float, PyTree]]:
+        '''
+        Get the gradient of the objective and constraints with respect to the parametrisation values.
+
+        Uses JAX reverse mode autodiff.
+
+        Parameters:
+        -------------
+            theta: The parametrisation values.
+        
+        Returns:
+        -------------
+            The gradient of the objective and constraints.
+        '''
+        return grad_obj_constraint(theta, self)
         
 class ParametrisedModuleTheta(eqx.Module):
     '''
