@@ -27,3 +27,19 @@ class AbstractLinearOperator_sn(lx.AbstractLinearOperator):
         All operators in jax-sn are real, so the conjugate is the operator itself.
         '''
         return self  #real opera
+
+
+
+@lx.is_symmetric.register(AbstractLinearOperator_sn)
+def _(operator):
+    return False
+
+
+@lx.is_positive_semidefinite.register(AbstractLinearOperator_sn)
+def _(operator):
+    return False
+
+
+@lx.is_negative_semidefinite.register(AbstractLinearOperator_sn)
+def _(operator):
+    return False
