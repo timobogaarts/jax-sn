@@ -27,24 +27,6 @@ for the warp operator (already flagged with a TODO).
 **Recommendation:** invert the ownership: one canonical store (e.g. `SolutionDomainData`) that
 all sub-operators reference, so there is exactly one location to replace.
 
-## 2. Positional-construction fragility — with two latent bugs as evidence
-
-Operators are frequently rebuilt by re-calling constructors positionally (`transpose()` via
-`type(self)(...)` in `multi_group_operator_imp.py:218-225`, `from_multigroup_operator`, the
-various `to_energy_group`). This pattern has already produced two real argument-order bugs:
-
-- `ScatterOperator.to_energy_group` (`scatter_operator_imp.py:71-75`): the method takes
-  `(energy_group_out, energy_group_in)` but passes them to the constructor as
-  `(..., energy_group_in, energy_group_out)` — swapped. Currently masked because every caller
-  passes `(g, g)`.
-- `IsotropicSourceSingleGroup.from_shape` (`right_hand_side.py:63`): passes
-  `cls(shape, isotropic_value, energy_group)` but the field order is
-  `(structure, energy_group, isotropic_value)`. This classmethod would crash in
-  `__check_init__` the moment anyone uses it — it's evidently untested. (`from_operator` at
-  line 82 has the correct order.)
-
-**Recommendation:** use keyword arguments for all equinox-module construction, or rebuild with
-`eqx.tree_at` / `dataclasses.replace` instead of positional re-construction.
 
 ## 3. Transpose-via-subclass breaks substitutability
 
@@ -194,8 +176,8 @@ take. There are also recurring typos ("Mathetmatical", "hasing", "jax-snj",
 
 ## Suggested priority
 
-1. Fix the two latent constructor-order bugs (§2) and the dead double-`return` (§8, first
-   bullet) — they're cheap and they're booby traps.
+1. ~~Fix the two latent constructor-order bugs (§2)~~ — done. Still worth fixing the dead
+   double-`return` (§8, first bullet) — cheap and a booby trap.
 2. Decide on one pytree idiom and one optional-dependency strategy (§4, §6), and declare extras
    in `pyproject.toml`.
 3. Address the warp `AttributeError` path and the `__check_init` typo (§5, §7) — both are

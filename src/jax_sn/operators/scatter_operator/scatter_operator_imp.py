@@ -3,7 +3,7 @@ import jax.numpy as jnp
 
 
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
-from jax_sn.operators.moment_operator import DiscreteOperator, DiscreteOperatorTransposed
+from jax_sn.operators.moment_operator import DiscreteOperator
 from jax_sn.domain.cross_sections import CrossSectionsIndexed
 
 from jax_sn.quadrature_set import QuadratureSet
