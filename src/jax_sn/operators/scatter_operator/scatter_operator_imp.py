@@ -71,8 +71,8 @@ class ScatterOperator(AbstractLinearOperator_sn):
     def to_energy_group(self, energy_group_out : int, energy_group_in : int) -> "ScatterOperator":
         return ScatterOperator(self.cross_sections_indexed,
                                self.moments_elements_basis_shape,
-                               energy_group_in,
-                               energy_group_out)
+                               energy_group_out,
+                               energy_group_in)
     
     def in_structure(self):
         return self.moments_elements_basis_shape

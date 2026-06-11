@@ -60,7 +60,7 @@ class IsotropicSourceSingleGroup(RightHandSide):
         IsotropicSourceSingleGroup
             The created isotropic source right-hand-side for a single energy group.
         '''
-        return cls(shape, isotropic_value, energy_group)  # shape is already a ShapeDtypeStruct
+        return cls(shape, energy_group, isotropic_value)  # shape is already a ShapeDtypeStruct
 
     @classmethod
     def from_operator(cls, operator : MultiGroupOperator, isotropic_value : jnp.ndarray, energy_group : int = 0):
