@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from jax_sn.domain.cross_sections import CrossSectionData
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
-from jax_sn.operators.single_group_operator import SingleGroupOperator, SingleGroupOperatorTranspose
+from jax_sn.operators.single_group_operator import SingleGroupOperator
 from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
 from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles
 from jax_sn.operators.mass_operator import MassOperator
@@ -250,14 +250,12 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         SingleGroupOperator
             The single group operator for energy group g_i.
         ''' 
-        if self.transpose_bool:
-            return SingleGroupOperatorTranspose(self.moment_operator,
-                                                self.transport_operator.to_energy_group(g_i),
-                                                self.mass_operator,
-                                                self.discrete_operator,
-                                                self.gather_scatter_operator.to_scatter_operator(g_i, g_i, self.moment_operator.out_structure()))
-        else:
-            return SingleGroupOperator(self.moment_operator, self.transport_operator.to_energy_group(g_i), self.mass_operator, self.discrete_operator, self.gather_scatter_operator.to_scatter_operator(g_i, g_i, self.moment_operator.out_structure()))
+        return SingleGroupOperator(self.moment_operator,
+                                   self.transport_operator.to_energy_group(g_i),
+                                   self.mass_operator,
+                                   self.discrete_operator,
+                                   self.gather_scatter_operator.to_scatter_operator(g_i, g_i, self.moment_operator.out_structure()),
+                                   transpose_bool=self.transpose_bool)
         
     @property
     def lower_block_triangular(self):

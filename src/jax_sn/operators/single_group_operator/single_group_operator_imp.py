@@ -1,17 +1,18 @@
 import jax
 import jax.numpy as jnp
+from abc import abstractmethod
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
 from jax_sn.operators.mass_operator import MassOperator
 from jax_sn.operators.scatter_operator import ScatterOperator
 from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles
-import lineax as lx 
+import lineax as lx
 
 import equinox as eqx
 
-class SingleGroupOperator(AbstractLinearOperator_sn):
+class SingleGroupOperatorBase(AbstractLinearOperator_sn):
     r'''
-    Single energy group linear operator implementation base class.
+    Single energy group linear operator base class.
 
     This implements the total, single-group linear operator:
 
@@ -21,7 +22,18 @@ class SingleGroupOperator(AbstractLinearOperator_sn):
     where :math:`\mathbf{T}` is the (multi-angle) transport operator (see :class:`TransportOperatorMultipleAngles`), :math:`\mathbf{H}` the batched (over angles) mass operator (see :class:`MassOperator`), :math:`\mathbf{M}` the batched (over element and basis function)
     moment operator (see :class:`MomentOperator`),  :math:`\mathbf{S}_{gg}` the inscattering operator (see :class:`ScatterOperator`).
 
-    Mathetmatical description
+    Direction handling
+    ---------------------------
+    Whether this operator applies the forward action or its transpose is carried by the
+    boolean field :attr:`transpose_bool`, *not* by a separate subclass. This keeps the
+    transpose axis orthogonal to any future implementation axis: a concrete implementation
+    subclass only needs to provide :meth:`_forward_mv` and :meth:`_transpose_mv`, while this
+    base class handles dispatch, transposition (a cheap flag flip via :func:`equinox.tree_at`,
+    no reconstruction) and the in/out shaping. Since this operator is square
+    (:math:`\mathcal{M} \otimes \mathcal{F} \rightarrow \mathcal{M} \otimes \mathcal{F}`), the
+    in/out structure is identical in both directions.
+
+    Mathematical description
     ---------------------------
 
     This operator maps:
@@ -29,11 +41,11 @@ class SingleGroupOperator(AbstractLinearOperator_sn):
     .. math::
         \mathbf{A}_g : \mathcal{M} \otimes \mathcal{F} \rightarrow \mathcal{M} \otimes \mathcal{F}
 
-    
+
     Transposition
     ---------------------------
 
-    The transpose is implemented directly and follows from transposing the individual operators:
+    The transpose follows from transposing the individual operators:
 
     .. math::
         \mathbf{A}_g^T = \mathbf{I} - \mathbf{S}_{gg}^T \mathbf{D}^T \mathbf{H}^T (\mathbf{T}_g^{-1})^T \mathbf{M}^T
@@ -42,7 +54,7 @@ class SingleGroupOperator(AbstractLinearOperator_sn):
 
     Solution
     ---------------------------
-    Since this is a iteratively defined linear operator, the standard way to solve systems involving this operator is to use an iterative solver (e.g., GMRES, CG, etc.) with the mv() method defined here. This can 
+    Since this is a iteratively defined linear operator, the standard way to solve systems involving this operator is to use an iterative solver (e.g., GMRES, CG, etc.) with the mv() method defined here. This can
     be accomplished using e.g. lineax solvers. This allows for the propagation of the derivatives through the solver as well.
 
     '''
@@ -52,6 +64,9 @@ class SingleGroupOperator(AbstractLinearOperator_sn):
     mass_operator      : MassOperator
     discrete_operator  : DiscreteOperator
     inscatter_operator : ScatterOperator
+
+    transpose_bool     : bool = False
+    r'''Whether this operator applies the transposed action instead of the forward action.'''
 
     def __check_init__(self):
         #assert self.transport_operator.energy_group == self.inscatter_operator.energy_group, f"Energy group mismatch between operators: transport: {self.transport_operator.energy_group}, scatter: {self.inscatter_operator.energy_group}"
@@ -65,48 +80,78 @@ class SingleGroupOperator(AbstractLinearOperator_sn):
         assert self.transport_operator.in_structure() == self.moment_operator.in_structure(), f"transport_operator in_structure [note it is inverted] {self.transport_operator.in_structure()} must match moment_operator in_structure {self.moment_operator.in_structure()}"
         assert self.discrete_operator.in_structure() == self.inscatter_operator.out_structure(), f"discrete_operator in_structure {self.discrete_operator.in_structure()} must match inscatter_operator out_structure {self.inscatter_operator.out_structure()}"
         # TODO add more checks? shapes, etc.
-         
+
+    @abstractmethod
+    def _forward_mv(self, x : jnp.ndarray) -> jnp.ndarray:
+        '''Apply the forward action. Implemented by concrete subclasses.'''
+        ...
+
+    @abstractmethod
+    def _transpose_mv(self, x : jnp.ndarray) -> jnp.ndarray:
+        '''Apply the transposed action. Implemented by concrete subclasses.'''
+        ...
 
     def mv(self, x):
+        if self.transpose_bool:
+            return self._transpose_mv(x)
+        return self._forward_mv(x)
+
+    def transpose(self) -> "SingleGroupOperatorBase":
+        '''Returns the transposed operator by flipping :attr:`transpose_bool`. There is no setup or reconstruction, so this operation is essentially free.'''
+        return eqx.tree_at(lambda op: op.transpose_bool, self, not self.transpose_bool)
+
+    def to_energy_group(self, energy_group) -> "SingleGroupOperatorBase":
+        '''Returns this operator for a different energy group, preserving the implementation type and transpose direction.'''
+        return eqx.tree_at(
+            lambda op: (op.transport_operator, op.inscatter_operator),
+            self,
+            (self.transport_operator.to_energy_group(energy_group),
+             self.inscatter_operator.to_energy_group(energy_group, energy_group)))
+
+    def in_structure(self):
+        return jax.ShapeDtypeStruct((self.moment_operator.wk_yklm.shape[-1],) + self.transport_operator.out_structure().shape[1:] , self.moment_operator.wk_yklm.dtype)
+
+    def out_structure(self):
+        return jax.ShapeDtypeStruct((self.moment_operator.wk_yklm.shape[-1],) + self.transport_operator.out_structure().shape[1:] , self.moment_operator.wk_yklm.dtype)
+
+    @property
+    def energy_group(self):
+        return self.transport_operator.energy_group
+
+
+@lx.is_symmetric.register(SingleGroupOperatorBase)
+def _(operator : SingleGroupOperatorBase):
+    return False
+
+@lx.linearise.register(SingleGroupOperatorBase)
+def _(operator : SingleGroupOperatorBase):
+    return operator
+
+
+class SingleGroupOperator(SingleGroupOperatorBase):
+    r'''
+    Single energy group linear operator (see :class:`SingleGroupOperatorBase`).
+
+    The transposed action does not pre-apply the transposes of its constituent operators, but
+    applies them on the fly (the individual transposes are free flag flips / data reversals).
+    '''
+
+    def _forward_mv(self, x : jnp.ndarray) -> jnp.ndarray:
         return _mv_single_group_operator(self.moment_operator,
                                         self.transport_operator,
                                         self.mass_operator,
                                         self.discrete_operator,
                                         self.inscatter_operator,
-                                        x)    
-    
-    def transpose(self) -> "SingleGroupOperatorTranspose":
-        return SingleGroupOperatorTranspose(self.moment_operator,
-                                            self.transport_operator,
-                                            self.mass_operator,
-                                            self.discrete_operator,
-                                            self.inscatter_operator)  
-    
-    def to_energy_group(self, energy_group)-> "SingleGroupOperator":
-        return SingleGroupOperator(self.moment_operator, self.transport_operator.to_energy_group(energy_group), self.mass_operator, self.discrete_operator, self.inscatter_operator.to_energy_group(energy_group, energy_group))
-    
-    def in_structure(self):
-        return jax.ShapeDtypeStruct((self.moment_operator.wk_yklm.shape[-1],) + self.transport_operator.out_structure().shape[1:] , self.moment_operator.wk_yklm.dtype)
-    
-    def out_structure(self):
-        return jax.ShapeDtypeStruct((self.moment_operator.wk_yklm.shape[-1],) + self.transport_operator.out_structure().shape[1:] , self.moment_operator.wk_yklm.dtype)
-    
-    @property 
-    def energy_group(self):
-        return self.transport_operator.energy_group
-    
+                                        x)
 
-    
+    def _transpose_mv(self, x : jnp.ndarray) -> jnp.ndarray:
+        return _mv_single_group_operator_transpose(self.moment_operator,
+                                                   self.transport_operator,
+                                                   self.mass_operator,
+                                                   self.discrete_operator,
+                                                   self.inscatter_operator,
+                                                   x)
 
-@lx.is_symmetric.register(SingleGroupOperator)
-def _(operator : SingleGroupOperator):
-    return False
-
-@lx.linearise.register(SingleGroupOperator)
-def _(operator : SingleGroupOperator):
-    return operator    
-        
-    
 
 @eqx.filter_jit
 def _mv_single_group_operator(moment_operator, transport_operator, mass_operator, discrete_operator, inscatter_operator, x):
@@ -132,7 +177,7 @@ def _mv_single_group_operator(moment_operator, transport_operator, mass_operator
     -------
     jnp.ndarray
         The result of the multiplication.
-    '''        
+    '''
 
     # Memory analysis:
     # mass_operator(x) [no temporary ]
@@ -148,9 +193,8 @@ def _mv_single_group_operator(moment_operator, transport_operator, mass_operator
 
     # switching out mass & discrete does nothing: then you need 2 temporaries for the input output of the transport operator, so you gain absolutely nothing.
     # This is the absolute best you can do (and it's the same actually as in the old stell-blanket.): the transport operator inverse is non local, so you can't merge or fuse the kernels any further.
-    
+
     return x - moment_operator.mv(transport_operator.inv(discrete_operator.mv(mass_operator.mv(inscatter_operator.mv(x)))))
-    return x - moment_operator.mv(transport_operator.inv(mass_operator.mv(discrete_operator.mv(inscatter_operator.mv(x)))))
 
 
 
@@ -181,49 +225,9 @@ def _mv_single_group_operator_transpose(moment_operator, transport_operator, mas
     -------
     jnp.ndarray
         The result of the multiplication.
-    '''        
+    '''
     return x -inscatter_operator.transpose().mv( discrete_operator.transpose().mv(mass_operator.transpose().mv(transport_operator.transpose().inv(moment_operator.transpose().mv(x)))))
 
-class SingleGroupOperatorTranspose(SingleGroupOperator):
-    r'''
-    Transpose of the SingleGroupOperator. See SingleGroupOperator for details.
-
-    This does not have the transposes of its constituent operators pre-applied, but applies them on the fly in the mv() method.
-    '''
-    
-    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        assert x.shape == self.in_structure().shape, f"Input x shape {x.shape} does not match expected in_structure shape {self.in_structure().shape}."
-        return _mv_single_group_operator_transpose(self.moment_operator,
-                                                   self.transport_operator,
-                                                   self.mass_operator,
-                                                   self.discrete_operator,
-                                                   self.inscatter_operator,
-                                                   x)
-    
-    def transpose(self) -> "SingleGroupOperator":
-        return SingleGroupOperator(self.moment_operator,
-                                   self.transport_operator,
-                                   self.mass_operator,
-                                   self.discrete_operator,
-                                   self.inscatter_operator)
-    
-    def to_energy_group(self, energy_group):
-        return SingleGroupOperatorTranspose(self.moment_operator, self.transport_operator.to_energy_group(energy_group), self.mass_operator, self.discrete_operator, self.inscatter_operator.to_energy_group(energy_group, energy_group))
-    
-    def in_structure(self):
-        return SingleGroupOperator.out_structure(self)
-            
-    def out_structure(self):
-        return SingleGroupOperator.in_structure(self)    
-
-@lx.is_symmetric.register(SingleGroupOperatorTranspose)
-def _(operator : SingleGroupOperatorTranspose):
-    return False
-
-@lx.linearise.register(SingleGroupOperatorTranspose)
-def _(operator : SingleGroupOperatorTranspose):
-    return operator    
-        
 
 # For the solve, we have as memory analysis:
 # mv = 2 x discrete temporary + in out moment

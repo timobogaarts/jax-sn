@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from jax_sn.domain.cross_sections import CrossSectionData
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.operators.multi_group_operator.lower_triangular_solver import MultiGroupLowerTriangularBlockSolver
-from jax_sn.operators.single_group_operator import SingleGroupOperator, SingleGroupOperatorTranspose
+from jax_sn.operators.single_group_operator import SingleGroupOperator
 from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
 from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles
 from jax_sn.operators.mass_operator import MassOperator

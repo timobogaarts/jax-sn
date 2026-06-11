@@ -160,7 +160,7 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver : lx.Abst
         \text{rhs}_g + \sum_{g' > g} \mathbf{S}^T_{g'g} [\xi_{g'}]
 
     
-    The single group system is then solved with the :class:`SingleGroupOperatorTranspose` for each specific energy group
+    The single group system is then solved with the transposed :class:`SingleGroupOperator` (``transpose_bool=True``) for each specific energy group
 
     *Technical note*
     

@@ -1,5 +1,5 @@
-from .single_group_operator_imp import SingleGroupOperator, SingleGroupOperatorTranspose
+from .single_group_operator_imp import SingleGroupOperatorBase, SingleGroupOperator
 
 __all__ = [
-    'SingleGroupOperator', "SingleGroupOperatorTranspose"
+    'SingleGroupOperatorBase', 'SingleGroupOperator'
 ]
