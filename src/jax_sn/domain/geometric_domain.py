@@ -639,6 +639,17 @@ class TopologicalSortedAngleLevelParallel(TopologicalSortedAngleBase):
             level_rev      = LevelBasedParallelism.from_topological_sorted_angle(topological_sorted_angle.reverse, maximum_number_of_levels),
         )
 
+    @classmethod
+    def from_domain_quadrature_set(cls, geometric_domain : GeometricDomain, quadrature_set : QuadratureSetBase, maximum_number_of_levels : Union[int, None] = None, n_iterations_per_loop : int = 100) -> "TopologicalSortedAngleLevelParallel":
+        '''
+        Build a level-parallel topological sort for all angles in a quadrature set directly from a domain
+        (the level computation runs once), padding the level arrays to ``maximum_number_of_levels``.
+        Mirrors :meth:`TopologicalSortedAngle.from_domain_quadrature_set` so creation helpers can build
+        either toposort type polymorphically from ``InversionStrategy.required_toposort_type``.
+        '''
+        plain = TopologicalSortedAngle.from_domain_quadrature_set(geometric_domain, quadrature_set, n_iterations_per_loop)
+        return cls.from_topological_sorted_angle(plain, maximum_number_of_levels)
+
     def __getitem__(self, idx : int) -> "TopologicalSortedAngleLevelParallel":
         return eqx.tree_at(lambda t : (t.level_fwd, t.level_rev), self._indexed_base(idx), (self.level_fwd[idx], self.level_rev[idx]))
 

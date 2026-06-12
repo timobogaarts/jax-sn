@@ -166,10 +166,40 @@ The caller builds the required toposort explicitly (e.g. `TopologicalSortedAngle
 before constructing a warp-levels operator; the factory just validates it. There is no
 `prepare_toposort` and no `TransportOperator.create` — construction does no hidden setup.
 
-Tradeoff: warp-levels operators are constructed explicitly with a pre-built level-parallel toposort,
-not via the generic `create_multi_group_operator` (which only builds plain toposorts, used by the
-vmap/batched/pallas paths). That path was already unused for warp; if ever needed,
-`create_multi_group_operator` can take a toposort argument directly.
+## Strategy-native creation + `required_toposort_type` (the helper-buildability fix)
+
+"Demand, don't prepare" left a gap: a generic helper can't know which toposort to build, because the
+operator doesn't exist yet to be asked. The answer is a property of the *strategy class*, not instance
+data — so it's a classmethod:
+
+- `InversionStrategy.required_toposort_type() -> Type[TopologicalSortedAngleBase]` — the concrete
+  toposort type a creation helper should build (default `TopologicalSortedAngle`; `WarpLevelSweep` →
+  `TopologicalSortedAngleLevelParallel`). This is the *build hint* and is distinct from
+  `check_compatible` (the permissive, instance/data-dependent *acceptance* check — the plain sweeps
+  accept any toposort, so it can't be an isinstance of the build type).
+- `TopologicalSortedAngleLevelParallel.from_domain_quadrature_set(domain, quad, maximum_number_of_levels=None)`
+  added so both toposort types share the builder interface the helper calls polymorphically (levels
+  computed once from the domain).
+
+`create_multi_group_operator` is now **strategy-native**: it takes `forward_strategy` /
+`inversion_strategy` / `angle_lifting` (defaults `VmapForward`/`VmapSweep`/`VmapAngles`, reproducing the
+old default) plus `topological_sorted_angle_kwargs`, and builds the toposort as
+`inversion_strategy.required_toposort_type().from_domain_quadrature_set(domain, quad, **kwargs)`. So a
+warp-levels mgop is now buildable generically:
+
+```python
+create_multi_group_operator(sd, quad,
+    forward_strategy=BatchedForward(100), inversion_strategy=WarpLevelSweep(), angle_lifting=WarpLevelAngles(),
+    topological_sorted_angle_kwargs={"maximum_number_of_levels": 400})
+```
+
+`max_n_levels` stays a *toposort-build* concern (the `topological_sorted_angle_kwargs`), not a strategy
+field — keeping the strategy a pure consumer. No caller passed the old `_cls`/`_kwargs` transport
+params, so the signature change needed no call-site updates. Construction is still demand-only; the
+build is the explicit `required_toposort_type().from_domain_quadrature_set(...)` step in the helper.
+
+Footgun (explicit, loud): `topological_sorted_angle_kwargs` must match the chosen type (passing
+`maximum_number_of_levels` with a plain-toposort strategy → `TypeError`).
 
 ## Deferred / out of scope
 - Strategy-native `create_multi_group_operator` API (keep the `_cls`/`_kwargs` API via factories).

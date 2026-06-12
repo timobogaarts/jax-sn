@@ -17,8 +17,9 @@ The pallas and warp strategies live next to their kernels (``transport_operator_
 
 import equinox as eqx
 from abc import abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Type
 
+from jax_sn.domain.geometric_domain import TopologicalSortedAngle, TopologicalSortedAngleBase
 from .transport_operator_imp import transport_inverse_sweep_batched, transport_inverse_sweep_complete_vmap
 from .transport_operator_forward import forward_transport_operator_vmap, forward_transport_operator_batch
 
@@ -61,19 +62,33 @@ class InversionStrategy(eqx.Module):
     How to sweep-invert the single-angle operator. Consumes ``operator._sweep_data()``.
 
     A strategy may have a *precondition on the toposort* (e.g. the level-based-parallelism sweep needs
-    a :class:`TopologicalSortedAngleLevelParallel`). It declares that precondition via
-    :meth:`check_compatible`; building the toposort that satisfies it is an explicit, visible step done
-    by the caller (and rebuilt via ``TopologicalSortedAngleBase.reconstruct``), not hidden work inside
-    operator construction.
+    a :class:`TopologicalSortedAngleLevelParallel`). It answers two separate questions about that:
+
+    - :meth:`required_toposort_type` (classmethod) -- the *concrete* toposort type a creation helper
+      should build for this strategy. This is a property of the strategy class (no instance data), so a
+      helper can ask it *before* the operator exists.
+    - :meth:`check_compatible` -- whether a given (already-built) operator's toposort/data are
+      *acceptable*. This is more permissive and data-dependent (e.g. the plain sweeps accept any
+      toposort, including a level-parallel one), so it is not the same as the build type.
+
+    Building the toposort is an explicit, visible step (the helper builds ``required_toposort_type``
+    from the domain, the caller can build it by hand, and it is rebuilt via
+    ``TopologicalSortedAngleBase.reconstruct``) -- never hidden work inside operator construction.
     '''
 
     @abstractmethod
     def __call__(self, operator: "TransportOperator", b):
         ...
 
+    @classmethod
+    def required_toposort_type(cls) -> Type[TopologicalSortedAngleBase]:
+        '''The concrete toposort type a creation helper should build for this strategy. Default: the plain sort.'''
+        return TopologicalSortedAngle
+
     def check_compatible(self, operator: "TransportOperator"):
-        '''Assert the operator's toposort/data satisfy this strategy's precondition. Default: nothing to check.
-        Run from ``TransportOperator.__check_init__``, so it fires at construction and on every ``eqx.tree_at``.'''
+        '''Assert the operator's toposort/data are acceptable to this strategy. Default: nothing to check
+        (any toposort works). Run from ``TransportOperator.__check_init__``, so it fires at construction
+        and on every ``eqx.tree_at``.'''
         pass
 
 

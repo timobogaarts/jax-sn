@@ -59,9 +59,13 @@ class WarpLevelSweep(InversionStrategy):
     def __call__(self, operator, b):
         return level_single_angle_warp_sweep(*operator._sweep_data(), b, operator.topological_sorted_angle.level_fwd)
 
+    @classmethod
+    def required_toposort_type(cls):
+        return TopologicalSortedAngleLevelParallel
+
     def check_compatible(self, operator):
         assert isinstance(operator.topological_sorted_angle, TopologicalSortedAngleLevelParallel), \
-            f"WarpLevelSweep needs a level-parallel toposort (build it with TopologicalSortedAngleLevelParallel.from_topological_sorted_angle), got {type(operator.topological_sorted_angle).__name__}"
+            f"WarpLevelSweep needs a level-parallel toposort (build it with TopologicalSortedAngleLevelParallel.from_topological_sorted_angle / from_domain_quadrature_set), got {type(operator.topological_sorted_angle).__name__}"
         _assert_warp_compatible(operator.solution_domain_data)
 
 
