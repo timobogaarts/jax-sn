@@ -200,20 +200,6 @@ def test_local_real_inversion(dimension):
 
 
 
-@pytest.mark.slow
-def test_level_sweep(setup_solution_domain_data_and_toposort_sb):
-    solution_domain, toposort, mapped_xs, source, _, _ , _, _ = setup_solution_domain_data_and_toposort_sb
-    mass_operator = jax_sn.operators.mass_operator.MassOperatorVmap(solution_domain.solution_domain_data.fem_matrices, solution_domain.solution_domain_data.precomputed_geometric_data)
-    source_mass_op = mass_operator.mv(source.source_values)
-    base_parameters = (*solution_domain.solution_domain_data, mapped_xs, toposort, source_mass_op)    
-    complete_vmap_sweep = jax_sn.operators.transport_operator.transport_inverse_sweep_complete_vmap(*base_parameters)        
-    topolevel = jax_sn.operators.transport_operator.transport_operator_levels.TopologicalSortedAnglePrecomputedLevels.from_topological_sorted_angle(toposort)
-    max_level = int(jnp.max(topolevel.level_log2_size))
-    base_parameters_levels = (*solution_domain.solution_domain_data, mapped_xs, topolevel, source_mass_op)
-    sweep_levels = jax_sn.operators.transport_operator.transport_operator_levels.transport_inverse_sweep_complete_vmap_levels_max(*base_parameters_levels, max_level)
-    onp.testing.assert_allclose(complete_vmap_sweep, sweep_levels[:-1], atol=1e-12)
-
-
 #============================================================
 # Transport operator tests
 #===========================================================

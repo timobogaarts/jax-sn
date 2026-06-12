@@ -463,3 +463,36 @@ def transport_inverse_sweep_multiple_angles_complete_vmap_pallas(geometric_domai
         return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, x)
 
 
+
+
+# ---------------------------------------------------------------------------
+# Pallas strategies + convenience constructors
+# ---------------------------------------------------------------------------
+from jax_sn.domain.geometric_domain import TopologicalSortedAngleBase
+from .transport_operator_strategies import InversionStrategy, VmapForward, BatchedForward
+
+
+class VmapPallasSweep(InversionStrategy):
+    '''Inverse sweep with all per-element matrices via vmap, using Pallas for the matrix ops.'''
+
+    def __call__(self, operator, b):
+        return transport_inverse_sweep_complete_vmap_pallas(*operator._sweep_data(), b)
+
+
+class BatchedPallasSweep(InversionStrategy):
+    '''Inverse sweep over batches of elements, using Pallas for the matrix ops.'''
+
+    batch_size: int = None
+
+    def __call__(self, operator, b):
+        return transport_inverse_sweep_batched_pallas(*operator._sweep_data(), b, self.batch_size)
+
+
+def TransportOperatorVmapPallas(solution_domain_data: SolutionDomainData, topological_sorted_angle: TopologicalSortedAngleBase, energy_group: int) -> TransportOperator:
+    '''Convenience constructor: vmap forward + Pallas vmap inverse sweep.'''
+    return TransportOperator(solution_domain_data, topological_sorted_angle, energy_group, VmapForward(), VmapPallasSweep())
+
+
+def TransportOperatorBatchedPallas(solution_domain_data: SolutionDomainData, topological_sorted_angle: TopologicalSortedAngleBase, energy_group: int, batch_size: int = None) -> TransportOperator:
+    '''Convenience constructor: batched forward + Pallas batched inverse sweep.'''
+    return TransportOperator(solution_domain_data, topological_sorted_angle, energy_group, BatchedForward(batch_size), BatchedPallasSweep(batch_size))

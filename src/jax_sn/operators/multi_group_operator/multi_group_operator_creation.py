@@ -4,12 +4,12 @@ from jax_sn.operators.mass_operator import MassOperator, MassOperatorVmap
 from jax_sn.domain import TopologicalSortedAngle
 from jax_sn.operators.scatter_operator import GatherScatterOperator, GatherScatterOperatorBroadcasted
 from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan, MultiGroupOperator
-from jax_sn.quadrature_set import QuadratureSet
+from jax_sn.quadrature_set import QuadratureSet, QuadratureSetBase
 from typing import Dict, Type
 from jax_sn.solution_domain import SolutionDomain
 import jax.numpy as jnp
 
-def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set : QuadratureSet,
+def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set : QuadratureSetBase,
                                 single_angle_transport_operator_cls : Type[TransportOperator] = TransportOperatorVmap,
                                 single_angle_transport_operator_cls_kwargs : Dict = {},
                                 multi_angle_transport_operator_cls : Type[TransportOperatorMultipleAngles] = TransportOperatorMultipleAnglesVmap,

@@ -39,10 +39,17 @@ where a forward one is expected — the operators have swapped in/out structures
 exactly the mix-up you'd want caught. A sibling-class or `transpose_bool` flag design (which
 `MultiGroupOperator` already uses) would be more consistent and safer.
 
-Relatedly, `QuadratureSetReduced(QuadratureSet)` overrides `__getitem__` to unconditionally
-`raise` (`quadrature_set_base.py:54-56`) — a Liskov violation that suggests it shouldn't be a
-subclass; it also overrides `wk_ylm_real` but not `ylm_real`, which is asymmetric and
-suspicious.
+Relatedly, `QuadratureSetReduced` used to subclass `QuadratureSet` and override `__getitem__`
+to unconditionally `raise` — a Liskov violation. **Fixed:** an abstract `QuadratureSetBase`
+was introduced holding the shared state (`angles`, `weights`, `n_angles`, the shape
+`__check_init__`) plus the abstract `wk_ylm_real`/`ylm_real` interface; both `QuadratureSet` and
+`QuadratureSetReduced` inherit from it as siblings. A reduced set therefore no longer passes
+`isinstance(x, QuadratureSet)`, and `__getitem__` (single-angle access, meaningless once angles
+are collapsed) lives only on `QuadratureSet`. Both harmonic methods are abstract — even
+`ylm_real`, which happens to coincide today, may be computed differently by a future set — so the
+base commits to state and interface but no algorithm. The `wk_ylm_real`/`ylm_real` asymmetry was
+*not* a bug: `ylm_real` is the unweighted harmonics at the reduced angles, whereas `wk_ylm_real`
+must weight with the original weights and scatter-accumulate over collapsed angles.
 
 ## 4. Two competing pytree idioms, and a risky subclassing of one
 

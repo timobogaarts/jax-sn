@@ -1,12 +1,13 @@
 import jax
 import jax.numpy as jnp 
 from dataclasses import dataclass
+from abc import abstractmethod
 from jax_sn.tools.graph_tools import multiple_angle_level_bounds_safe
 from jax_sn.tools.mesh_tools import compute_face_normal_vectors_from_3d_simplices, _compute_adjacency, _compute_face_permutations, _pad_last_dimension
 from functools import lru_cache
 from typing import Tuple
 from .cross_sections import CrossSectionDataSingleGroup
-from jax_sn.quadrature_set import QuadratureSet
+from jax_sn.quadrature_set import QuadratureSetBase
 from typing import Tuple 
 import equinox as eqx
 from typing import Union
@@ -250,33 +251,107 @@ def _check_cross_section_compatibility(n_elements : int, cross_sections : CrossS
     cross_sections.cross_section_data.assert_valid_batched()
 
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class TopologicalSortedAngle:
+class TopologicalSortedAngleBase(eqx.Module):
     '''
-    Topologically sorted angle for a geometric domain. Contains information on the topological sort of elements for a given angle.    
-    
-    '''
-    
-    levels         : jnp.ndarray #[n_elements]
-    '''
-    Levels of the elements in the topological sort. Shape is [n_elements]. Each level can be computed in parallel.
+    Abstract base for a topologically sorted angle. Holds the shared state -- the element
+    ``levels``, the ``angle``, and the ``levels_argsort`` -- and declares the polymorphic interface
+    (``reverse`` and ``__getitem__``) as abstract. Concrete (final) subclasses decide what additional
+    precomputed data, if any, rides along with the sort (see :class:`TopologicalSortedAngle` and
+    :class:`TopologicalSortedAngleLevelParallel`).
+
+    ``reverse`` and ``__getitem__`` are abstract: each leaf provides its own final implementation so
+    that nothing is overridden (abstract-or-final, never "maybe"). The shared mechanical part -- the
+    transform of the three base fields -- lives in the final, non-polymorphic helpers
+    :meth:`_reversed_base` and :meth:`_indexed_base`, which the leaves compose with their own fields.
+    Both are written with :func:`equinox.tree_at`, so they preserve the concrete type.
     '''
 
-    angle          : jnp.ndarray #[n_dim]
+    levels         : eqx.AbstractVar[jnp.ndarray] #[..., n_elements]
+    '''Levels of the elements in the topological sort. Each level can be computed in parallel.'''
+
+    angle          : eqx.AbstractVar[jnp.ndarray] #[..., n_dim]
+    '''The angle for which the topological sort is computed.'''
+
+    levels_argsort : eqx.AbstractVar[jnp.ndarray] #[..., n_elements]
+    '''The indices that sort the elements by their levels.'''
+
+    @abstractmethod
+    def __getitem__(self, idx : int) -> "TopologicalSortedAngleBase":
+        '''
+        Indexing for batched instances: get a single (unbatched) topological sort from a batched one.
+        Type-preserving -- each leaf returns its own concrete type, slicing its own extra fields.
+
+        Parameters
+        ----------
+        idx : int
+            The index of the angle to get.
+        Returns
+        -------
+        toposort : TopologicalSortedAngleBase
+            The instance for the given index, of the same concrete type as ``self``.
+        '''
+        ...
+
+    @property
+    @abstractmethod
+    def reverse(self) -> "TopologicalSortedAngleBase":
+        '''
+        Reverses the angle and topological sort. This is also correct for batched angles.
+        Type-preserving -- each leaf returns its own concrete type, reversing its own extra fields.
+
+        Returns
+        -------
+        reversed_toposort : TopologicalSortedAngleBase
+            The reversed topological sort, of the same concrete type as ``self``.
+        '''
+        ...
+
+    def _reversed_base(self) -> "TopologicalSortedAngleBase":
+        '''
+        Final helper (not part of the polymorphic interface): returns a copy of ``self`` with only the
+        three base fields reversed, leaving any extra subclass fields untouched. Leaves compose this
+        with their own field reversal. The levels are reversed by subtracting from the maximum level,
+        which is non-optimal but produces a valid topological sort.
+        '''
+        return eqx.tree_at(
+            lambda t : (t.levels, t.angle, t.levels_argsort),
+            self,
+            (
+                jnp.max(self.levels, axis = -1, keepdims=True) - self.levels, # technically not optimal, but produces valid levels [not entirely sure, but in general we don't use this anyway except for level-based parallelism....]
+                -1.0 * self.angle,
+                self.levels_argsort[..., ::-1],
+            ),
+        )
+
+    def _indexed_base(self, idx : int) -> "TopologicalSortedAngleBase":
+        '''
+        Final helper (not part of the polymorphic interface): returns a copy of ``self`` with only the
+        three base fields indexed at ``idx``, leaving any extra subclass fields untouched. Leaves
+        compose this with their own field slicing.
+        '''
+        assert self.levels.ndim == 2, "Indexing is only supported for batched TopologicalSortedAngle instances."
+        return eqx.tree_at(
+            lambda t : (t.levels, t.angle, t.levels_argsort),
+            self,
+            (self.levels[idx], self.angle[idx], self.levels_argsort[idx]),
+        )
+
+
+class TopologicalSortedAngle(TopologicalSortedAngleBase):
     '''
-    The angle for which the topological sort is computed. Shape is [n_dim].
+    The plain topologically sorted angle for a geometric domain: just the sort itself, with no
+    precomputed level-parallelism data. Used by the vmap/batched/pallas sweeps. Also the home of the
+    factories that build a plain sort from a domain/quadrature set.
     '''
 
-    levels_argsort : jnp.ndarray #[n_elements]
-    '''
-    The indices that sort the elements by their levels. Shape is [n_elements].
-    '''
-    
-    @classmethod 
+    levels         : jnp.ndarray #[..., n_elements]
+    angle          : jnp.ndarray #[..., n_dim]
+    levels_argsort : jnp.ndarray #[..., n_elements]
+
+    @classmethod
     def from_domain_angle(cls, geometric_domain : GeometricDomain, angle : jnp.ndarray, n_iterations_per_loop : int = 100):
         '''
-        Computes a topological sort for the given angle and geometric domain. 
+        Computes a (plain) topological sort for the given angle and geometric domain.
         This function is not jittable because it uses Python control flow to safely compute levels, which can throw if there is a cycle in the graph.
 
         Parameters
@@ -297,18 +372,18 @@ class TopologicalSortedAngle:
         levels = compute_levels_domain_safe_jax(geometric_domain, angle, n_iterations_per_loop)
         levels_argsort = jnp.argsort(levels)
         return cls(levels=levels, angle=angle, levels_argsort=levels_argsort)
-    
+
     @classmethod
-    def from_domain_quadrature_set(cls, geometric_domain : GeometricDomain, quadrature_set : QuadratureSet, n_iterations_per_loop : int = 100):
+    def from_domain_quadrature_set(cls, geometric_domain : GeometricDomain, quadrature_set : QuadratureSetBase, n_iterations_per_loop : int = 100):
         '''
-        Computes topological sorts for all angles in the given quadrature set and geometric domain.
+        Computes (plain) topological sorts for all angles in the given quadrature set and geometric domain.
         This function is not jittable because it uses Python control flow to safely compute levels, which can throw if there is a cycle in the graph.
 
         Parameters
         ----------
         geometric_domain : GeometricDomain
             The geometric domain for which to compute the topological sorts.
-        quadrature_set : QuadratureSet
+        quadrature_set : QuadratureSetBase
             The quadrature set containing the angles for which to compute the topological sorts.
         n_iterations_per_loop : int, optional
             The number of iterations per loop for the level computation. The default is 100.
@@ -317,49 +392,17 @@ class TopologicalSortedAngle:
         toposorts : TopologicalSortedAngle
             The computed topological sorts for all angles in the quadrature set. Batched over angles.
         '''
-        return cls(*_topologicalsorted_angle_from_domain_quadrature_set_scan(geometric_domain, quadrature_set, n_iterations_per_loop))        
+        return cls(*_topologicalsorted_angle_from_domain_quadrature_set_scan(geometric_domain, quadrature_set, n_iterations_per_loop))
 
-    
     def __getitem__(self, idx : int) -> "TopologicalSortedAngle":
-        '''
-        Indexing for batched TopologicalSortedAngle instances.
-        Allows to get a single TopologicalSortedAngle from a batched instance.
+        return self._indexed_base(idx)
 
-        Parameters
-        ----------
-        idx : int
-            The index of the angle to get.
-        Returns
-        -------
-        toposort : TopologicalSortedAngle
-            The TopologicalSortedAngle instance for the given index.
-        '''
-        assert self.levels.ndim == 2, "Indexing is only supported for batched TopologicalSortedAngle instances."
-        return TopologicalSortedAngle(
-            levels         = self.levels[idx],
-            angle          = self.angle[idx],
-            levels_argsort = self.levels_argsort[idx]
-        )
-    
     @property
-    def reverse(self):
-        '''
-        Reverses the angle and topological sort. This is also correct for batched angles.        
-        The levels are reversed by subtracting from the maximum level. This is non-optimal, but produces a valid topological sort.
+    def reverse(self) -> "TopologicalSortedAngle":
+        return self._reversed_base()
 
-        Returns
-        -------
-        reversed_toposort : TopologicalSortedAngle
-            The reversed topological sort.
-        '''        
-        return TopologicalSortedAngle(
-            levels         = jnp.max(self.levels, axis = -1, keepdims=True) - self.levels, # technically not optimal, but produces valid levels [not entirely sure, but in general we don't use this anyway except for level-based parallelism....]
-            angle          = -1.0 * self.angle,
-            levels_argsort = self.levels_argsort[..., ::-1] 
-        )
-    
 @eqx.filter_jit
-def _topologicalsorted_angle_from_domain_quadrature_set_scan(geometric_domain : GeometricDomain, quadrature_set : QuadratureSet, n_iterations_per_loop : int = 100):
+def _topologicalsorted_angle_from_domain_quadrature_set_scan(geometric_domain : GeometricDomain, quadrature_set : QuadratureSetBase, n_iterations_per_loop : int = 100):
     '''
     Jittable version of TopologicalSortedAngle.from_domain_quadrature_set.
     Computes topological sorts for all angles in the given quadrature set and geometric domain.
@@ -368,7 +411,7 @@ def _topologicalsorted_angle_from_domain_quadrature_set_scan(geometric_domain : 
     ----------
     geometric_domain : GeometricDomain
         The geometric domain for which to compute the topological sorts.
-    quadrature_set : QuadratureSet
+    quadrature_set : QuadratureSetBase
         The quadrature set containing the angles for which to compute the topological sorts.
     n_iterations_per_loop : int, optional
         The number of iterations per loop for the level computation. The default is 100.
@@ -520,4 +563,45 @@ class LevelBasedParallelism(eqx.Module):
             self,
             (self.first_occurences[idx], self.ends[idx], self.sizes[idx])
         )
-    
+
+
+class TopologicalSortedAngleLevelParallel(TopologicalSortedAngleBase):
+    '''
+    A topologically sorted angle that additionally carries the level-based-parallelism setup for
+    both sweep directions (``level_fwd`` for this angle, ``level_rev`` for the reversed angle).
+
+    Both directions are precomputed and stored because building a :class:`LevelBasedParallelism`
+    is a non-jittable numpy step, so it cannot be recomputed inside a (jitted) ``reverse``. As a
+    result ``reverse`` simply swaps the two, and ``__getitem__`` slices both -- composing the shared
+    base-field helpers with its own field handling rather than reimplementing the base transform.
+    '''
+
+    levels         : jnp.ndarray #[..., n_elements]
+    angle          : jnp.ndarray #[..., n_dim]
+    levels_argsort : jnp.ndarray #[..., n_elements]
+
+    level_fwd : LevelBasedParallelism
+    '''Level-based-parallelism setup for the (forward) sweep along ``angle``.'''
+    level_rev : LevelBasedParallelism
+    '''Level-based-parallelism setup for the reversed sweep (along ``-angle``).'''
+
+    @classmethod
+    def from_topological_sorted_angle(cls, topological_sorted_angle : TopologicalSortedAngleBase, maximum_number_of_levels : Union[int, None] = None) -> "TopologicalSortedAngleLevelParallel":
+        '''
+        Build a level-parallel topological sort from a plain one, precomputing the level setup for
+        both the forward and the reversed sweep.
+        '''
+        return cls(
+            levels         = topological_sorted_angle.levels,
+            angle          = topological_sorted_angle.angle,
+            levels_argsort = topological_sorted_angle.levels_argsort,
+            level_fwd      = LevelBasedParallelism.from_topological_sorted_angle(topological_sorted_angle, maximum_number_of_levels),
+            level_rev      = LevelBasedParallelism.from_topological_sorted_angle(topological_sorted_angle.reverse, maximum_number_of_levels),
+        )
+
+    def __getitem__(self, idx : int) -> "TopologicalSortedAngleLevelParallel":
+        return eqx.tree_at(lambda t : (t.level_fwd, t.level_rev), self._indexed_base(idx), (self.level_fwd[idx], self.level_rev[idx]))
+
+    @property
+    def reverse(self) -> "TopologicalSortedAngleLevelParallel":
+        return eqx.tree_at(lambda t : (t.level_fwd, t.level_rev), self._reversed_base(), (self.level_rev, self.level_fwd))

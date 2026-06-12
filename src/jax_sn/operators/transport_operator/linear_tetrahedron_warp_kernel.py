@@ -287,7 +287,7 @@ def _flatten_transport_operator(transport_operator : Union[TransportOperatorMult
 
     All arrays are zero-copy views of the underlying JAX buffers.    
     """
-    return _flatten_base_args(*transport_operator._base_inv_args(None)[:-1])
+    return _flatten_base_args(*transport_operator._sweep_data())
 
 # =============================================================================
 # Sequential warp launches

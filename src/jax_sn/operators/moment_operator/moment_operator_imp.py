@@ -4,7 +4,7 @@ from functools import partial
 from dataclasses import dataclass
 from typing import Callable
 from abc import abstractmethod
-from jax_sn.quadrature_set import QuadratureSet
+from jax_sn.quadrature_set import QuadratureSet, QuadratureSetBase
 import lineax as lx
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 import equinox as eqx
@@ -58,7 +58,7 @@ class MomentOperatorBase(AbstractLinearOperator_sn):
     wk_yklm              : jnp.ndarray           #[n_angles, n_moments]
     r'''Matrix of [n_angles, n_moments] containing :math:`w_k Y_{l,m}(\Omega_k)` values for each angle :math:`k` and moment :math:`(l,m)` (collapsed into a single index).'''
 
-    quadrature_set       : QuadratureSet
+    quadrature_set       : QuadratureSetBase
     r'''The quadrature set associated with this moment operator.'''
 
     elements_basis_shape : jax.ShapeDtypeStruct  #[n_elements, n_basis]
@@ -68,7 +68,7 @@ class MomentOperatorBase(AbstractLinearOperator_sn):
     r'''Whether this operator applies the transposed action (moments to angles) instead of the forward action (angles to moments).'''
 
     @classmethod
-    def from_quadrature_set(cls, quadrature_set : QuadratureSet, l_max : int, elements_basis_shape : jax.ShapeDtypeStruct) -> "MomentOperatorBase":
+    def from_quadrature_set(cls, quadrature_set : QuadratureSetBase, l_max : int, elements_basis_shape : jax.ShapeDtypeStruct) -> "MomentOperatorBase":
         r'''
         Create a moment operator from a quadrature set and desired moment order. This computes the :math:`w_k Y_{l,m}(\Omega_k)` weights for the specified moment order.
         Prefer to initialise directly if possible.
