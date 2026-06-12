@@ -142,18 +142,11 @@ def reconstruct_multigroup_operator_including_toposort(operator : MultiGroupOper
         # recomputation for multiple energy groups)]
         # In some cases we don't want to replace the topological sort, e.g. when we are only changing cross-sections but not the geometry or when we are using a 1D geometry where the toposort is fixed anyway.
         if replace_topological_sort:
-            # Whether the operator needs a level-parallel toposort is a property of the *data*, not of
-            # the operator class: a level-based-parallelism sweep carries its setup inside a
-            # TopologicalSortedAngleLevelParallel toposort. Checking the toposort type (rather than a
-            # warp operator class) keeps this free of any optional warp-module dependency.
+            # The toposort knows how to recompute itself for the deformed domain, reusing its own stored
+            # angles and preserving its concrete type (a level-parallel toposort rebuilds its level setup
+            # with the same padding). So this needs no operator/toposort-class special-casing.
             existing_toposort = operator.transport_operator.transport_operator.topological_sorted_angle
-            is_level_parallel = isinstance(existing_toposort, jax_sn.domain.TopologicalSortedAngleLevelParallel)
-            topological_sorts_replaced = jax.lax.stop_gradient(jax_sn.domain.TopologicalSortedAngle.from_domain_quadrature_set(domain_replaced, operator_xs_dom_precomp_replaced.moment_operator.quadrature_set))
-            if is_level_parallel:
-                # Rebuilding the toposort rebuilds the level setup too -- one tree_at on the same field
-                # as the non-level path.
-                max_n_levels = existing_toposort.level_fwd.n_levels
-                topological_sorts_replaced = jax.lax.stop_gradient(jax_sn.domain.TopologicalSortedAngleLevelParallel.from_topological_sorted_angle(topological_sorts_replaced, max_n_levels))
+            topological_sorts_replaced = jax.lax.stop_gradient(existing_toposort.reconstruct(domain_replaced))
             return eqx.tree_at(lambda op : op.transport_operator.transport_operator.topological_sorted_angle, operator_xs_dom_precomp_replaced, replace = topological_sorts_replaced)
         else:
             return operator_xs_dom_precomp_replaced

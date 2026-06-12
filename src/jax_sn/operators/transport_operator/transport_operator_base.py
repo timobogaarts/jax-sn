@@ -1,12 +1,8 @@
-import jax 
+import jax
 import jax.numpy as jnp
 
-from dataclasses import dataclass   
-from abc import ABC, abstractmethod
-
 from jax_sn.solution_domain import SolutionDomainData
-from jax_sn.domain.geometric_domain import TopologicalSortedAngle, TopologicalSortedAngleBase
-from jax_sn.source import Source
+from jax_sn.domain.geometric_domain import TopologicalSortedAngleBase
 import equinox as eqx
 import lineax as lx
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
@@ -137,6 +133,14 @@ class TransportOperator(AbstractLinearOperator_sn):
 
     inversion_strategy        : InversionStrategy
     '''How to sweep-invert the operator ``_invert_internal``. Composes freely with any forward strategy.'''
+
+    def __check_init__(self):
+        # The inversion strategy declares its precondition on the toposort/data (e.g. a level-based
+        # sweep needs a level-parallel toposort -- which the caller builds explicitly). Validating here
+        # means construction is "free" (just a check) and the check also fires on every eqx.tree_at
+        # (transpose, indexing, reconstruction), with a clear message instead of an AttributeError deep
+        # in a kernel.
+        self.inversion_strategy.check_compatible(self)
 
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:
         return self.forward_strategy(self, x)
@@ -269,6 +273,12 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
 
     angle_lifting : AngleLifting
     '''How to lift the single-angle operator over the angle axis (e.g. vmap, or a fused warp kernel). See :mod:`.transport_operator_strategies`.'''
+
+    def __check_init__(self):
+        # The lift owns its precondition on the wrapped single-angle operator (e.g. a fused warp lift
+        # requires a warp single-angle operator). Validating here catches a mispaired lift/operator at
+        # construction instead of failing inside a kernel.
+        self.angle_lifting.check_compatible(self.transport_operator)
 
     def _assert_shape_base(self):
         assert self.transport_operator.topological_sorted_angle.angle.ndim==2, "topological_sorted_angle must be 2D for base TransportOperatorMultipleAngles"

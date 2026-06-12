@@ -141,6 +141,36 @@ operator base), and warp ops are no longer `TransportOperatorBatched` subclasses
 3. Verify stellsim (no warp): AD/reconstruction + transport tests. Verify blanketopt (warp):
    `test_warp_linear_tetrahedron.py` (level sweep, transpose, index, grad parity).
 
+## Strategy preconditions: demand, don't prepare (final shape)
+
+Most strategies need no setup and consume any toposort; the level-based warp sweep is the exception —
+it requires a `TopologicalSortedAngleLevelParallel`. Building that (possibly expensive) level setup is
+made an *explicit, visible* step rather than hidden work inside operator construction:
+
+- **The toposort owns its (re)construction.** `TopologicalSortedAngleBase.reconstruct(new_domain)`
+  recomputes the sort for a deformed domain, reusing the toposort's own stored `angle` and preserving
+  its concrete type (a level-parallel toposort rebuilds its level setup with the same padding, read
+  back from `level_fwd.n_levels`). Abstract on the base + a final `_rebuilt_sort` helper, matching the
+  `reverse`/`__getitem__` pattern. `multigroup_parametrisation` just calls
+  `existing_toposort.reconstruct(domain_replaced)` — no isinstance, no manual level-rebuild, no
+  `n_levels` lookup, no quadrature_set threading.
+- **The operator demands the right toposort; creation is "free".** `InversionStrategy.check_compatible(operator)`
+  (default no-op) declares the precondition; `WarpLevelSweep` asserts the toposort is level-parallel +
+  warp-compatible sdd, `WarpSequentialSweep` asserts warp-compatible sdd, and `AngleLifting.check_compatible(single_op)`
+  asserts the warp lifts' single-angle partner carries the matching warp inversion strategy. These run
+  in `TransportOperator.__check_init__` / `TransportOperatorMultipleAngles.__check_init__`, so they fire
+  at construction and on every `eqx.tree_at` (transpose, indexing, reconstruction). Equinox runs
+  `__check_init__` on `tree_at`; the checks are type/shape only, so they are trace-safe.
+
+The caller builds the required toposort explicitly (e.g. `TopologicalSortedAngleLevelParallel.from_topological_sorted_angle(plain, max_n_levels)`)
+before constructing a warp-levels operator; the factory just validates it. There is no
+`prepare_toposort` and no `TransportOperator.create` — construction does no hidden setup.
+
+Tradeoff: warp-levels operators are constructed explicitly with a pre-built level-parallel toposort,
+not via the generic `create_multi_group_operator` (which only builds plain toposorts, used by the
+vmap/batched/pallas paths). That path was already unused for warp; if ever needed,
+`create_multi_group_operator` can take a toposort argument directly.
+
 ## Deferred / out of scope
 - Strategy-native `create_multi_group_operator` API (keep the `_cls`/`_kwargs` API via factories).
 - A `scan`-based `AngleLifting` (the design supports it; don't build speculatively).

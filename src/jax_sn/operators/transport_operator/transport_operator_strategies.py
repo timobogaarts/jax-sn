@@ -57,11 +57,24 @@ class BatchedForward(ForwardStrategy):
 # Inversion strategies
 # ---------------------------------------------------------------------------
 class InversionStrategy(eqx.Module):
-    '''How to sweep-invert the single-angle operator. Consumes ``operator._sweep_data()``.'''
+    '''
+    How to sweep-invert the single-angle operator. Consumes ``operator._sweep_data()``.
+
+    A strategy may have a *precondition on the toposort* (e.g. the level-based-parallelism sweep needs
+    a :class:`TopologicalSortedAngleLevelParallel`). It declares that precondition via
+    :meth:`check_compatible`; building the toposort that satisfies it is an explicit, visible step done
+    by the caller (and rebuilt via ``TopologicalSortedAngleBase.reconstruct``), not hidden work inside
+    operator construction.
+    '''
 
     @abstractmethod
     def __call__(self, operator: "TransportOperator", b):
         ...
+
+    def check_compatible(self, operator: "TransportOperator"):
+        '''Assert the operator's toposort/data satisfy this strategy's precondition. Default: nothing to check.
+        Run from ``TransportOperator.__check_init__``, so it fires at construction and on every ``eqx.tree_at``.'''
+        pass
 
 
 class VmapSweep(InversionStrategy):
@@ -97,6 +110,10 @@ class AngleLifting(eqx.Module):
     @abstractmethod
     def invert(self, single_op: "TransportOperator", b):
         ...
+
+    def check_compatible(self, single_op: "TransportOperator"):
+        '''Assert the wrapped single-angle operator satisfies this lift's precondition. Default: nothing to check.'''
+        pass
 
 
 class VmapAngles(AngleLifting):

@@ -336,6 +336,32 @@ class TopologicalSortedAngleBase(eqx.Module):
             (self.levels[idx], self.angle[idx], self.levels_argsort[idx]),
         )
 
+    @abstractmethod
+    def reconstruct(self, geometric_domain : GeometricDomain, n_iterations_per_loop : int = 100) -> "TopologicalSortedAngleBase":
+        '''
+        Recompute this topological sort for a new (deformed) geometric domain, reusing this toposort's
+        own stored ``angle`` -- so a parametrisation can rebuild it after moving the vertices without
+        re-deriving which angles to use. Type-preserving: each leaf returns its own concrete type and
+        rebuilds its own extra data (e.g. a level-parallel toposort rebuilds its level setup with the
+        same padding). Only the (batched) toposort produced from a quadrature set is supported.
+
+        Returns
+        -------
+        toposort : TopologicalSortedAngleBase
+            The recomputed topological sort for ``geometric_domain``, of the same concrete type as ``self``.
+        '''
+        ...
+
+    def _rebuilt_sort(self, geometric_domain : GeometricDomain, n_iterations_per_loop : int = 100):
+        '''
+        Final helper (not part of the polymorphic interface): recompute ``(levels, angle, levels_argsort)``
+        for this toposort's stored angles on a new domain. ``angle`` is unchanged (the directions don't
+        move with the vertices). Leaves wrap this into their own concrete type.
+        '''
+        assert self.angle.ndim == 2, "reconstruct is only supported for batched (quadrature-set) topological sorts."
+        levels, levels_argsort = _levels_argsort_from_domain_angles(geometric_domain, self.angle, n_iterations_per_loop)
+        return levels, self.angle, levels_argsort
+
 
 class TopologicalSortedAngle(TopologicalSortedAngleBase):
     '''
@@ -401,6 +427,9 @@ class TopologicalSortedAngle(TopologicalSortedAngleBase):
     def reverse(self) -> "TopologicalSortedAngle":
         return self._reversed_base()
 
+    def reconstruct(self, geometric_domain : GeometricDomain, n_iterations_per_loop : int = 100) -> "TopologicalSortedAngle":
+        return TopologicalSortedAngle(*self._rebuilt_sort(geometric_domain, n_iterations_per_loop))
+
 @eqx.filter_jit
 def _topologicalsorted_angle_from_domain_quadrature_set_scan(geometric_domain : GeometricDomain, quadrature_set : QuadratureSetBase, n_iterations_per_loop : int = 100):
     '''
@@ -420,15 +449,26 @@ def _topologicalsorted_angle_from_domain_quadrature_set_scan(geometric_domain : 
     toposorts : TopologicalSortedAngle
         The computed topological sorts for all angles in the quadrature set. Batched over angles.
     '''
+    levels, levels_argsort = _levels_argsort_from_domain_angles(geometric_domain, quadrature_set.angles, n_iterations_per_loop)
+    return levels, quadrature_set.angles, levels_argsort
+
+
+@eqx.filter_jit
+def _levels_argsort_from_domain_angles(geometric_domain : GeometricDomain, angles : jnp.ndarray, n_iterations_per_loop : int = 100):
+    '''
+    Compute the (levels, levels_argsort) for a batch of angles on a domain by scanning the safe level
+    computation over the angle axis. Shared by ``from_domain_quadrature_set`` (angles from the
+    quadrature set) and ``TopologicalSortedAngleBase.reconstruct`` (the toposort's own stored angles).
+    '''
     from jax_sn.domain.graph_generation import compute_levels_domain_safe_jax
 
     def body_fn(carry, angle):
         levels = compute_levels_domain_safe_jax(geometric_domain, angle, n_iterations_per_loop)
         return carry, levels
-    
-    levels = jax.lax.scan(body_fn, None, quadrature_set.angles)[1] #[n_angles, n_elements]        
+
+    levels = jax.lax.scan(body_fn, None, angles)[1] #[n_angles, n_elements]
     levels_argsort = jnp.argsort(levels, axis=-1) #[n_angles, n_elements]
-    return levels, quadrature_set.angles, levels_argsort
+    return levels, levels_argsort
 
 @lru_cache(maxsize=16)
 def _build_bvh(geometric_domain : GeometricDomain):    
@@ -605,3 +645,9 @@ class TopologicalSortedAngleLevelParallel(TopologicalSortedAngleBase):
     @property
     def reverse(self) -> "TopologicalSortedAngleLevelParallel":
         return eqx.tree_at(lambda t : (t.level_fwd, t.level_rev), self._reversed_base(), (self.level_rev, self.level_fwd))
+
+    def reconstruct(self, geometric_domain : GeometricDomain, n_iterations_per_loop : int = 100) -> "TopologicalSortedAngleLevelParallel":
+        # Rebuild the plain sort for the new domain, then rebuild the level setup with the same padding
+        # (read back from the current level setup) so the recomputed toposort stays drop-in compatible.
+        rebuilt_plain = TopologicalSortedAngle(*self._rebuilt_sort(geometric_domain, n_iterations_per_loop))
+        return TopologicalSortedAngleLevelParallel.from_topological_sorted_angle(rebuilt_plain, self.level_fwd.n_levels)

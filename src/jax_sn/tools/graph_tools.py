@@ -297,19 +297,4 @@ def multiple_angle_level_bounds_safe(levels: jnp.ndarray, levels_argsort: jnp.nd
     return _multiple_angle_level_bounds(levels, levels_argsort, max_levels)
 
 
-def _multiple_angle_level_bounds_dynamic(
-    levels: jnp.ndarray,
-    levels_argsort: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Non-JIT wrapper that infers max_levels from the data.
-
-    Since levels are 0-indexed integers, max_levels = jnp.max(levels) + 1.
-    Not suitable for use inside jax.jit.
-
-    To use inside jit, call _multiple_angle_level_bounds directly with a pre-chosen
-    static max_levels (e.g. the next power of two above the current true maximum).
-    """
-    max_levels = int(jnp.max(levels)) + 1    
-    return _multiple_angle_level_bounds(levels, levels_argsort, max_levels)
-
 

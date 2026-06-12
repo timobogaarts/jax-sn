@@ -48,21 +48,24 @@ def make_sequential_warp_single_angle(base_mgop, angle_i):
 
 def make_level_warp_single_angle(base_mgop, angle_i):
     from jax_sn.operators.transport_operator.transport_operator_warp import TransportOperatorLevelsWarpSingleAngle
+    from jax_sn.domain import TopologicalSortedAngleLevelParallel
+    level_toposort = TopologicalSortedAngleLevelParallel.from_topological_sorted_angle(base_mgop.transport_operator[angle_i].topological_sorted_angle)
     return TransportOperatorLevelsWarpSingleAngle(
         base_mgop.solution_domain_data,
-        base_mgop.transport_operator[angle_i].topological_sorted_angle,
+        level_toposort,
         0,
         batch_size=100
     )
 
 def make_level_warp_single_angle_pad(base_mgop, angle_i):
     from jax_sn.operators.transport_operator.transport_operator_warp import TransportOperatorLevelsWarpSingleAngle
+    from jax_sn.domain import TopologicalSortedAngleLevelParallel
+    level_toposort = TopologicalSortedAngleLevelParallel.from_topological_sorted_angle(base_mgop.transport_operator[angle_i].topological_sorted_angle, 400)
     return TransportOperatorLevelsWarpSingleAngle(
         base_mgop.solution_domain_data,
-        base_mgop.transport_operator[angle_i].topological_sorted_angle,
+        level_toposort,
         0,
-        batch_size=100,
-        max_n_levels=400
+        batch_size=100
     )
 
 def make_sequential_warp_multi_angle(base_mgop):
@@ -84,9 +87,11 @@ def make_levels_warp_multi_angle(base_mgop):
         TransportOperatorLevelsWarpSingleAngle,
         TransportOperatorLevelsWarpMultipleAngles,
     )
+    from jax_sn.domain import TopologicalSortedAngleLevelParallel
+    level_toposort = TopologicalSortedAngleLevelParallel.from_topological_sorted_angle(base_mgop.transport_operator.topological_sorted_angle)
     top_sa = TransportOperatorLevelsWarpSingleAngle(
         base_mgop.solution_domain_data,
-        base_mgop.transport_operator.topological_sorted_angle,
+        level_toposort,
         0,
         batch_size=100
     )
@@ -97,12 +102,13 @@ def make_levels_warp_multi_angle_pad(base_mgop):
         TransportOperatorLevelsWarpSingleAngle,
         TransportOperatorLevelsWarpMultipleAngles,
     )
+    from jax_sn.domain import TopologicalSortedAngleLevelParallel
+    level_toposort = TopologicalSortedAngleLevelParallel.from_topological_sorted_angle(base_mgop.transport_operator.topological_sorted_angle, 400)
     top_sa = TransportOperatorLevelsWarpSingleAngle(
         base_mgop.solution_domain_data,
-        base_mgop.transport_operator.topological_sorted_angle,
+        level_toposort,
         0,
-        batch_size=100, 
-        max_n_levels=400
+        batch_size=100
     )
     return TransportOperatorLevelsWarpMultipleAngles(top_sa)
 
