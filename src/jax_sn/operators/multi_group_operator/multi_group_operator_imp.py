@@ -7,7 +7,8 @@ from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
 from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles
 from jax_sn.operators.mass_operator import MassOperator
 from jax_sn.operators.scatter_operator import GatherScatterOperator
-import lineax as lx 
+from jax_sn.quadrature_set import QuadratureSetBase
+import lineax as lx
 import equinox as eqx
 from abc import abstractmethod
 
@@ -184,7 +185,10 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     gather_scatter_operator   : GatherScatterOperator
     '''The gather-scatter operator used to efficiently compute the scattering sources over all energy groups. This is not a linear operator, but a class that implements the required functionality.'''
 
-    n_energy_groups           : int    
+    quadrature_set            : QuadratureSetBase
+    '''The angular quadrature set. Stored here (rather than duplicated inside the moment/discrete operators) as the single home for the angular discretisation.'''
+
+    n_energy_groups           : int
     '''Number of energy groups.'''
 
     transpose_bool : bool = False
@@ -196,7 +200,8 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         assert isinstance(self.transport_operator, TransportOperatorMultipleAngles), f"transport_operator must be TransportOperatorMultipleAngles, but got {type(self.transport_operator)}."
         assert isinstance(self.mass_operator, MassOperator), f"mass_operator must be MassOperator, but got {type(self.mass_operator)}."
         assert isinstance(self.gather_scatter_operator, GatherScatterOperator), f"scatter_operator must be GatherScatterOperator, but got {type(self.gather_scatter_operator)}."
-        assert self.n_energy_groups > 0, f"n_energy_groups must be positive, but got {self.n_energy_groups}."        
+        assert isinstance(self.quadrature_set, QuadratureSetBase), f"quadrature_set must be QuadratureSetBase, but got {type(self.quadrature_set)}."
+        assert self.n_energy_groups > 0, f"n_energy_groups must be positive, but got {self.n_energy_groups}."
         self.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data.assert_n_energy_groups(self.n_energy_groups)
         assert self.moment_operator.out_structure() == self.discrete_operator.in_structure(), f"Moment operator out structure {self.moment_operator.out_structure()} must match discrete operator in structure {self.discrete_operator.in_structure()}."
     
@@ -221,8 +226,9 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
                                   self.transport_operator,
                                   self.mass_operator,
                                   self.gather_scatter_operator,
-                                  self.n_energy_groups, 
-                                    not self.transpose_bool)        
+                                  self.quadrature_set,
+                                  self.n_energy_groups,
+                                    not self.transpose_bool)
 
     def in_structure(self):
         return jax.ShapeDtypeStruct(
@@ -299,10 +305,6 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         return self.transport_operator.solution_domain_data.domain
     
     @property
-    def quadrature_set(self):
-        return self.moment_operator.quadrature_set
-    
-    @property
     def solution_domain_data(self):
         return self.transport_operator.solution_domain_data
         
@@ -332,7 +334,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     
     @classmethod
     def from_multigroup_operator(cls, mgop : "MultiGroupOperator"):
-        return cls(mgop.moment_operator, mgop.discrete_operator, mgop.transport_operator, mgop.mass_operator, mgop.gather_scatter_operator, mgop.n_energy_groups, mgop.transpose_bool)
+        return cls(mgop.moment_operator, mgop.discrete_operator, mgop.transport_operator, mgop.mass_operator, mgop.gather_scatter_operator, mgop.quadrature_set, mgop.n_energy_groups, mgop.transpose_bool)
     
 
 @lx.is_symmetric.register(MultiGroupOperator)

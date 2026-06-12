@@ -78,7 +78,7 @@ class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
     rhs : PyTree
     multi_group_solver : lx.AbstractLinearSolver
 
-    def __check_init(self):
+    def __check_init__(self):
         assert isinstance(self.multi_group_solver, lx.AbstractLinearSolver), "multi_group_solver must be an instance of lx.AbstractLinearSolver"
         assert structure_equal(self.rhs, self.theta_parametrised_module.base_module.in_structure()), "rhs must have the same structure as the module's in_structure"
 

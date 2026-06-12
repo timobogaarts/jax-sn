@@ -5,7 +5,6 @@ from .cross_sections import CrossSectionData
 from .cross_sections import CrossSectionsIndexed
 
 def create_cartesian_setup(dimension : int, region_size_res : List[List[Tuple]], cross_sections_regions : List[CrossSectionData], source_regions : List[float], inhomogeneity_direction : int):
-    import jax_sbgeom
     '''
     Convenience function to create a Cartesian mesh with layered cross sections and sources. This is not necessarily a differentiable function and is therefore not intended to be used 
     in optimization. Mainly for testing purposes.
@@ -33,6 +32,10 @@ def create_cartesian_setup(dimension : int, region_size_res : List[List[Tuple]],
     layered_source : jnp.ndarray
         The source values for each element in the mesh.
     '''
+    try:
+        import jax_sbgeom
+    except ImportError:
+        raise ImportError("jax_sbgeom is required for mesh generation. Please install it to use the 'create_cartesian_setup' function.")
     assert inhomogeneity_direction < dimension, f"Inhomogeneity direction must be less than dimension [0 indexed]. Dimension: {dimension}, inhomogeneity_direction: {inhomogeneity_direction}"
     assert len(region_size_res) == dimension, f"Regions size and resolution must be specified for all dimensions. Dimension: {dimension}, provided: {len(region_size_res)}"
     assert len(region_size_res[inhomogeneity_direction]) == len(cross_sections_regions) == len(source_regions),\

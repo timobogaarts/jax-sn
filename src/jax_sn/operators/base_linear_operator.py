@@ -15,12 +15,11 @@ class AbstractLinearOperator_sn(lx.AbstractLinearOperator):
     def __repr__(self):        
         return super().__repr__() #+' maps '+ str(self.in_structure().shape) + ' -> ' + str(self.out_structure().shape)
     
-    def as_matrix(self):    
+    def as_matrix(self):
         '''
-        In jax-snj, as_matrix is not implemented for linear operators due to potentially extremely large size. Prefer throwing to silently materializing.
+        In jax-sn, as_matrix is not implemented for linear operators due to potentially extremely large size. Prefer throwing to silently materializing.
         '''
-        assert False, "In jax-sn, as_matrix is not implemented for linear operators due to potentially extremely large size. Prefer throwing to silently materializing."
-        return jnp.array([[]])
+        raise NotImplementedError("In jax-sn, as_matrix is not implemented for linear operators due to potentially extremely large size. Prefer throwing to silently materializing.")
     
     def conj(self):
         '''

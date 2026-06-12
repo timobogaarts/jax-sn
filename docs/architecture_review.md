@@ -27,8 +27,19 @@ for the warp operator (already flagged with a TODO).
 **Recommendation:** invert the ownership: one canonical store (e.g. `SolutionDomainData`) that
 all sub-operators reference, so there is exactly one location to replace.
 
+> **Update (2026-06-12, in progress):** being addressed via the
+> `operator = setup + spec + strategy` pattern (composite owns one canonical `setup`; sub-operators
+> are derived views). Full design + staging in `operator_data_ownership_refactor.md`. **Stage A done**
+> (moment/discrete strategy-ified; `quadrature_set` rehomed onto `MultiGroupOperator`); Stages B
+> (`SingleGroupOperator`) and C (`MultiGroupOperator` + `SolutionSetup`) remain.
+
 
 ## 3. Transpose-via-subclass breaks substitutability
+
+> **Update (2026-06-12): Fixed.** The moment, discrete, and single-group operators now carry a
+> `transpose_bool` flag instead of a transposed subclass (the multi-group operator already did). As
+> of Stage A (`operator_data_ownership_refactor.md`) the moment/discrete *implementation* axis is
+> also flag/strategy-based, not subclass-based — both axes are now orthogonal flags/strategies.
 
 `MomentOperatorTransposed(MomentOperator)`, `DiscreteOperatorTransposed(DiscreteOperator)`,
 `SingleGroupOperatorTranspose(SingleGroupOperator)`: a transposed operator passes every
@@ -100,9 +111,12 @@ instantiation (the nicest of the three patterns — worth adopting uniformly, th
 - `pyproject.toml` declares none of `warp-lang`, `jax_sbgeom`, or triton as optional extras,
   yet core paths (`create_cartesian_setup`, hence `setup_test_mgop`) hard-require `jax_sbgeom`,
   including private functions of it (`domain_generation.py:75,78`).
+  **Update (2026-06-12): Done.** `[project.optional-dependencies]` now declares `warp`, `pallas`,
+  `geometry` (jax_sbgeom), and `test` (pytest, sympy) extras.
 - `transport_operator/__init__.py` lists `'transport_operator_warp'` in `__all__`
   unconditionally, so `from ... import *` raises `AttributeError` when warp is missing.
-- `h5py` is a declared dependency but appears unused in `src/`.
+- `h5py` is a declared dependency but appears unused in `src/`. **Update (2026-06-12): Done** —
+  removed from `dependencies`.
 
 ## 7. Validation strategy: `assert` everywhere
 
@@ -113,10 +127,12 @@ with asserts). Two concrete instances are worse than style:
 
 - `AbstractLinearOperator_sn.as_matrix` (`base_linear_operator.py`): `assert False` as a
   control-flow throw, followed by unreachable `return jnp.array([[]])` where `jnp` isn't even
-  imported in that module. Should be `raise NotImplementedError(...)`.
+  imported in that module. Should be `raise NotImplementedError(...)`. **Update (2026-06-12): Done**
+  (now `raise NotImplementedError(...)`; the dead return and `jax-snj` typo removed).
 - `MultigroupOperatorParametrisedObjective.__check_init`
   (`multigroup_parametrisation.py:81`) is missing the trailing underscores — equinox never
-  calls it, so those checks are silently dead.
+  calls it, so those checks are silently dead. **Update (2026-06-12): Done** (renamed to
+  `__check_init__`).
 
 ## 8. Dead code, debug artifacts, and accidental imports
 
@@ -125,9 +141,10 @@ with asserts). Two concrete instances are worse than style:
   The second is unreachable. This looks like an experiment that was never cleaned up — and it
   leaves the reader unsure which ordering is intended.
 - `linear_tetrahedron_warp_kernel.py:4,6`: `from tracemalloc import start` and
-  `from unittest import result` — classic IDE auto-import accidents.
+  `from unittest import result` — classic IDE auto-import accidents. **Update (2026-06-12): Done**
+  (removed).
 - `compute_levels_iterative` (`graph_tools.py:155`): stray `print(n_elements_computed_new)` on
-  a hot setup path.
+  a hot setup path. **Update (2026-06-12): Done** (removed).
 - `parametrisation_tools.py`: research-script artifacts in library code — `print` statements
   throughout `evaluate_values`/`evaluate_jac`, `import time` at line 209 mid-file, hard-coded
   `save_dir = "iterations/"` writing `.npy` files, a custom `__init__` on a `@dataclass` that
@@ -145,6 +162,9 @@ with asserts). Two concrete instances are worse than style:
   `multiple_angle_level_bounds_safe` (near-duplicates, `graph_tools.py:294-313`),
   `MassOperatorLax` (defined, never exported in `__init__`), `SolverDiagnostics` doing
   dataclass-default sharing as `solver_diagnostics : SolverDiagnostics = SolverDiagnostics(...)`.
+  **Update (2026-06-12):** the streaming moment kernels were **not dead by intent** — they were a
+  real second implementation with no selection mechanism. Stage A resurrected them as the
+  `StreamingMoment` strategy (`moment_operator_strategies.py`); the rest still stand.
 
 ## 9. Docstring drift
 
@@ -183,11 +203,18 @@ take. There are also recurring typos ("Mathetmatical", "hasing", "jax-snj",
 
 ## Suggested priority
 
-1. ~~Fix the two latent constructor-order bugs (§2)~~ — done. Still worth fixing the dead
-   double-`return` (§8, first bullet) — cheap and a booby trap.
-2. Decide on one pytree idiom and one optional-dependency strategy (§4, §6), and declare extras
-   in `pyproject.toml`.
-3. Address the warp `AttributeError` path and the `__check_init` typo (§5, §7) — both are
-   silent failures.
-4. Longer term: single ownership for shared operator data (§1) and sibling-class transposes
-   (§3).
+1. ~~Fix the two latent constructor-order bugs (§2)~~ — done. ~~dead double-`return` (§8)~~ — done.
+2. ~~Declare optional-dependency extras in `pyproject.toml` (§6)~~ — done. One pytree idiom (§4)
+   still open.
+3. ~~`__check_init` typo (§7)~~ — done. ~~`as_matrix` assert→raise (§7)~~ — done. The warp
+   `AttributeError` path (§5) still open.
+4. Longer term: single ownership for shared operator data (§1) — **in progress, Stage A done**, see
+   `operator_data_ownership_refactor.md`. ~~sibling-class / flag transposes (§3)~~ — done.
+
+### Progress log (2026-06-12)
+- Quick cleanups: §7 (`as_matrix`, `__check_init__`), §8 (warp-kernel stray imports, `graph_tools`
+  print), §6 (`pyproject` extras, drop `h5py`).
+- §3: moment/discrete/single-group transposes are flag-based; moment/discrete impl axis is now
+  strategy-based (no subclass).
+- §1: Stage A of the data-ownership refactor (moment/discrete `setup+spec+strategy`; streaming
+  resurrected; `quadrature_set` rehomed onto `MultiGroupOperator`). Stages B/C pending.

@@ -206,3 +206,18 @@ Footgun (explicit, loud): `topological_sorted_angle_kwargs` must match the chose
 - A `scan`-based `AngleLifting` (the design supports it; don't build speculatively).
 - Structural enforcement of warp single/multi strategy pairing (compatibility is by construction;
   the old `__check_init__` assert is simply dropped).
+
+## Follow-on (2026-06-12): the pattern generalises
+
+This `operator = data + strategy` design is being extended to the rest of the operator family as the
+fix for `architecture_review.md` §1 (shared data duplicated across operators). See
+`operator_data_ownership_refactor.md` for the full plan. The unifying shape is
+**`operator = setup (shared data) + spec (per-operator config) + strategy (implementation)`**, with
+the composite operators owning one canonical `setup` and exposing sub-operators as derived views.
+
+**Stage A done:** the moment and discrete operators were strategy-ified exactly as the transport
+operator was — `MomentOperator`/`DiscreteOperator` are now final classes with a `forward_strategy`
+(`MomentStrategy`/`DiscreteStrategy`) field instead of an implementation subclass, in a new
+`moment_operator_strategies.py`. This also resurrected the previously-orphaned streaming moment
+kernels as the `StreamingMoment` strategy. (`quadrature_set` was moved off moment/discrete onto
+`MultiGroupOperator` as an interim step; it folds into the canonical `setup` in Stage C.)

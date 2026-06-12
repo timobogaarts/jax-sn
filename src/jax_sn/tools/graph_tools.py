@@ -152,8 +152,6 @@ def compute_levels_iterative(dependency_matrix : jnp.ndarray, n_iterations_per_l
             raise RuntimeError("No new elements are in the next level while not all elements can be computed. Graph cannot be computed: there are cycles present in the graph.")
         n_elements_computed = n_elements_computed_new
 
-    print(n_elements_computed_new)
-    
     return _levels_including_dummy_to_levels(levels)
         
 

@@ -78,5 +78,5 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
     discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
     gather_scatter_operator   = gather_scatter_operator_cls(cross_sections_indexed=solution_domain.domain.cross_sections_indexed, **gather_scatter_operator_cls_kwargs)
     
-    return multi_group_operator_cls(moment_operator, discrete_operator, transport_operator, mass_operator, gather_scatter_operator, n_energy_groups, **multi_group_operator_cls_kwargs)
+    return multi_group_operator_cls(moment_operator, discrete_operator, transport_operator, mass_operator, gather_scatter_operator, quadrature_set, n_energy_groups, **multi_group_operator_cls_kwargs)
     
