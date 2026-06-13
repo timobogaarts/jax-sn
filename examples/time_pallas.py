@@ -28,7 +28,7 @@ from jax_sn.operators.transport_operator import transport_inverse_sweep_multiple
 from jax_sn.operators.transport_operator.transport_operator_pallas import transport_inverse_sweep_batched_pallas, transport_inverse_sweep_complete_vmap_pallas, _next_power_of_two, _setup_elements_pad_args, transport_inverse_sweep_multiple_angles_batched_pallas
 from jax_sn.operators.transport_operator.transport_operator_imp import transport_inverse_sweep_batched, transport_inverse_sweep_complete_vmap, _setup_elements_from_args
 import timeit
-from jax_sn.operators.mass_operator import MassOperatorVmap
+from jax_sn.operators.mass_operator import MassOperator
 
 sigma      = 5
 xs_0       = CrossSectionData.constant(sigma, 1, 1)
@@ -52,7 +52,7 @@ def time_executions(degree: int):
     solution_domain                      = SolutionDomain.from_element_and_domain(element_type, domain)
     source_mapped                        = Source(jnp.repeat(sources, element_type.n_basis, axis=-1).reshape(-1, element_type.n_basis))
 
-    source_x                             = MassOperatorVmap(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data).mv(source_mapped.source_values)
+    source_x                             = MassOperator(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data).mv(source_mapped.source_values)
 
     n_basis_pow2                         = _next_power_of_two(element_type.n_basis)
     buffer_sweep                         = jnp.zeros((domain.n_elements, element_type.n_basis))
@@ -116,7 +116,7 @@ def test_multiple_angles():
         source_mapped                        = Source(jnp.repeat(sources, element_type.n_basis, axis=-1).reshape(-1, element_type.n_basis))
         source_total = jax.tree.map(lambda * xs : jnp.stack(xs), *[source_mapped for _ in toposorts])
 
-        source_x                             = MassOperatorVmap(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data).mv(source_total.source_values)
+        source_x                             = MassOperator(solution_domain.fem_matrices, solution_domain.precomputed_geometric_data).mv(source_total.source_values)
 
         n_basis_pow2                         = _next_power_of_two(element_type.n_basis)
 

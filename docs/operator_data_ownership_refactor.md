@@ -65,6 +65,53 @@ established:
 - **Exports**: `moment_operator/__init__.py` now exports the final operators + the strategy classes
   (dropped `MomentOperatorBase`/`DiscreteOperatorBase`).
 
+### Stage A.2 — mass operator strategy-ified (this session)
+
+Same treatment for the **mass operator** (it had the same implementation-as-subclass smell:
+`MassOperatorVmap` / `MassOperatorLax`):
+- **New `operators/mass_operator/mass_operator_strategies.py`**: `MassStrategy` ABC → `VmapMass`
+  (default, vmap-over-elements) + `LaxMass` (batched `lax.dot_general`). The mass operator is
+  **symmetric**, so the strategy has a single `forward` (forward == transpose); no `transpose_bool`,
+  unlike moment/discrete. The three kernels moved here.
+- **`MassOperator`** collapsed `Base`+`Vmap`/`Lax` subclasses into one **final** class with a
+  `strategy` field; `mv` dispatches through it. `from_solution_domain_data` /
+  `from_transport_operator` gained a `strategy` param.
+- **`create_multi_group_operator`** is now **mass-strategy-native**: `mass_operator_cls` /
+  `mass_operator_cls_kwargs` → a single `mass_strategy: MassStrategy = VmapMass()` arg (matches the
+  transport strategy args).
+- **Call sites**: `MassOperatorVmap` → `MassOperator` (default strategy == `VmapMass`, so behavior is
+  identical) in tests (`test_anisotropic_scattering`, `test_multigroup_derivative`,
+  `test_transport_operator`, `test_moment_scatter_operator`, `test_breeding_blanket`) and examples.
+  `mass_operator/__init__.py` exports `MassOperator` + the strategy classes (dropped
+  `MassOperatorVmap`).
+- **Validated here**: `VmapMass ≡ LaxMass` (exact, 0.0), default ≡ `VmapMass`, symmetry/adjoint
+  (~1e-7 float32), jit, in/out structures, `lx.is_symmetric` True, whole package imports; affected
+  test modules collect cleanly (only the pre-existing `sympy`-import errors remain). Full numerical
+  run pending on stellsim.
+
+### Stage A.3 — uniform strategy naming across the operator family (this session)
+
+The three strategy-ified operator families had drifted to three different dispatch-method names
+(`__call__` on transport forward/inversion, `forward`/`transpose` on moment/discrete, `apply` on
+mass) and an overloaded `forward_strategy` field. Unified on a single vocabulary:
+
+- **Method = the action.** Every strategy method is named for the action it performs: `forward`,
+  `transpose`, `invert`. So transport's `ForwardStrategy.__call__` → `forward`,
+  `InversionStrategy.__call__` → `invert` (and the pallas/warp inversion strategies likewise); mass's
+  `apply` → `forward`. Moment/discrete (`forward`/`transpose`) and `AngleLifting`
+  (`forward`/`invert`) were already on-convention. Call sites read self-documentingly now
+  (`self.inversion_strategy.invert(self, b)` instead of `self.inversion_strategy(self, b)`).
+- **Field = `<role>_strategy`, collapsing to `strategy` when there is a single implementation.**
+  Transport keeps `forward_strategy` / `inversion_strategy` / `angle_lifting` — genuinely independent
+  roles. Moment/discrete/mass renamed `forward_strategy` → `strategy` (one whole-operator
+  implementation serving all directions; "forward" was a misnomer). `from_*` kwargs renamed to match.
+- **ABC / concrete names left as-is** (role-named for transport's reusable roles, operator-named for
+  the operator-bound ones; concrete names already follow `<Impl><Noun>`).
+- **Validated here**: transport strategies expose `forward`/`invert`; mass/moment/discrete expose a
+  `strategy` field (no `forward_strategy`); mass `VmapMass≡LaxMass`, moment `batched≡streaming`, and
+  moment/discrete adjoints all hold; jit + whole-package import OK. Warp/pallas paths are type-only
+  edits — exercised on stellsim.
+
 **Validation done here** (domain-independent, since `jax_sbgeom`/`sympy` are absent in this env —
 they live on stellsim): with a TN quadrature set, batched≡streaming for forward & transpose (~1e-16),
 moment/discrete adjoint `⟨Mx,y⟩=⟨x,Mᵀy⟩` (~1e-14), jit + in/out structures OK, whole package imports.

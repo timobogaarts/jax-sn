@@ -41,7 +41,7 @@ def _assert_warp_compatible(solution_domain_data: SolutionDomainData):
 class WarpSequentialSweep(InversionStrategy):
     '''Single-angle inverse via the sequential Warp sweep kernel (no batching).'''
 
-    def __call__(self, operator, b):
+    def invert(self, operator, b):
         return single_angle_warp_sweep(*operator._sweep_data(), b)
 
     def check_compatible(self, operator):
@@ -56,7 +56,7 @@ class WarpLevelSweep(InversionStrategy):
     :meth:`check_compatible`.
     '''
 
-    def __call__(self, operator, b):
+    def invert(self, operator, b):
         return level_single_angle_warp_sweep(*operator._sweep_data(), b, operator.topological_sorted_angle.level_fwd)
 
     @classmethod

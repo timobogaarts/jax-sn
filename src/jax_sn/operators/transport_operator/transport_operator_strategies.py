@@ -7,9 +7,10 @@ The transport operator is parameterized by composable strategy objects rather th
 - :class:`InversionStrategy` -- how to sweep-invert the (single-angle) operator ``_invert_internal``.
 - :class:`AngleLifting`      -- how to lift a single-angle operator to multiple angles.
 
-A new method is a single small class implementing one ``__call__`` (forward/inversion) or one
-``forward``/``invert`` pair (lifting). Forward and inversion strategies are independent fields on the
-operator, so any forward composes with any inversion (``F + I`` classes, not ``F x I`` operators).
+A new method is a single small class implementing one action method named after that action:
+``forward`` (forward strategies), ``invert`` (inversion strategies), or the ``forward``/``invert``
+pair (lifting). Forward and inversion strategies are independent fields on the operator, so any
+forward composes with any inversion (``F + I`` classes, not ``F x I`` operators).
 
 The pallas and warp strategies live next to their kernels (``transport_operator_pallas.py``,
 ``transport_operator_warp.py``) so this module stays free of optional/heavy dependencies.
@@ -34,14 +35,14 @@ class ForwardStrategy(eqx.Module):
     '''How to apply the single-angle forward operator. Consumes ``operator._forward_data()``.'''
 
     @abstractmethod
-    def __call__(self, operator: "TransportOperator", x):
+    def forward(self, operator: "TransportOperator", x):
         ...
 
 
 class VmapForward(ForwardStrategy):
     '''Forward via vmap over all elements.'''
 
-    def __call__(self, operator: "TransportOperator", x):
+    def forward(self, operator: "TransportOperator", x):
         return forward_transport_operator_vmap(*operator._forward_data(), x)
 
 
@@ -50,7 +51,7 @@ class BatchedForward(ForwardStrategy):
 
     batch_size: int = None
 
-    def __call__(self, operator: "TransportOperator", x):
+    def forward(self, operator: "TransportOperator", x):
         return forward_transport_operator_batch(*operator._forward_data(), x, self.batch_size)
 
 
@@ -77,7 +78,7 @@ class InversionStrategy(eqx.Module):
     '''
 
     @abstractmethod
-    def __call__(self, operator: "TransportOperator", b):
+    def invert(self, operator: "TransportOperator", b):
         ...
 
     @classmethod
@@ -95,7 +96,7 @@ class InversionStrategy(eqx.Module):
 class VmapSweep(InversionStrategy):
     '''Inverse sweep with all per-element matrices computed via vmap (high memory).'''
 
-    def __call__(self, operator: "TransportOperator", b):
+    def invert(self, operator: "TransportOperator", b):
         return transport_inverse_sweep_complete_vmap(*operator._sweep_data(), b)
 
 
@@ -104,7 +105,7 @@ class BatchedSweep(InversionStrategy):
 
     batch_size: int = None
 
-    def __call__(self, operator: "TransportOperator", b):
+    def invert(self, operator: "TransportOperator", b):
         return transport_inverse_sweep_batched(*operator._sweep_data(), b, self.batch_size)
 
 

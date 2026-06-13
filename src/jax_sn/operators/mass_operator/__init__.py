@@ -1,5 +1,7 @@
-from .mass_operator_base import MassOperator, MassOperatorVmap
+from .mass_operator_base import MassOperator
+from .mass_operator_strategies import MassStrategy, VmapMass, LaxMass
 
 __all__ = [
-    'MassOperator', 'MassOperatorVmap'
+    'MassOperator',
+    'MassStrategy', 'VmapMass', 'LaxMass',
 ]

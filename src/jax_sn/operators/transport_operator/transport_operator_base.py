@@ -143,10 +143,10 @@ class TransportOperator(AbstractLinearOperator_sn):
         self.inversion_strategy.check_compatible(self)
 
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        return self.forward_strategy(self, x)
+        return self.forward_strategy.forward(self, x)
 
     def _invert_internal(self, b : jnp.ndarray) -> jnp.ndarray:
-        return self.inversion_strategy(self, b)
+        return self.inversion_strategy.invert(self, b)
 
     def transpose(self):
         return eqx.tree_at(lambda t_operator : t_operator.topological_sorted_angle, self, self.topological_sorted_angle.reverse)

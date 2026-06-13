@@ -21,7 +21,7 @@ from jax_sn.domain.domain_generation import create_cartesian_setup
 from jax_sn.solution_domain import BasixLagrangianSimplex, SolutionDomain
 from jax_sn.domain import CrossSectionData, Domain
 
-from jax_sn.operators.mass_operator import MassOperatorVmap
+from jax_sn.operators.mass_operator import MassOperator
 from jax_sn.operators.transport_operator import TransportOperatorBatched
 
 # %%
@@ -77,7 +77,7 @@ n_cells = 10
 sol_domain, source, buffer, toposort = setup_1d_slab(sigma = sigma, q = q, degree = deg, n_cells = n_cells, angle = angle_norm)
 
 # %%
-mass_operator = MassOperatorVmap(sol_domain.fem_matrices, sol_domain.precomputed_geometric_data)
+mass_operator = MassOperator(sol_domain.fem_matrices, sol_domain.precomputed_geometric_data)
 transport_operator = TransportOperatorBatched(sol_domain.solution_domain_data, toposort, 0, batch_size = 10)
 
 # %%
@@ -95,7 +95,7 @@ def convergence_study(deg : int, n_cells_list : List[int]):
     L2_errors = []
     for n_cells in n_cells_list:
         sol_domain, source, buffer, toposort = setup_1d_slab(sigma = sigma, q = q, degree = deg, n_cells = n_cells, angle = angle_norm)
-        mass_operator = MassOperatorVmap(sol_domain.fem_matrices, sol_domain.precomputed_geometric_data)
+        mass_operator = MassOperator(sol_domain.fem_matrices, sol_domain.precomputed_geometric_data)
         transport_operator = TransportOperatorBatched(sol_domain.solution_domain_data, toposort, 0, batch_size = 10)
         solution = transport_operator.inv(mass_operator.mv(source.source_values) )
         L2_error = compute_L2_error(solution, analytical_solution_1D_slab, sol_domain, quad_order=8*(deg+1))
@@ -155,7 +155,7 @@ xmax  = 1.0
 
 # %%
 sol_domain, source_map, buffer, toposort = setup_3d_slab(sigma, q, 3, 20, angle_norm)
-mass_op_3d = MassOperatorVmap(sol_domain.fem_matrices, sol_domain.precomputed_geometric_data)
+mass_op_3d = MassOperator(sol_domain.fem_matrices, sol_domain.precomputed_geometric_data)
 transport_op_3d = TransportOperatorBatched(sol_domain.solution_domain_data, toposort, 0, batch_size = 100)
 
 result = transport_op_3d.inv(mass_op_3d.mv(source_map.source_values))

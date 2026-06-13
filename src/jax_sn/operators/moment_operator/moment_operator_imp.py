@@ -15,7 +15,7 @@ class MomentOperator(AbstractLinearOperator_sn):
     Implementation handling
     ---------------------------
     The contraction implementation (batched einsum, streaming scan, ...) is selected by the
-    :attr:`forward_strategy` :class:`~.moment_operator_strategies.MomentStrategy` field, *not* by a
+    :attr:`strategy` :class:`~.moment_operator_strategies.MomentStrategy` field, *not* by a
     subclass. A new implementation is a new strategy object. See
     :mod:`~jax_sn.operators.moment_operator.moment_operator_strategies`.
 
@@ -65,14 +65,14 @@ class MomentOperator(AbstractLinearOperator_sn):
     elements_basis_shape : jax.ShapeDtypeStruct  #[n_elements, n_basis]
     r'''The shape of the elements and basis functions over which this operator is batched. Identified with :math:`F` in the documentation above.'''
 
-    forward_strategy     : MomentStrategy = eqx.field(default_factory=BatchedMoment)
+    strategy             : MomentStrategy = eqx.field(default_factory=BatchedMoment)
     r'''How to apply the contraction. See :mod:`~jax_sn.operators.moment_operator.moment_operator_strategies`.'''
 
     transpose_bool       : bool = False
     r'''Whether this operator applies the transposed action (moments to angles) instead of the forward action (angles to moments).'''
 
     @classmethod
-    def from_quadrature_set(cls, quadrature_set : QuadratureSetBase, l_max : int, elements_basis_shape : jax.ShapeDtypeStruct, forward_strategy : MomentStrategy = BatchedMoment()) -> "MomentOperator":
+    def from_quadrature_set(cls, quadrature_set : QuadratureSetBase, l_max : int, elements_basis_shape : jax.ShapeDtypeStruct, strategy : MomentStrategy = BatchedMoment()) -> "MomentOperator":
         r'''
         Create a moment operator from a quadrature set and desired moment order. This computes the :math:`w_k Y_{l,m}(\Omega_k)` weights for the specified moment order.
         Prefer to initialise directly if possible.
@@ -84,18 +84,18 @@ class MomentOperator(AbstractLinearOperator_sn):
             The maximum moment order L to use.
         :param elements_basis_shape:
             The shape of the elements and basis functions over which this operator is batched. Identified with :math:`F` in the documentation above.
-        :param forward_strategy:
+        :param strategy:
             The contraction strategy to use (default :class:`~.moment_operator_strategies.BatchedMoment`).
 
 
         '''
         wk_yklm = quadrature_set.wk_ylm_real(l_max)
-        return cls(wk_yklm, elements_basis_shape, forward_strategy)
+        return cls(wk_yklm, elements_basis_shape, strategy)
 
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:
         if self.transpose_bool:
-            return self.forward_strategy.transpose(self, x)
-        return self.forward_strategy.forward(self, x)
+            return self.strategy.transpose(self, x)
+        return self.strategy.forward(self, x)
 
     def transpose(self) -> "MomentOperator":
         '''Returns the transposed operator by flipping :attr:`transpose_bool`. There is no setup or reconstruction, so this operation is essentially free.'''

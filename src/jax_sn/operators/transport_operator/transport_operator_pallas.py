@@ -475,7 +475,7 @@ from .transport_operator_strategies import InversionStrategy, VmapForward, Batch
 class VmapPallasSweep(InversionStrategy):
     '''Inverse sweep with all per-element matrices via vmap, using Pallas for the matrix ops.'''
 
-    def __call__(self, operator, b):
+    def invert(self, operator, b):
         return transport_inverse_sweep_complete_vmap_pallas(*operator._sweep_data(), b)
 
 
@@ -484,7 +484,7 @@ class BatchedPallasSweep(InversionStrategy):
 
     batch_size: int = None
 
-    def __call__(self, operator, b):
+    def invert(self, operator, b):
         return transport_inverse_sweep_batched_pallas(*operator._sweep_data(), b, self.batch_size)
 
 

@@ -16,7 +16,7 @@ def check_transport_inverse_sweep_complete_vmap(element, degree,
     
     lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values = _setup_all(element, degree, _vertices_conn_function, _angle_function, _expected_values_function, _source_function, _cross_section_function)
 
-    mass_operator = jax_sn.operators.mass_operator.MassOperatorVmap(femmatrices, precomputed_data)
+    mass_operator = jax_sn.operators.mass_operator.MassOperator(femmatrices, precomputed_data)
 
     source_mass_op = mass_operator.mv(source.source_values)
 

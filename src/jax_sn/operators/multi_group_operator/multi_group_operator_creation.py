@@ -1,7 +1,7 @@
 from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
 from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles
 from jax_sn.operators.transport_operator import ForwardStrategy, InversionStrategy, AngleLifting, VmapForward, VmapSweep, VmapAngles
-from jax_sn.operators.mass_operator import MassOperator, MassOperatorVmap
+from jax_sn.operators.mass_operator import MassOperator, MassStrategy, VmapMass
 from jax_sn.operators.scatter_operator import GatherScatterOperator, GatherScatterOperatorBroadcasted
 from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan, MultiGroupOperator
 from jax_sn.quadrature_set import QuadratureSet, QuadratureSetBase
@@ -14,8 +14,7 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
                                 inversion_strategy : InversionStrategy = VmapSweep(),
                                 angle_lifting : AngleLifting = VmapAngles(),
                                 topological_sorted_angle_kwargs : Dict = {},
-                                mass_operator_cls : Type[MassOperator] = MassOperatorVmap,
-                                mass_operator_cls_kwargs : Dict = {},
+                                mass_strategy : MassStrategy = VmapMass(),
                                 gather_scatter_operator_cls : Type[GatherScatterOperator] = GatherScatterOperatorBroadcasted,
                                 gather_scatter_operator_cls_kwargs : Dict = {},
                                 multi_group_operator_cls : Type[MultiGroupOperatorScan] = MultiGroupOperatorScan,
@@ -46,10 +45,8 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
     topological_sorted_angle_kwargs : Dict, optional
         Build kwargs forwarded to ``required_toposort_type().from_domain_quadrature_set`` (e.g.
         ``{"maximum_number_of_levels": ...}`` for a level-parallel toposort), by default {}.
-    mass_operator_cls : Type[MassOperator], optional
-        The class to use for the mass operator, by default :class:`MassOperatorVmap`
-    mass_operator_cls_kwargs : Dict, optional
-        The kwargs to use for the mass operator, by default {}
+    mass_strategy : MassStrategy, optional
+        The contraction strategy to use for the mass operator, by default :class:`VmapMass`
     gather_scatter_operator_cls : Type[GatherScatterOperator], optional
         The class to use for the gather scatter operator, by default :class:`GatherScatterOperatorBroadcasted`
     gather_scatter_operator_cls_kwargs : Dict, optional
@@ -73,7 +70,7 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
     transport_operator            = TransportOperatorMultipleAngles(single_angle_operator, angle_lifting)
 
 
-    mass_operator             = mass_operator_cls.from_transport_operator(transport_operator, **mass_operator_cls_kwargs)
+    mass_operator             = MassOperator.from_transport_operator(transport_operator, mass_strategy)
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)            
     discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
     gather_scatter_operator   = gather_scatter_operator_cls(cross_sections_indexed=solution_domain.domain.cross_sections_indexed, **gather_scatter_operator_cls_kwargs)
