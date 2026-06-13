@@ -221,3 +221,37 @@ operator was — `MomentOperator`/`DiscreteOperator` are now final classes with 
 `moment_operator_strategies.py`. This also resurrected the previously-orphaned streaming moment
 kernels as the `StreamingMoment` strategy. (`quadrature_set` was moved off moment/discrete onto
 `MultiGroupOperator` as an interim step; it folds into the canonical `setup` in Stage C.)
+
+## Follow-on (2026-06-13): `TopologicalSortedAngle` → `SweepData` + capability matching
+
+The "demand, don't prepare" toposort design above had two warts: the precomputed-structure family was
+named for one of its members (`TopologicalSortedAngle[Base/LevelParallel]`) so a future non-angular
+precompute (e.g. domain decomposition) wouldn't fit, and the strategy⇄structure match was on
+*concrete type* (`required_toposort_type` + an `isinstance(LevelParallel)` in `check_compatible`),
+which a richer combined plan would fail. Reframed:
+
+- **Renamed + relocated into the transport-operator layer.**
+  `TopologicalSortedAngleBase/TopologicalSortedAngle/TopologicalSortedAngleLevelParallel`
+  → `SweepData`/`BasicSweepData`/`LeveledSweepData`, moved out of `domain/geometric_domain.py` into a new
+  `operators/transport_operator/sweep_data.py`, documented as *"the precomputed structure required to
+  invert (sweep) the operator."* This completes `architecture_review` §5: the sweep concept now lives in
+  the transport layer it belongs to, and `geometric_domain.py` no longer imports `QuadratureSetBase`. (The
+  one thing pinning it to the `domain` layer — a `solution_domain` import of the basic sweep data — turned
+  out to be dead and was removed.) The family is re-exported from `jax_sn.operators.transport_operator`.
+  The sibling-ABC shape is unchanged (levels stay a separate `LeveledSweepData` because the
+  per-element-per-angle level arrays are large).
+- **Capabilities, not concrete types.** A capability is a small interface a `SweepData` *provides*
+  (`ProvidesLevels`, an `eqx.Module` mixin with `AbstractVar` `level_fwd`/`level_rev`; `LeveledSweepData`
+  inherits it). `InversionStrategy` now has `required_capabilities: ClassVar` + the build-hint
+  `default_sweep_data_type()` (was `required_toposort_type`); the base `check_compatible` asserts
+  `isinstance(op.sweep_data, cap)` for each required capability — permissive, so a richer plan with more
+  capabilities is always accepted, and capabilities *compose* (a future levels+decomposition plan
+  satisfies a level-only strategy with no enumerated isinstance). `WarpLevelSweep` just sets
+  `required_capabilities = (ProvidesLevels,)`.
+- **Field/method renames.** `TransportOperator.topological_sorted_angle` → `sweep_data`; the kernel-arg
+  method `_sweep_data()` → `_inversion_args()` (so the field and the method no longer near-collide);
+  `create_multi_group_operator`'s `topological_sorted_angle_kwargs` → `sweep_data_kwargs`.
+- **Validated** (CPU, no warp/jax_sbgeom here): SweepData family construct + `ProvidesLevels` isinstance
+  + type-preserving `reverse`/`__getitem__` + abstract base non-constructible; capability accept/reject
+  logic; whole package imports; all touched files compile; FE suite collects (only pre-existing
+  `sympy`-import errors). Warp/pallas/FE numerics pending on stellsim.

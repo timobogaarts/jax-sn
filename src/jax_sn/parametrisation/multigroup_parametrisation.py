@@ -145,8 +145,8 @@ def reconstruct_multigroup_operator_including_toposort(operator : MultiGroupOper
             # The toposort knows how to recompute itself for the deformed domain, reusing its own stored
             # angles and preserving its concrete type (a level-parallel toposort rebuilds its level setup
             # with the same padding). So this needs no operator/toposort-class special-casing.
-            existing_toposort = operator.transport_operator.transport_operator.topological_sorted_angle
+            existing_toposort = operator.transport_operator.transport_operator.sweep_data
             topological_sorts_replaced = jax.lax.stop_gradient(existing_toposort.reconstruct(domain_replaced))
-            return eqx.tree_at(lambda op : op.transport_operator.transport_operator.topological_sorted_angle, operator_xs_dom_precomp_replaced, replace = topological_sorts_replaced)
+            return eqx.tree_at(lambda op : op.transport_operator.transport_operator.sweep_data, operator_xs_dom_precomp_replaced, replace = topological_sorts_replaced)
         else:
             return operator_xs_dom_precomp_replaced

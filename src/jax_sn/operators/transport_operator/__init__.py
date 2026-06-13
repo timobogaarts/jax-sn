@@ -1,3 +1,4 @@
+from .sweep_data import SweepData, BasicSweepData, LeveledSweepData, LevelBasedParallelism, ProvidesLevels
 from .transport_operator_base import TransportOperator, TransportOperatorMultipleAngles
 from .transport_operator_base import TransportOperatorBatched, TransportOperatorVmap, TransportOperatorMultipleAnglesVmap
 from .transport_operator_strategies import (
@@ -25,6 +26,11 @@ except ImportError:
     _warp_available = False
 
 __all__ = [
+    'SweepData',
+    'BasicSweepData',
+    'LeveledSweepData',
+    'LevelBasedParallelism',
+    'ProvidesLevels',
     'TransportOperator',
     'TransportOperatorMultipleAngles',
     'TransportOperatorBatched',

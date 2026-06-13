@@ -18,9 +18,9 @@ The pallas and warp strategies live next to their kernels (``transport_operator_
 
 import equinox as eqx
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, Type, ClassVar, Tuple
 
-from jax_sn.domain.geometric_domain import TopologicalSortedAngle, TopologicalSortedAngleBase
+from .sweep_data import BasicSweepData, SweepData
 from .transport_operator_imp import transport_inverse_sweep_batched, transport_inverse_sweep_complete_vmap
 from .transport_operator_forward import forward_transport_operator_vmap, forward_transport_operator_batch
 
@@ -60,44 +60,56 @@ class BatchedForward(ForwardStrategy):
 # ---------------------------------------------------------------------------
 class InversionStrategy(eqx.Module):
     '''
-    How to sweep-invert the single-angle operator. Consumes ``operator._sweep_data()``.
+    How to sweep-invert the single-angle operator. Consumes ``operator._inversion_args()`` and
+    ``operator.sweep_data``.
 
-    A strategy may have a *precondition on the toposort* (e.g. the level-based-parallelism sweep needs
-    a :class:`TopologicalSortedAngleLevelParallel`). It answers two separate questions about that:
+    A strategy may need *richer sweep data* than the plain order (e.g. the level-based-parallelism
+    sweep needs the :class:`~jax_sn.domain.ProvidesLevels` capability). It answers two separate
+    questions about that:
 
-    - :meth:`required_toposort_type` (classmethod) -- the *concrete* toposort type a creation helper
-      should build for this strategy. This is a property of the strategy class (no instance data), so a
-      helper can ask it *before* the operator exists.
-    - :meth:`check_compatible` -- whether a given (already-built) operator's toposort/data are
-      *acceptable*. This is more permissive and data-dependent (e.g. the plain sweeps accept any
-      toposort, including a level-parallel one), so it is not the same as the build type.
+    - :attr:`required_capabilities` -- the :class:`~jax_sn.domain.SweepData` *capabilities* the sweep
+      data must provide (interfaces, not concrete types). :meth:`check_compatible` accepts *any*
+      sweep data providing them, so a richer plan (more capabilities) is always acceptable -- this is
+      the *acceptance* question, answered at construction / on every ``eqx.tree_at``.
+    - :meth:`default_sweep_data_type` (classmethod) -- the *concrete*, minimal sweep-data type a
+      creation helper should build to satisfy those capabilities. This is the *build* question,
+      answered *before* the operator exists (no instance data), so a helper can construct one.
 
-    Building the toposort is an explicit, visible step (the helper builds ``required_toposort_type``
-    from the domain, the caller can build it by hand, and it is rebuilt via
-    ``TopologicalSortedAngleBase.reconstruct``) -- never hidden work inside operator construction.
+    Building the sweep data is an explicit, visible step (the helper builds ``default_sweep_data_type``
+    from the domain, the caller can build it by hand, and it is rebuilt via ``SweepData.reconstruct``)
+    -- never hidden work inside operator construction.
     '''
+
+    required_capabilities: ClassVar[Tuple[type, ...]] = ()
+    '''Sweep-data capability interfaces this strategy requires (e.g. ``(ProvidesLevels,)``). Empty
+    means any :class:`~jax_sn.domain.SweepData` is acceptable.'''
 
     @abstractmethod
     def invert(self, operator: "TransportOperator", b):
         ...
 
     @classmethod
-    def required_toposort_type(cls) -> Type[TopologicalSortedAngleBase]:
-        '''The concrete toposort type a creation helper should build for this strategy. Default: the plain sort.'''
-        return TopologicalSortedAngle
+    def default_sweep_data_type(cls) -> Type[SweepData]:
+        '''The concrete, minimal sweep-data type a creation helper should build for this strategy.
+        Default: the plain sort (provides no extra capability).'''
+        return BasicSweepData
 
     def check_compatible(self, operator: "TransportOperator"):
-        '''Assert the operator's toposort/data are acceptable to this strategy. Default: nothing to check
-        (any toposort works). Run from ``TransportOperator.__check_init__``, so it fires at construction
-        and on every ``eqx.tree_at``.'''
-        pass
+        '''Assert the operator's sweep data provides every capability in :attr:`required_capabilities`.
+        Permissive: a richer sweep data (more capabilities) passes. Run from
+        ``TransportOperator.__check_init__``, so it fires at construction and on every ``eqx.tree_at``.'''
+        for capability in self.required_capabilities:
+            assert isinstance(operator.sweep_data, capability), \
+                f"{type(self).__name__} requires sweep data providing {capability.__name__}, " \
+                f"but got {type(operator.sweep_data).__name__}. Build it via " \
+                f"{type(self).__name__}.default_sweep_data_type().from_domain_quadrature_set(...)."
 
 
 class VmapSweep(InversionStrategy):
     '''Inverse sweep with all per-element matrices computed via vmap (high memory).'''
 
     def invert(self, operator: "TransportOperator", b):
-        return transport_inverse_sweep_complete_vmap(*operator._sweep_data(), b)
+        return transport_inverse_sweep_complete_vmap(*operator._inversion_args(), b)
 
 
 class BatchedSweep(InversionStrategy):
@@ -106,7 +118,7 @@ class BatchedSweep(InversionStrategy):
     batch_size: int = None
 
     def invert(self, operator: "TransportOperator", b):
-        return transport_inverse_sweep_batched(*operator._sweep_data(), b, self.batch_size)
+        return transport_inverse_sweep_batched(*operator._inversion_args(), b, self.batch_size)
 
 
 # ---------------------------------------------------------------------------
@@ -142,9 +154,9 @@ class VmapAngles(AngleLifting):
     @staticmethod
     def _map_over_angles(single_op: "TransportOperator", leading, fn):
         def one_angle(toposort_i, v_i):
-            op_i = eqx.tree_at(lambda o: o.topological_sorted_angle, single_op, toposort_i)
+            op_i = eqx.tree_at(lambda o: o.sweep_data, single_op, toposort_i)
             return fn(op_i, v_i)
-        return eqx.filter_vmap(one_angle, in_axes=(0, 0))(single_op.topological_sorted_angle, leading)
+        return eqx.filter_vmap(one_angle, in_axes=(0, 0))(single_op.sweep_data, leading)
 
     def forward(self, single_op: "TransportOperator", x):
         return self._map_over_angles(single_op, x, lambda op, v: op.mv(v))

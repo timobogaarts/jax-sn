@@ -1,6 +1,7 @@
 import jax 
 import jax.numpy as jnp 
-from jax_sn.domain.geometric_domain import GeometricDomain, TopologicalSortedAngle, CrossSectionDataSingleGroup, Domain
+from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup, Domain
+from .sweep_data import BasicSweepData
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from jax_sn.solution_domain import FEMMatrices
 from jax_sn.source import Source
@@ -131,7 +132,7 @@ def transport_inverse_sweep_batched_pallas(geometric_domain    : GeometricDomain
                                     fem_matrices               : FEMMatrices, 
                                     precomputed_geometric_data : PrecomputedGeometricData,                                      
                                     cross_sections             : CrossSectionDataSingleGroup, 
-                                    topological_sorted_angle   : TopologicalSortedAngle,                                     
+                                    sweep_data   : BasicSweepData,                                     
                                     x                          : jnp.ndarray,
                                     batch_size                 : int):
     '''
@@ -149,7 +150,7 @@ def transport_inverse_sweep_batched_pallas(geometric_domain    : GeometricDomain
         Precomputed geometric data for the domain and element type.
     cross_sections             : CrossSectionDataSingleGroup
         The cross section data for the domain.
-    topological_sorted_angle   : TopologicalSortedAngle
+    sweep_data   : BasicSweepData
         The topologically sorted angle for the sweep.
     x                          : jnp.ndarray [n_elements, n_basis]
         The array to apply the sweep to.
@@ -160,7 +161,7 @@ def transport_inverse_sweep_batched_pallas(geometric_domain    : GeometricDomain
     jnp.ndarray 
         The updated sweep result after performing the transport inverse sweep. Shape (n_elements, n_basis).
     '''
-    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, x, False)
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data, x, False)
 
     n_batches                  = jnp.ceil(geometric_domain.n_elements / batch_size).astype(int)        
     
@@ -168,14 +169,14 @@ def transport_inverse_sweep_batched_pallas(geometric_domain    : GeometricDomain
     
     def single_batch(batch_i, sweep_result):
         batch_indices                               = jnp.clip(jnp.arange(batch_size) + batch_i * batch_size, 0, geometric_domain.n_elements - 1)    
-        batch_elements                              = topological_sorted_angle.levels_argsort[batch_indices]        
+        batch_elements                              = sweep_data.levels_argsort[batch_indices]        
         gij_inv_pad, dij_f_p_fm_pad, abs_omega_dot_n_Je, x_i_pad = _setup_elements_idx_in_precomp_with_omega_n_calculation_padded(
                                                                         batch_elements,
                                                                         geometric_domain, 
                                                                         fem_matrices,
                                                                         precomputed_geometric_data,                                      
                                                                         cross_sections, 
-                                                                        topological_sorted_angle.angle,
+                                                                        sweep_data.angle,
                                                                         x
                                                                         )        
         return sweep_pl_update(batch_elements, gij_inv_pad, x_i_pad, dij_f_p_fm_pad, etoe_pad, abs_omega_dot_n_Je, sweep_result)    
@@ -190,7 +191,7 @@ def transport_inverse_sweep_complete_vmap_pallas(geometric_domain           : Ge
                                                  fem_matrices               : FEMMatrices, 
                                                  precomputed_geometric_data : PrecomputedGeometricData,                                      
                                                  cross_sections             : CrossSectionDataSingleGroup, 
-                                                 topological_sorted_angle   : TopologicalSortedAngle,                                     
+                                                 sweep_data   : BasicSweepData,                                     
                                                  x                          : jnp.ndarray,
                                                  ):   
     '''
@@ -208,7 +209,7 @@ def transport_inverse_sweep_complete_vmap_pallas(geometric_domain           : Ge
         Precomputed geometric data for the domain and element type.
     cross_sections             : CrossSectionDataSingleGroup
         The cross section data for the domain.
-    topological_sorted_angle   : TopologicalSortedAngle
+    sweep_data   : BasicSweepData
         The topologically sorted angle for the sweep.
     x                          : jnp.ndarray [n_elements, n_basis]
         The array to apply the sweep to.
@@ -220,19 +221,19 @@ def transport_inverse_sweep_complete_vmap_pallas(geometric_domain           : Ge
         The updated sweep result after performing the transport inverse sweep. Shape (n_elements, n_basis).
     '''
        
-    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angle, x, False)
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data, x, False)
 
     etoe_pad = _pad_etoe_pow2(geometric_domain.etoe)
     gij_inv_pad, dij_f_p_fm_pad, abs_omega_dot_n_Je, x_i_pad = _setup_elements_idx_in_precomp_with_omega_n_calculation_padded(
-        topological_sorted_angle.levels_argsort,
+        sweep_data.levels_argsort,
         geometric_domain, 
         fem_matrices,
         precomputed_geometric_data,                                      
         cross_sections, 
-        topological_sorted_angle.angle,
+        sweep_data.angle,
         x)      
     buffer_sweep = jnp.zeros((geometric_domain.n_elements, _next_power_of_two(fem_matrices.n_basis)), dtype=x.dtype)  
-    return sweep_pl_update(topological_sorted_angle.levels_argsort, gij_inv_pad, x_i_pad, dij_f_p_fm_pad,etoe_pad, abs_omega_dot_n_Je, buffer_sweep)[:, :fem_matrices.n_basis]    
+    return sweep_pl_update(sweep_data.levels_argsort, gij_inv_pad, x_i_pad, dij_f_p_fm_pad,etoe_pad, abs_omega_dot_n_Je, buffer_sweep)[:, :fem_matrices.n_basis]    
 
 @jax.jit
 def _setup_elements_idx_in_precomp_with_omega_n_calculation_padded(elements_idx: jnp.ndarray,
@@ -284,18 +285,18 @@ def _setup_elements_pad_args(geometric_domain          : GeometricDomain,
                             fem_matrices               : FEMMatrices, 
                             precomputed_geometric_data : PrecomputedGeometricData,                                      
                             cross_sections             : CrossSectionDataSingleGroup, 
-                            topological_sorted_angle   : TopologicalSortedAngle,                                     
+                            sweep_data   : BasicSweepData,                                     
                             x                          : jnp.ndarray):
     '''
     Convenience function to setup elements using the same arguments as the transport sweep functions, but returning padded arrays for Pallas.
     '''
     return _setup_elements_idx_in_precomp_with_omega_n_calculation_padded(
-        topological_sorted_angle.levels_argsort,
+        sweep_data.levels_argsort,
         geometric_domain, 
         fem_matrices,
         precomputed_geometric_data,                                      
         cross_sections, 
-        topological_sorted_angle.angle,
+        sweep_data.angle,
         x) 
 
 def _pad_etoe_pow2(etoe : jnp.ndarray):
@@ -389,7 +390,7 @@ def transport_inverse_sweep_multiple_angles_batched_pallas(geometric_domain    :
                                                     fem_matrices               : FEMMatrices,
                                                     precomputed_geometric_data : PrecomputedGeometricData,
                                                     cross_sections             : CrossSectionDataSingleGroup,
-                                                    topological_sorted_angles  : TopologicalSortedAngle,                                                                                                                                                             
+                                                    sweep_data  : BasicSweepData,                                                                                                                                                             
                                                     x                          : jnp.ndarray,
                                                     batch_size                 : int):
     '''
@@ -408,7 +409,7 @@ def transport_inverse_sweep_multiple_angles_batched_pallas(geometric_domain    :
         The precomputed geometric data (Jacobian determinants and inverses).
     cross_sections : CrossSectionDataSingleGroup
         The cross section data.
-    topological_sorted_angles : TopologicalSortedAngle
+    sweep_data : BasicSweepData
         The topologically sorted angle data for multiple angles. (batch dimension is the first dimension)
     x : jnp.ndarray [n_angles, n_elements, n_basis]
         The source data. Should also be batched over angles (batch dimension is the first dimension).
@@ -420,16 +421,16 @@ def transport_inverse_sweep_multiple_angles_batched_pallas(geometric_domain    :
         The sweep result after performing the transport inverse sweep for all angles.
     '''
         
-    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, x, True)
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data, x, True)
     f_batch = jax.vmap(transport_inverse_sweep_batched_pallas, in_axes=(None, None, None, None, 0, 0, None ))
-    return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, x, batch_size)
+    return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data, x, batch_size)
 
 @jax.jit
 def transport_inverse_sweep_multiple_angles_complete_vmap_pallas(geometric_domain    : GeometricDomain,
                                                             fem_matrices               : FEMMatrices,
                                                             precomputed_geometric_data : PrecomputedGeometricData,
                                                             cross_sections             : CrossSectionDataSingleGroup,
-                                                            topological_sorted_angles  : TopologicalSortedAngle,                                                                                                         
+                                                            sweep_data  : BasicSweepData,                                                                                                         
                                                             x                          : jnp.ndarray
                                                             ):
         '''
@@ -448,7 +449,7 @@ def transport_inverse_sweep_multiple_angles_complete_vmap_pallas(geometric_domai
             The precomputed geometric data (Jacobian determinants and inverses).
         cross_sections : CrossSectionDataSingleGroup
             The cross section data.
-        topological_sorted_angles : TopologicalSortedAngle
+        sweep_data : BasicSweepData
             The topologically sorted angle data for multiple angles. (batch dimension is the first dimension)
         x : jnp.ndarray [n_angles, n_elements, n_basis]
             The source data. Should also be batched over angles (batch dimension is the first dimension).
@@ -458,9 +459,9 @@ def transport_inverse_sweep_multiple_angles_complete_vmap_pallas(geometric_domai
             The sweep result after performing the transport inverse sweep for all angles.
         '''
             
-        _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, x, True)
+        _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data, x, True)
         f_batch = jax.vmap(transport_inverse_sweep_complete_vmap_pallas, in_axes=(None, None, None, None, 0, 0))
-        return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, topological_sorted_angles, x)
+        return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data, x)
 
 
 
@@ -468,7 +469,7 @@ def transport_inverse_sweep_multiple_angles_complete_vmap_pallas(geometric_domai
 # ---------------------------------------------------------------------------
 # Pallas strategies + convenience constructors
 # ---------------------------------------------------------------------------
-from jax_sn.domain.geometric_domain import TopologicalSortedAngleBase
+from .sweep_data import SweepData
 from .transport_operator_strategies import InversionStrategy, VmapForward, BatchedForward
 
 
@@ -476,7 +477,7 @@ class VmapPallasSweep(InversionStrategy):
     '''Inverse sweep with all per-element matrices via vmap, using Pallas for the matrix ops.'''
 
     def invert(self, operator, b):
-        return transport_inverse_sweep_complete_vmap_pallas(*operator._sweep_data(), b)
+        return transport_inverse_sweep_complete_vmap_pallas(*operator._inversion_args(), b)
 
 
 class BatchedPallasSweep(InversionStrategy):
@@ -485,14 +486,14 @@ class BatchedPallasSweep(InversionStrategy):
     batch_size: int = None
 
     def invert(self, operator, b):
-        return transport_inverse_sweep_batched_pallas(*operator._sweep_data(), b, self.batch_size)
+        return transport_inverse_sweep_batched_pallas(*operator._inversion_args(), b, self.batch_size)
 
 
-def TransportOperatorVmapPallas(solution_domain_data: SolutionDomainData, topological_sorted_angle: TopologicalSortedAngleBase, energy_group: int) -> TransportOperator:
+def TransportOperatorVmapPallas(solution_domain_data: SolutionDomainData, sweep_data: SweepData, energy_group: int) -> TransportOperator:
     '''Convenience constructor: vmap forward + Pallas vmap inverse sweep.'''
-    return TransportOperator(solution_domain_data, topological_sorted_angle, energy_group, VmapForward(), VmapPallasSweep())
+    return TransportOperator(solution_domain_data, sweep_data, energy_group, VmapForward(), VmapPallasSweep())
 
 
-def TransportOperatorBatchedPallas(solution_domain_data: SolutionDomainData, topological_sorted_angle: TopologicalSortedAngleBase, energy_group: int, batch_size: int = None) -> TransportOperator:
+def TransportOperatorBatchedPallas(solution_domain_data: SolutionDomainData, sweep_data: SweepData, energy_group: int, batch_size: int = None) -> TransportOperator:
     '''Convenience constructor: batched forward + Pallas batched inverse sweep.'''
-    return TransportOperator(solution_domain_data, topological_sorted_angle, energy_group, BatchedForward(batch_size), BatchedPallasSweep(batch_size))
+    return TransportOperator(solution_domain_data, sweep_data, energy_group, BatchedForward(batch_size), BatchedPallasSweep(batch_size))

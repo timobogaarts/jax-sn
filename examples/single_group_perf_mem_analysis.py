@@ -59,17 +59,17 @@ def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim,
     from jax_sn.operators.transport_operator import TransportOperatorMultipleAnglesVmap, TransportOperatorVmap
     from jax_sn.operators.mass_operator import MassOperator
     from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
-    from jax_sn.domain.geometric_domain import TopologicalSortedAngle
+    from jax_sn.operators.transport_operator import BasicSweepData
     from jax_sn.operators.single_group_operator import SingleGroupOperator    
             
     solution_domain, sources, quadrature_set = setup_anisotropic(dim, degree, n_elem_regions, d_other_dim, n_other_dim, tn_order) 
 
-    topological_sorted_angles = TopologicalSortedAngle.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
-    transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorVmap(solution_domain.solution_domain_data, topological_sorted_angles, 0))
+    sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
+    transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorVmap(solution_domain.solution_domain_data, sweep_data, 0))
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
     scatter_op                = ScatterOperator(solution_domain.domain.cross_sections_indexed, moment_operator.out_structure(), energy_group_in=0, energy_group_out=0)
-    source_total              = jnp.broadcast_to(sources[0][None, :, :], (topological_sorted_angles.angle.shape[0],) + sources[0].shape) # source for all angles
+    source_total              = jnp.broadcast_to(sources[0][None, :, :], (sweep_data.angle.shape[0],) + sources[0].shape) # source for all angles
     discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
     Aop = SingleGroupOperator(moment_operator, transport_operator, mass_operator, discrete_operator,  scatter_op)
     return Aop, source_total, solution_domain
@@ -77,7 +77,7 @@ def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim,
 
 def _run_multi_angle_operators(dim, degree, pallas = False):
     from jax_sn.operators.transport_operator.transport_operator_base import TransportOperatorBatched, TransportOperatorBatchedPallas, TransportOperatorMultipleAnglesVmap    
-    from jax_sn.domain.geometric_domain import TopologicalSortedAngle
+    from jax_sn.operators.transport_operator import BasicSweepData
     
     from jax_sn.operators.single_group_operator import SingleGroupOperator    
 
@@ -91,7 +91,7 @@ def _run_multi_angle_operators(dim, degree, pallas = False):
     
     angle_i  = jax_sn.quadrature_set.create_tn_quadrature_set(3)
     n_angles = angle_i.n_angles
-    toposorts = [TopologicalSortedAngle.from_domain_angle(solution_domain.domain, angle_i.angles[i], 100) for i in range(n_angles)]
+    toposorts = [BasicSweepData.from_domain_angle(solution_domain.domain, angle_i.angles[i], 100) for i in range(n_angles)]
     total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
     for operator_cls in transportoperators_ma.keys():        
         operator_instance = TransportOperatorMultipleAnglesVmap(operator_cls(solution_domain.solution_domain_data, total_toposorts, 0, **transportoperators_ma[operator_cls]))
@@ -145,7 +145,7 @@ def solve_bicgstab_stat(Aop, rhs):
 
 def _solve_single_group(dim, degree, pallas = True):
     from jax_sn.operators.transport_operator.transport_operator_base import TransportOperatorBatched, TransportOperatorBatchedPallas, TransportOperatorMultipleAnglesVmap    
-    from jax_sn.domain.geometric_domain import TopologicalSortedAngle
+    from jax_sn.operators.transport_operator import BasicSweepData
     
     from jax_sn.operators.single_group_operator import SingleGroupOperator    
 
@@ -162,7 +162,7 @@ def _solve_single_group(dim, degree, pallas = True):
     
     angle_i         = jax_sn.quadrature_set.create_tn_quadrature_set(3)
     n_angles        = angle_i.n_angles
-    toposorts       = [TopologicalSortedAngle.from_domain_angle(solution_domain.domain, angle_i.angles[i], 100) for i in range(n_angles)]
+    toposorts       = [BasicSweepData.from_domain_angle(solution_domain.domain, angle_i.angles[i], 100) for i in range(n_angles)]
     total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
     for operator_cls in transportoperators_ma.keys():        
         operator_instance     = TransportOperatorMultipleAnglesVmap(operator_cls(solution_domain.solution_domain_data, total_toposorts, 0, **transportoperators_ma[operator_cls]))

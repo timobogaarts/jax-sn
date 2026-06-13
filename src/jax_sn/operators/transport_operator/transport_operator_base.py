@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 
 from jax_sn.solution_domain import SolutionDomainData
-from jax_sn.domain.geometric_domain import TopologicalSortedAngleBase
+from .sweep_data import SweepData
 import equinox as eqx
 import lineax as lx
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
@@ -122,8 +122,8 @@ class TransportOperator(AbstractLinearOperator_sn):
     solution_domain_data      : SolutionDomainData
     '''Data for the solution domain, including geometric factors, finite element matrices, cross sections, etc.'''
 
-    topological_sorted_angle  : TopologicalSortedAngleBase    #[this does not *require* a topological sorted angle for the forward operator. however, since the inverse does require it, we just require it here.]
-    '''Angle directions along with topological sorting information for the elements.'''
+    sweep_data                : SweepData    #[the forward operator does not *require* sweep data; but since the inverse does, we require it here.]
+    '''The data required to invert (sweep) the operator: angle directions + the per-angle topological order of elements. See :class:`~jax_sn.domain.SweepData`.'''
 
     energy_group              : int
     '''Energy group index for which this transport operator is defined.'''
@@ -149,7 +149,7 @@ class TransportOperator(AbstractLinearOperator_sn):
         return self.inversion_strategy.invert(self, b)
 
     def transpose(self):
-        return eqx.tree_at(lambda t_operator : t_operator.topological_sorted_angle, self, self.topological_sorted_angle.reverse)
+        return eqx.tree_at(lambda t_operator : t_operator.sweep_data, self, self.sweep_data.reverse)
     
     def inv(self, b : jnp.ndarray) -> jnp.ndarray:
         r'''
@@ -184,15 +184,15 @@ class TransportOperator(AbstractLinearOperator_sn):
         return (
             *self.solution_domain_data,
             self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(self.energy_group),
-            self.topological_sorted_angle.angle,
+            self.sweep_data.angle,
         )
 
-    def _sweep_data(self):
+    def _inversion_args(self):
         '''Shared inputs for an inversion strategy: ``(*solution_domain_data, cross_sections, toposort)``. The strategy appends ``b``.'''
         return (
             *self.solution_domain_data,
             self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(self.energy_group),
-            self.topological_sorted_angle,
+            self.sweep_data,
         )
 
     @property
@@ -211,22 +211,22 @@ def _(operator : TransportOperator):
 def _(operator : TransportOperator):
     return operator
 
-def TransportOperatorVmap(solution_domain_data : SolutionDomainData, topological_sorted_angle : TopologicalSortedAngleBase, energy_group : int) -> TransportOperator:
+def TransportOperatorVmap(solution_domain_data : SolutionDomainData, sweep_data : SweepData, energy_group : int) -> TransportOperator:
     r'''
     Convenience constructor: a transport operator using vmap over all elements for both forward and
     inverse (computes all :math:`G_{ij}^{-1}` / :math:`D_{e \gamma, ij}` via vmap). High memory for
     large problems. Equivalent to ``TransportOperator(..., VmapForward(), VmapSweep())``.
     '''
-    return TransportOperator(solution_domain_data, topological_sorted_angle, energy_group, VmapForward(), VmapSweep())
+    return TransportOperator(solution_domain_data, sweep_data, energy_group, VmapForward(), VmapSweep())
 
 
-def TransportOperatorBatched(solution_domain_data : SolutionDomainData, topological_sorted_angle : TopologicalSortedAngleBase, energy_group : int, batch_size : int = None) -> TransportOperator:
+def TransportOperatorBatched(solution_domain_data : SolutionDomainData, sweep_data : SweepData, energy_group : int, batch_size : int = None) -> TransportOperator:
     r'''
     Convenience constructor: a transport operator using batched forward and inverse sweeps.
     ``batch_size=None`` reproduces the non-batched version. Equivalent to
     ``TransportOperator(..., BatchedForward(batch_size), BatchedSweep(batch_size))``.
     '''
-    return TransportOperator(solution_domain_data, topological_sorted_angle, energy_group, BatchedForward(batch_size), BatchedSweep(batch_size))
+    return TransportOperator(solution_domain_data, sweep_data, energy_group, BatchedForward(batch_size), BatchedSweep(batch_size))
 
 
 #===============================================================================================================================================
@@ -281,7 +281,7 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
         self.angle_lifting.check_compatible(self.transport_operator)
 
     def _assert_shape_base(self):
-        assert self.transport_operator.topological_sorted_angle.angle.ndim==2, "topological_sorted_angle must be 2D for base TransportOperatorMultipleAngles"
+        assert self.transport_operator.sweep_data.angle.ndim==2, "sweep_data must be 2D for base TransportOperatorMultipleAngles"
 
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:
         return self.angle_lifting.forward(self.transport_operator, x)
@@ -289,9 +289,9 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
     def _invert_internal(self, b : jnp.ndarray) -> jnp.ndarray:
         return self.angle_lifting.invert(self.transport_operator, b)
 
-    def _sweep_data(self):
+    def _inversion_args(self):
         '''Delegates to the wrapped single-angle operator (used by the warp flatten helper).'''
-        return self.transport_operator._sweep_data()
+        return self.transport_operator._inversion_args()
 
     def inv(self, b : jnp.ndarray) -> jnp.ndarray:
         r'''
@@ -331,17 +331,17 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
         return self.transport_operator.energy_group
 
     @property 
-    def topological_sorted_angle(self):
+    def sweep_data(self):
         '''
         Topological sorted angle information used by this transport operator.
         '''
-        return self.transport_operator.topological_sorted_angle
+        return self.transport_operator.sweep_data
         
     
     @property 
     def _shape_inout(self):
         self._assert_shape_base()
-        n_angles   = self.transport_operator.topological_sorted_angle.angle.shape[0]
+        n_angles   = self.transport_operator.sweep_data.angle.shape[0]
         n_elements = self.transport_operator.solution_domain_data.domain.n_elements
         n_basis    = self.transport_operator.solution_domain_data.fem_matrices.n_basis        
         return jax.ShapeDtypeStruct((n_angles, n_elements, n_basis), self.transport_operator.solution_domain_data.fem_matrices.mass_matrix.dtype)
@@ -351,7 +351,7 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
         '''
         Number of angles in the transport operator.
         '''
-        return self.transport_operator.topological_sorted_angle.angle.shape[0]
+        return self.transport_operator.sweep_data.angle.shape[0]
     
     def __getitem__(self, idx):
         '''
@@ -367,7 +367,7 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
         TransportOperator
             Single-angle transport operator for the specified angle.
         '''
-        return eqx.tree_at(lambda t_operator : t_operator.topological_sorted_angle, self.transport_operator, self.transport_operator.topological_sorted_angle[idx])
+        return eqx.tree_at(lambda t_operator : t_operator.sweep_data, self.transport_operator, self.transport_operator.sweep_data[idx])
 
 @lx.is_symmetric.register(TransportOperatorMultipleAngles)
 def _(operator : TransportOperator):

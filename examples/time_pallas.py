@@ -9,7 +9,8 @@ import jax
 import numpy as onp
 from functools import partial
 jax.config.update("jax_enable_x64", True)
-from jax_sn.domain.geometric_domain import GeometricDomain, TopologicalSortedAngle
+from jax_sn.domain import GeometricDomain
+from jax_sn.operators.transport_operator import BasicSweepData
 from jax_sn.solution_domain.solution_domain import FEMMatrices, PrecomputedGeometricData
 from jax_sn.domain.geometric_domain import CrossSectionData, CrossSectionDataSingleGroup
 from jax_sn.source import Source
@@ -43,7 +44,7 @@ domain                               = Domain.from_mesh_and_cross_sections((vert
 
 
 quad_set = jsn.quadrature_set.create_tn_quadrature_set(4)
-toposort = TopologicalSortedAngle.from_domain_angle(domain, quad_set[0][0], 100) 
+toposort = BasicSweepData.from_domain_angle(domain, quad_set[0][0], 100) 
 print(quad_set.weights.dtype)
 
 def time_executions(degree: int):
@@ -106,7 +107,7 @@ time_executions(degree=3)
 
 def test_multiple_angles():
     quad_set = jsn.quadrature_set.create_tn_quadrature_set(3)
-    toposorts = [TopologicalSortedAngle.from_domain_angle(domain, angle, 100) for angle in quad_set.angles]
+    toposorts = [BasicSweepData.from_domain_angle(domain, angle, 100) for angle in quad_set.angles]
     total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
     multiple_angles_batch_size = 100
     def time_degree(degree: int):

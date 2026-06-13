@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from dataclasses import dataclass
 from .base_fem import Element, PrecomputedGeometricData, FEMMatrices
 from typing import List, Tuple
-from jax_sn.domain.geometric_domain import GeometricDomain, TopologicalSortedAngle, CrossSectionData
+from jax_sn.domain import GeometricDomain
 
 from jax_sn.source import Source
 import equinox as eqx

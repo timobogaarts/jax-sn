@@ -8,7 +8,8 @@ jax.config.update("jax_enable_x64", True)
 
 # %%
 import jax_sn
-from jax_sn.domain import CrossSectionData, Domain, TopologicalSortedAngle
+from jax_sn.domain import CrossSectionData, Domain
+from jax_sn.operators.transport_operator import BasicSweepData
 from jax_sn.solution_domain import BasixLagrangianSimplex, SolutionDomain
 from jax_sn.domain.domain_generation import create_cartesian_setup
 
@@ -55,7 +56,7 @@ def _run_single_angle_operators(dim, degree):
     solution_domain, sources = setup_base_case(3,2)
     i_tn     = 50
     angle_i  = jax_sn.quadrature_set.create_tn_quadrature_set(4)
-    toposort = TopologicalSortedAngle.from_domain_angle(solution_domain.domain, angle_i[i_tn][0], 100)
+    toposort = BasicSweepData.from_domain_angle(solution_domain.domain, angle_i[i_tn][0], 100)
     for operator_cls in transportoperators_sa.keys():        
         operator_instance = operator_cls(solution_domain.solution_domain_data, toposort, 0, **transportoperators_sa[operator_cls])
         mem_mv, mem_mv_grad   = analyze_grad_memory(TransportOperatorSigmaParametrised, operator_instance, method="mv")    
@@ -85,7 +86,7 @@ def _run_multi_angle_operators(dim, degree):
     
     angle_i  = jax_sn.quadrature_set.create_tn_quadrature_set(3)
     n_angles = angle_i.n_angles
-    toposorts = [TopologicalSortedAngle.from_domain_angle(solution_domain.domain, angle_i.angles[i], 100) for i in range(n_angles)]
+    toposorts = [BasicSweepData.from_domain_angle(solution_domain.domain, angle_i.angles[i], 100) for i in range(n_angles)]
     total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
     for operator_cls in transportoperators_ma.keys():        
         operator_instance = TransportOperatorMultipleAnglesVmap(operator_cls(solution_domain.solution_domain_data, total_toposorts, 0, **transportoperators_ma[operator_cls]))

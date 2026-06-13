@@ -13,7 +13,7 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
                                 forward_strategy : ForwardStrategy = VmapForward(),
                                 inversion_strategy : InversionStrategy = VmapSweep(),
                                 angle_lifting : AngleLifting = VmapAngles(),
-                                topological_sorted_angle_kwargs : Dict = {},
+                                sweep_data_kwargs : Dict = {},
                                 mass_strategy : MassStrategy = VmapMass(),
                                 gather_scatter_operator_cls : Type[GatherScatterOperator] = GatherScatterOperatorBroadcasted,
                                 gather_scatter_operator_cls_kwargs : Dict = {},
@@ -24,10 +24,10 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
     Create a MultiGroupOperator for the given solution domain and quadrature set. The transport operator
     is composed from strategy objects; the other sub-operators take custom types + kwargs.
 
-    The toposort the transport operator needs is built from ``inversion_strategy.required_toposort_type()``
+    The toposort the transport operator needs is built from ``inversion_strategy.default_sweep_data_type()``
     -- so e.g. passing a level-based-parallelism sweep automatically builds a level-parallel toposort.
     Build parameters for that toposort (e.g. ``maximum_number_of_levels`` for the level-parallel one) go
-    in ``topological_sorted_angle_kwargs``.
+    in ``sweep_data_kwargs``.
 
     Parameters
     ----------
@@ -39,11 +39,11 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
         How the (single-angle) transport operator applies the forward operator, by default :class:`VmapForward`.
     inversion_strategy : InversionStrategy, optional
         How the (single-angle) transport operator sweep-inverts, by default :class:`VmapSweep`. Also
-        determines the toposort type that gets built (via ``required_toposort_type``).
+        determines the toposort type that gets built (via ``default_sweep_data_type``).
     angle_lifting : AngleLifting, optional
         How the single-angle operator is lifted over the angle axis, by default :class:`VmapAngles`.
-    topological_sorted_angle_kwargs : Dict, optional
-        Build kwargs forwarded to ``required_toposort_type().from_domain_quadrature_set`` (e.g.
+    sweep_data_kwargs : Dict, optional
+        Build kwargs forwarded to ``default_sweep_data_type().from_domain_quadrature_set`` (e.g.
         ``{"maximum_number_of_levels": ...}`` for a level-parallel toposort), by default {}.
     mass_strategy : MassStrategy, optional
         The contraction strategy to use for the mass operator, by default :class:`VmapMass`
@@ -63,10 +63,10 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
     n_energy_groups           = solution_domain.domain.cross_sections_indexed.n_energy_groups
     lmax                      = solution_domain.domain.cross_sections_indexed.l_max
 
-    topological_sorted_angle_type = inversion_strategy.required_toposort_type()
-    topological_sorted_angles     = topological_sorted_angle_type.from_domain_quadrature_set(solution_domain.domain, quadrature_set, **topological_sorted_angle_kwargs)
+    sweep_data_type = inversion_strategy.default_sweep_data_type()
+    sweep_data     = sweep_data_type.from_domain_quadrature_set(solution_domain.domain, quadrature_set, **sweep_data_kwargs)
 
-    single_angle_operator         = TransportOperator(solution_domain.solution_domain_data, topological_sorted_angles, 0, forward_strategy, inversion_strategy)
+    single_angle_operator         = TransportOperator(solution_domain.solution_domain_data, sweep_data, 0, forward_strategy, inversion_strategy)
     transport_operator            = TransportOperatorMultipleAngles(single_angle_operator, angle_lifting)
 
 

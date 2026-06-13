@@ -12,7 +12,7 @@ from finite_elements.test_breeding_blanket import bb_data_dict, base_region_size
 def setup_mgop(dim, degree):
     from jax_sn.operators.transport_operator import TransportOperatorBatched, TransportOperatorMultipleAnglesVmap
     MGOP, source_eg0, solution_domain = _setup_bb_args(dim, degree, base_region_sizes(), base_resolutions(), 5.0, 10, 3)
-    transport_operator                = TransportOperatorMultipleAnglesVmap(TransportOperatorBatched(MGOP.transport_operator.solution_domain_data, MGOP.transport_operator.topological_sorted_angle, 0, 100))
+    transport_operator                = TransportOperatorMultipleAnglesVmap(TransportOperatorBatched(MGOP.transport_operator.solution_domain_data, MGOP.transport_operator.sweep_data, 0, 100))
     MGOP                              = eqx.tree_at(lambda t : t.transport_operator, MGOP, transport_operator)
     return MGOP, source_eg0, solution_domain
 

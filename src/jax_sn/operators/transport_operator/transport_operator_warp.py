@@ -10,10 +10,10 @@ still defers to the generic :class:`VmapAngles`.
 The warp forward is the batched forward (``BatchedForward``), so warp single-angle operators are just
 ``TransportOperator`` with a batched forward strategy + a warp inversion strategy -- no special
 subclass. The level-parallel variant carries its level setup inside a
-:class:`TopologicalSortedAngleLevelParallel` toposort.
+:class:`LeveledSweepData` toposort.
 '''
 
-from jax_sn.domain import TopologicalSortedAngleBase, TopologicalSortedAngleLevelParallel
+from .sweep_data import SweepData, LeveledSweepData, ProvidesLevels
 from jax_sn.solution_domain import SolutionDomainData
 
 from .transport_operator_base import TransportOperator, TransportOperatorMultipleAngles
@@ -42,7 +42,7 @@ class WarpSequentialSweep(InversionStrategy):
     '''Single-angle inverse via the sequential Warp sweep kernel (no batching).'''
 
     def invert(self, operator, b):
-        return single_angle_warp_sweep(*operator._sweep_data(), b)
+        return single_angle_warp_sweep(*operator._inversion_args(), b)
 
     def check_compatible(self, operator):
         _assert_warp_compatible(operator.solution_domain_data)
@@ -50,22 +50,24 @@ class WarpSequentialSweep(InversionStrategy):
 
 class WarpLevelSweep(InversionStrategy):
     '''
-    Single-angle inverse via the level-based-parallelism Warp sweep kernel. Requires a
-    :class:`TopologicalSortedAngleLevelParallel` toposort (which carries the level setup for both sweep
-    directions); the caller builds that explicitly and this strategy just checks it via
-    :meth:`check_compatible`.
+    Single-angle inverse via the level-based-parallelism Warp sweep kernel. Requires sweep data
+    providing the :class:`~jax_sn.domain.ProvidesLevels` capability (the level setup for both sweep
+    directions). The base :meth:`~InversionStrategy.check_compatible` enforces that capability; this
+    strategy only adds the warp-data-layout check. The minimal concrete builder is
+    :class:`~jax_sn.domain.LeveledSweepData`.
     '''
 
+    required_capabilities = (ProvidesLevels,)
+
     def invert(self, operator, b):
-        return level_single_angle_warp_sweep(*operator._sweep_data(), b, operator.topological_sorted_angle.level_fwd)
+        return level_single_angle_warp_sweep(*operator._inversion_args(), b, operator.sweep_data.level_fwd)
 
     @classmethod
-    def required_toposort_type(cls):
-        return TopologicalSortedAngleLevelParallel
+    def default_sweep_data_type(cls):
+        return LeveledSweepData
 
     def check_compatible(self, operator):
-        assert isinstance(operator.topological_sorted_angle, TopologicalSortedAngleLevelParallel), \
-            f"WarpLevelSweep needs a level-parallel toposort (build it with TopologicalSortedAngleLevelParallel.from_topological_sorted_angle / from_domain_quadrature_set), got {type(operator.topological_sorted_angle).__name__}"
+        super().check_compatible(operator)  # enforces required_capabilities (ProvidesLevels)
         _assert_warp_compatible(operator.solution_domain_data)
 
 
@@ -79,7 +81,7 @@ class WarpSequentialAngles(AngleLifting):
         return VmapAngles().forward(single_op, x)
 
     def invert(self, single_op, b):
-        return multi_angle_warp_sweep(*single_op._sweep_data(), b)
+        return multi_angle_warp_sweep(*single_op._inversion_args(), b)
 
     def check_compatible(self, single_op):
         assert isinstance(single_op.inversion_strategy, WarpSequentialSweep), \
@@ -93,7 +95,7 @@ class WarpLevelAngles(AngleLifting):
         return VmapAngles().forward(single_op, x)
 
     def invert(self, single_op, b):
-        return level_multi_angle_warp_sweep(*single_op._sweep_data(), b, single_op.topological_sorted_angle.level_fwd)
+        return level_multi_angle_warp_sweep(*single_op._inversion_args(), b, single_op.sweep_data.level_fwd)
 
     def check_compatible(self, single_op):
         assert isinstance(single_op.inversion_strategy, WarpLevelSweep), \
@@ -103,19 +105,19 @@ class WarpLevelAngles(AngleLifting):
 # ---------------------------------------------------------------------------
 # Convenience constructors
 # ---------------------------------------------------------------------------
-def TransportOperatorSequentialWarpSingleAngle(solution_domain_data: SolutionDomainData, topological_sorted_angle: TopologicalSortedAngleBase, energy_group: int, batch_size: int) -> TransportOperator:
+def TransportOperatorSequentialWarpSingleAngle(solution_domain_data: SolutionDomainData, sweep_data: SweepData, energy_group: int, batch_size: int) -> TransportOperator:
     '''Single-angle operator: batched forward + sequential Warp inverse sweep.'''
-    return TransportOperator(solution_domain_data, topological_sorted_angle, energy_group, BatchedForward(batch_size), WarpSequentialSweep())
+    return TransportOperator(solution_domain_data, sweep_data, energy_group, BatchedForward(batch_size), WarpSequentialSweep())
 
 
-def TransportOperatorLevelsWarpSingleAngle(solution_domain_data: SolutionDomainData, topological_sorted_angle: TopologicalSortedAngleLevelParallel, energy_group: int, batch_size: int) -> TransportOperator:
+def TransportOperatorLevelsWarpSingleAngle(solution_domain_data: SolutionDomainData, sweep_data: LeveledSweepData, energy_group: int, batch_size: int) -> TransportOperator:
     '''
     Single-angle operator: batched forward + level-based-parallelism Warp inverse sweep. The toposort
-    must already be a :class:`TopologicalSortedAngleLevelParallel` (build it explicitly via
-    ``TopologicalSortedAngleLevelParallel.from_topological_sorted_angle(plain_toposort, max_n_levels)``);
+    must already be a :class:`LeveledSweepData` (build it explicitly via
+    ``LeveledSweepData.from_basic_sweep_data(plain_toposort, max_n_levels)``);
     construction just validates that.
     '''
-    return TransportOperator(solution_domain_data, topological_sorted_angle, energy_group, BatchedForward(batch_size), WarpLevelSweep())
+    return TransportOperator(solution_domain_data, sweep_data, energy_group, BatchedForward(batch_size), WarpLevelSweep())
 
 
 def TransportOperatorSequentialWarpMultipleAngles(transport_operator: TransportOperator) -> TransportOperatorMultipleAngles:

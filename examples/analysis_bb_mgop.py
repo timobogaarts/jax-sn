@@ -46,7 +46,7 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
 
     def setup_mgop(dim, degree):
         MGOP, source_eg0, solution_domain = _setup_bb_args(dim,degree, base_region_sizes(), base_resolutions(), 5.0, 10, 3)
-        transport_operator                = TransportOperatorMultipleAnglesVmap(operator_cls(MGOP.transport_operator.solution_domain_data, MGOP.transport_operator.topological_sorted_angle, 0, **kwargs))
+        transport_operator                = TransportOperatorMultipleAnglesVmap(operator_cls(MGOP.transport_operator.solution_domain_data, MGOP.transport_operator.sweep_data, 0, **kwargs))
         MGOP                              = eqx.tree_at(lambda t : t.transport_operator, MGOP, transport_operator)
         return MGOP, source_eg0, solution_domain
 

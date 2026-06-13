@@ -40,11 +40,11 @@ b_apply = jnp.array(onp.random.random_sample(base_mgop.transport_operator.out_st
 xs = base_mgop.domain.cross_sections_indexed.map_to_full_array(0)
 # %%
 from jax_sn.operators.transport_operator.transport_operator_warp import TransportOperatorSequentialWarpSingleAngle, TransportOperatorSequentialWarpMultipleAngles, TransportOperatorLevelsWarpSingleAngle, TransportOperatorLevelsWarpMultipleAngles
-top_sa = TransportOperatorSequentialWarpSingleAngle(base_mgop.solution_domain_data, base_mgop.transport_operator[0].topological_sorted_angle, 0, batch_size = 100)
-top_ma = TransportOperatorSequentialWarpMultipleAngles(TransportOperatorSequentialWarpSingleAngle(base_mgop.solution_domain_data, base_mgop.transport_operator.topological_sorted_angle, 0, batch_size = 100))
+top_sa = TransportOperatorSequentialWarpSingleAngle(base_mgop.solution_domain_data, base_mgop.transport_operator[0].sweep_data, 0, batch_size = 100)
+top_ma = TransportOperatorSequentialWarpMultipleAngles(TransportOperatorSequentialWarpSingleAngle(base_mgop.solution_domain_data, base_mgop.transport_operator.sweep_data, 0, batch_size = 100))
 
-top_sa_levels = TransportOperatorLevelsWarpSingleAngle(base_mgop.solution_domain_data, base_mgop.transport_operator.topological_sorted_angle[0],0, batch_size=100, max_n_levels= None)
-top_ma_levels = TransportOperatorLevelsWarpMultipleAngles(TransportOperatorLevelsWarpSingleAngle(base_mgop.solution_domain_data, base_mgop.transport_operator.topological_sorted_angle, 0, batch_size = 100, max_n_levels=None))
+top_sa_levels = TransportOperatorLevelsWarpSingleAngle(base_mgop.solution_domain_data, base_mgop.transport_operator.sweep_data[0],0, batch_size=100, max_n_levels= None)
+top_ma_levels = TransportOperatorLevelsWarpMultipleAngles(TransportOperatorLevelsWarpSingleAngle(base_mgop.solution_domain_data, base_mgop.transport_operator.sweep_data, 0, batch_size = 100, max_n_levels=None))
 
 # %%
 import warp  as wp 

@@ -11,7 +11,8 @@ import numpy as onp
 from functools import partial
 jax.config.update("jax_enable_x64", True)
 from jax_sn.operators.transport_operator import TransportOperatorBatched, TransportOperatorMultipleAnglesVmap, TransportOperatorVmap, TransportOperatorBatchedPallas, TransportOperatorMultipleAngles
-from jax_sn.domain.geometric_domain import Domain, TopologicalSortedAngle
+from jax_sn.domain import Domain
+from jax_sn.operators.transport_operator import BasicSweepData
 from jax_sn.domain.cross_sections import CrossSectionData
 from jax_sn.solution_domain.basix_fem import BasixLagrangianSimplex
 from jax_sn.operators.mass_operator import MassOperator
@@ -70,13 +71,13 @@ def _setup_operators(solution_domain: SolutionDomain, sources: jnp.ndarray, quad
     n_energy_groups           = solution_domain.domain.cross_sections_indexed.n_energy_groups
     lmax                      = solution_domain.domain.cross_sections_indexed.l_max
 
-    topological_sorted_angles = TopologicalSortedAngle.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
-    transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorBatched(solution_domain.solution_domain_data, topological_sorted_angles, 0, batch_size))
+    sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
+    transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorBatched(solution_domain.solution_domain_data, sweep_data, 0, batch_size))
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)    
     discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
     gather_scatter_operator   = GatherScatterOperatorBroadcasted(cross_sections_indexed=solution_domain.domain.cross_sections_indexed)
-    source_total              = jnp.broadcast_to(sources[None, :, :], (topological_sorted_angles.angle.shape[0],) + sources.shape) # source for all angles
+    source_total              = jnp.broadcast_to(sources[None, :, :], (sweep_data.angle.shape[0],) + sources.shape) # source for all angles
     Aop                       = MultiGroupOperatorScan(moment_operator, discrete_operator, transport_operator, mass_operator, gather_scatter_operator, n_energy_groups)
     return Aop.convert_to_lower_block_triangular(), source_total, solution_domain
 

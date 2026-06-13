@@ -12,7 +12,7 @@ jax.config.update("jax_enable_x64", True)
 
 from typing import Callable
 import pyvista as pv
-from jax_sn.domain.geometric_domain import TopologicalSortedAngle
+from jax_sn.operators.transport_operator import BasicSweepData
 from jax_sn.source import Source
 from typing import List
 onp.set_printoptions(linewidth = 200)
@@ -58,7 +58,7 @@ def setup_1d_slab(sigma: float, q: float, degree: int, n_cells: int, angle : jnp
     
     source_mapped                        = Source(jnp.repeat(sources, element_type.n_basis, axis=-1).reshape(-1, element_type.n_basis))
     buffer_sweep                         = jnp.zeros((domain.n_elements, element_type.n_basis))
-    toposort                             = TopologicalSortedAngle.from_domain_angle(domain, angle)
+    toposort                             = BasicSweepData.from_domain_angle(domain, angle)
     return solution_domain, source_mapped, buffer_sweep, toposort
 
 
@@ -140,7 +140,7 @@ def setup_3d_slab(sigma: float, q: float, degree: int, n_cells: int, angle : jnp
     source_mapped                        = Source(jnp.repeat(sources, element_type.n_basis, axis=-1).reshape(-1, element_type.n_basis))
     
     buffer_sweep                         = jnp.zeros((domain.n_elements, element_type.n_basis))
-    toposort                             = TopologicalSortedAngle.from_domain_angle(domain, angle)
+    toposort                             = BasicSweepData.from_domain_angle(domain, angle)
     return solution_domain, source_mapped, buffer_sweep, toposort
 
 
