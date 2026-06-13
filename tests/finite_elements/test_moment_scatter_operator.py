@@ -34,7 +34,7 @@ def _setup_all(element, degree, tn_order, _vertices_conn_function, _source_funct
     )
 
     angles           = jax_sn.quadrature_set.tn.create_tn_quadrature_set(tn_order)
-    toposort         = [jax_sn.domain.geometric_domain.BasicSweepData.from_domain_angle(domain, angle)  for angle in angles.angles]  
+    toposort         = [jax_sn.operators.transport_operator.BasicSweepData.from_domain_angle(domain, angle)  for angle in angles.angles]  
 
     total_toposorts = jax.tree.map(lambda *xs : jnp.stack(xs, axis=0), *toposort)    
     source           = _source_function(element, degree)

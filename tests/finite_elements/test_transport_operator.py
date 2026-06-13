@@ -43,7 +43,7 @@ def _setup_domain(element, degree, _vertices_conn_function):
 def _setup_all(element, degree, _vertices_conn_function, _angle_function, _expected_values_function, _source_function, _cross_section_function):
     lagrangian_element, domain = _setup_domain(element, degree, _vertices_conn_function)
     angle                      = _angle_function()    
-    toposort         = jax_sn.domain.geometric_domain.BasicSweepData.from_domain_angle(domain, angle)    
+    toposort         = jax_sn.operators.transport_operator.BasicSweepData.from_domain_angle(domain, angle)    
     femmatrices      = jax_sn.solution_domain.FEMMatrices.from_element(lagrangian_element)    
     precomputed_data = lagrangian_element.precompute_geometric_data(domain)    
     sweep_array      = jnp.zeros((domain.n_elements, lagrangian_element.n_basis))
@@ -156,7 +156,7 @@ def _int_setup_solution_domain_data_and_toposort_sb(request):
 
     
     quad_set = jax_sn.quadrature_set.create_tn_quadrature_set(2)
-    toposorts = [jax_sn.domain.geometric_domain.BasicSweepData.from_domain_angle(domain, angle, 100) for angle in quad_set.angles]
+    toposorts = [jax_sn.operators.transport_operator.BasicSweepData.from_domain_angle(domain, angle, 100) for angle in quad_set.angles]
     total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
 
     source_angle = jax.tree.map(lambda ts : jnp.repeat(ts, total_toposorts.angle.shape[0], axis=0).reshape((total_toposorts.angle.shape[0],)+ts.shape), source)

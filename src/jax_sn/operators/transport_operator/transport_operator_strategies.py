@@ -64,10 +64,10 @@ class InversionStrategy(eqx.Module):
     ``operator.sweep_data``.
 
     A strategy may need *richer sweep data* than the plain order (e.g. the level-based-parallelism
-    sweep needs the :class:`~jax_sn.domain.ProvidesLevels` capability). It answers two separate
+    sweep needs the :class:`~jax_sn.operators.transport_operator.ProvidesLevels` capability). It answers two separate
     questions about that:
 
-    - :attr:`required_capabilities` -- the :class:`~jax_sn.domain.SweepData` *capabilities* the sweep
+    - :attr:`required_capabilities` -- the :class:`~jax_sn.operators.transport_operator.SweepData` *capabilities* the sweep
       data must provide (interfaces, not concrete types). :meth:`check_compatible` accepts *any*
       sweep data providing them, so a richer plan (more capabilities) is always acceptable -- this is
       the *acceptance* question, answered at construction / on every ``eqx.tree_at``.
@@ -82,7 +82,7 @@ class InversionStrategy(eqx.Module):
 
     required_capabilities: ClassVar[Tuple[type, ...]] = ()
     '''Sweep-data capability interfaces this strategy requires (e.g. ``(ProvidesLevels,)``). Empty
-    means any :class:`~jax_sn.domain.SweepData` is acceptable.'''
+    means any :class:`~jax_sn.operators.transport_operator.SweepData` is acceptable.'''
 
     @abstractmethod
     def invert(self, operator: "TransportOperator", b):

@@ -51,10 +51,10 @@ class WarpSequentialSweep(InversionStrategy):
 class WarpLevelSweep(InversionStrategy):
     '''
     Single-angle inverse via the level-based-parallelism Warp sweep kernel. Requires sweep data
-    providing the :class:`~jax_sn.domain.ProvidesLevels` capability (the level setup for both sweep
+    providing the :class:`~jax_sn.operators.transport_operator.ProvidesLevels` capability (the level setup for both sweep
     directions). The base :meth:`~InversionStrategy.check_compatible` enforces that capability; this
     strategy only adds the warp-data-layout check. The minimal concrete builder is
-    :class:`~jax_sn.domain.LeveledSweepData`.
+    :class:`~jax_sn.operators.transport_operator.LeveledSweepData`.
     '''
 
     required_capabilities = (ProvidesLevels,)

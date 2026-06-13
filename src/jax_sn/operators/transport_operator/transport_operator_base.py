@@ -123,7 +123,7 @@ class TransportOperator(AbstractLinearOperator_sn):
     '''Data for the solution domain, including geometric factors, finite element matrices, cross sections, etc.'''
 
     sweep_data                : SweepData    #[the forward operator does not *require* sweep data; but since the inverse does, we require it here.]
-    '''The data required to invert (sweep) the operator: angle directions + the per-angle topological order of elements. See :class:`~jax_sn.domain.SweepData`.'''
+    '''The data required to invert (sweep) the operator: angle directions + the per-angle topological order of elements. See :class:`~jax_sn.operators.transport_operator.SweepData`.'''
 
     energy_group              : int
     '''Energy group index for which this transport operator is defined.'''
