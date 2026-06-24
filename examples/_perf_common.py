@@ -26,15 +26,20 @@ import jax_sn
 from breeding_blanket_setup import bb_data_dict, base_region_sizes, base_resolutions
 
 # Exceptions that mean "didn't fit / couldn't run" rather than "bug".
-try:
-    from jax.errors import JaxRuntimeError as _JaxRuntimeError  # newer jax
-except Exception:  # pragma: no cover
-    _JaxRuntimeError = RuntimeError
-_OOM_MARKERS = ("RESOURCE_EXHAUSTED", "out of memory", "OUT_OF_MEMORY")
-
-
 def _is_oom(exc: Exception) -> bool:
-    return any(m in str(exc) for m in _OOM_MARKERS)
+    s = str(exc).lower()
+    return ("resource_exhausted" in s or "out of memory" in s or "exhausted" in s
+            or "out_of_memory" in s)
+
+
+def safe_run(fn, *args):
+    """Run + block on ``fn(*args)``. Returns (result, None) or (None, 'OOM'); re-raises non-OOM errors."""
+    try:
+        return jax.block_until_ready(fn(*args)), None
+    except Exception as e:
+        if _is_oom(e):
+            return None, "OOM"
+        raise
 
 
 def peak_mb(f, *args):

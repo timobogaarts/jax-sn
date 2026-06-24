@@ -39,7 +39,7 @@ import equinox as eqx
 
 jax.config.update("jax_enable_x64", True)
 
-from _perf_common import peak_mb, time_ms, build_problem
+from _perf_common import peak_mb, time_ms, build_problem, safe_run
 from jax_sn.operators.multi_group_operator.multi_group_operator_creation import create_multi_group_operator
 from jax_sn.operators.multi_group_operator import (
     MultiGroupLowerTriangularBlockSolver, MultiGroupOperatorScanCheckpoint,
@@ -52,8 +52,10 @@ GOLDEN_DIR = os.path.join(os.path.dirname(__file__), "perf_golden")
 # * n_other**(dim-1)); tn_order 2 -> 32 angles, 3 -> 72 angles.
 MV_PROBLEMS: Dict[str, dict] = {
     "mv-d1-60k": dict(dim=3, degree=1, n_other=20, res_mult=1, tn_order=3),
-    "mv-d2-60k": dict(dim=3, degree=2, n_other=20, res_mult=1, tn_order=3),
-    "mv-d3-60k": dict(dim=3, degree=3, n_other=20, res_mult=1, tn_order=3),
+    # higher degree at 60k: the fully-materialising configs (heavy_mem) OOM on a 10 GB card,
+    # so they are skipped here -- only the batched / pallas-batched / warp configs run.
+    "mv-d2-60k": dict(dim=3, degree=2, n_other=20, res_mult=1, tn_order=3, memlight=True),
+    "mv-d3-60k": dict(dim=3, degree=3, n_other=20, res_mult=1, tn_order=3, memlight=True),
 }
 SOLVE_PROBLEMS: Dict[str, dict] = {
     "solve-d1-10k": dict(dim=3, degree=1, n_other=8, res_mult=1, tn_order=2),   # ~9.6k elems, 32 angles
@@ -69,6 +71,7 @@ class OpConfig:
     name: str
     kwargs: dict = field(default_factory=dict)
     requires: Tuple[str, ...] = ()   # "warp", "gpu", "tet1" -> skipped if not satisfied
+    heavy_mem: bool = False          # fully materialises per-element matrices -> skipped on memlight problems
 
 
 def make_configs():
@@ -79,25 +82,25 @@ def make_configs():
     from jax_sn.operators.moment_operator import StreamingMoment
 
     cfgs = [
-        OpConfig("vmap"),                                                              # all defaults (reference)
-        OpConfig("batched-100", dict(forward_strategy=BatchedForward(100),
-                                     inversion_strategy=BatchedSweep(100))),
-        OpConfig("pallas-vmap", dict(inversion_strategy=VmapPallasSweep()), requires=("gpu",)),
-        OpConfig("pallas-batched-100", dict(forward_strategy=BatchedForward(100),
-                                            inversion_strategy=BatchedPallasSweep(100)), requires=("gpu",)),
-        OpConfig("lax-mass", dict(mass_strategy=LaxMass())),
-        OpConfig("streaming-moment", dict(moment_strategy=StreamingMoment())),
-        OpConfig("checkpoint", dict(multi_group_operator_cls=MultiGroupOperatorScanCheckpoint)),
+        OpConfig("vmap", heavy_mem=True),                                              # all defaults (reference)
+        OpConfig("batched-1000", dict(forward_strategy=BatchedForward(1000),
+                                      inversion_strategy=BatchedSweep(1000))),
+        OpConfig("pallas-vmap", dict(inversion_strategy=VmapPallasSweep()), requires=("gpu",), heavy_mem=True),
+        OpConfig("pallas-batched-1000", dict(forward_strategy=BatchedForward(1000),
+                                             inversion_strategy=BatchedPallasSweep(1000)), requires=("gpu",)),
+        OpConfig("lax-mass", dict(mass_strategy=LaxMass()), heavy_mem=True),
+        OpConfig("streaming-moment", dict(moment_strategy=StreamingMoment()), heavy_mem=True),
+        OpConfig("checkpoint", dict(multi_group_operator_cls=MultiGroupOperatorScanCheckpoint), heavy_mem=True),
     ]
     try:
         from jax_sn.operators.transport_operator.transport_operator_warp import (
             WarpSequentialSweep, WarpSequentialAngles, WarpLevelSweep, WarpLevelAngles,
         )
         cfgs += [
-            OpConfig("warp-sequential", dict(forward_strategy=BatchedForward(100),
+            OpConfig("warp-sequential", dict(forward_strategy=BatchedForward(1000),
                                              inversion_strategy=WarpSequentialSweep(),
                                              angle_lifting=WarpSequentialAngles()), requires=("warp", "gpu", "tet1")),
-            OpConfig("warp-levels", dict(forward_strategy=BatchedForward(100),
+            OpConfig("warp-levels", dict(forward_strategy=BatchedForward(1000),
                                          inversion_strategy=WarpLevelSweep(),
                                          angle_lifting=WarpLevelAngles(),
                                          sweep_data_kwargs={"maximum_number_of_levels": None}),
@@ -149,13 +152,17 @@ def _bicgstab():
 
 
 def _n_iter_full(mgop, rhs):
-    out = eqx.filter_jit(lambda op, b: lx.linear_solve(op, b, _bicgstab(), throw=False))(mgop, rhs)
+    out, oom = safe_run(eqx.filter_jit(lambda op, b: lx.linear_solve(op, b, _bicgstab(), throw=False)), mgop, rhs)
+    if oom:
+        return -1
     return int(onp.asarray(out.stats.get("num_steps", -1)).sum())
 
 
 def _n_iter_ltri(mgop, rhs):
     solver = MultiGroupLowerTriangularBlockSolver(_bicgstab())
-    out = eqx.filter_jit(lambda op, b: lx.linear_solve(op, b, solver, throw=False))(mgop, rhs)
+    out, oom = safe_run(eqx.filter_jit(lambda op, b: lx.linear_solve(op, b, solver, throw=False)), mgop, rhs)
+    if oom:
+        return -1
     stats = out.stats
     key = "num_steps_per_group" if "num_steps_per_group" in stats else "num_steps"
     return int(onp.asarray(stats.get(key, -1)).sum())
@@ -195,12 +202,15 @@ def _short(exc: Exception) -> str:
     return s[:80]
 
 
-def build_configs(sd, qs, configs, caps):
+def build_configs(sd, qs, configs, caps, memlight=False):
     built = {}
     for cfg in configs:
         missing = [r for r in cfg.requires if r not in caps]
         if missing:
             built[cfg.name] = ("skip", f"requires {','.join(missing)}")
+            continue
+        if memlight and cfg.heavy_mem:
+            built[cfg.name] = ("skip", "memory-heavy (skipped at this size)")
             continue
         try:
             built[cfg.name] = ("ok", create_multi_group_operator(sd, qs, **cfg.kwargs))
@@ -212,23 +222,30 @@ def build_configs(sd, qs, configs, caps):
 def consistency_pass(built, progress, atol=1e-9, rtol=1e-6):
     out = {}
     if built.get("vmap", (None,))[0] != "ok":
-        return {"_error": "vmap reference did not build"}
+        return {"_error": "vmap reference not built here (correctness is covered at the smaller sizes)"}
     ref = built["vmap"][1]
     x = jax.random.normal(jax.random.PRNGKey(0), ref.in_structure().shape)
     b = jax.random.normal(jax.random.PRNGKey(1), ref.transport_operator.in_structure().shape)
-    ref_mv = jax.block_until_ready(ref.mv(x))
-    ref_inv = jax.block_until_ready(ref.transport_operator.inv(b))
+    ref_mv, oom = safe_run(lambda: ref.mv(x))
+    ref_inv, oom2 = safe_run(lambda: ref.transport_operator.inv(b))
+    if oom or oom2:
+        return {"_error": "vmap reference OOM at this size (correctness is covered at the smaller sizes)"}
     for name, (status, obj) in built.items():
         if status != "ok":
             out[name] = status
             continue
         if progress:
             print(f"    [consistency] {name} ...", flush=True)
+        mv, oom = safe_run(lambda: obj.mv(x))
+        inv, oom2 = safe_run(lambda: obj.transport_operator.inv(b))
+        if oom or oom2:
+            out[name] = "OOM"
+            continue
         try:
-            e_mv = float(jnp.max(jnp.abs(obj.mv(x) - ref_mv)))
-            e_inv = float(jnp.max(jnp.abs(obj.transport_operator.inv(b) - ref_inv)))
-            ok = bool(onp.allclose(obj.mv(x), ref_mv, atol=atol, rtol=rtol)
-                      and onp.allclose(obj.transport_operator.inv(b), ref_inv, atol=atol, rtol=rtol))
+            e_mv = float(jnp.max(jnp.abs(mv - ref_mv)))
+            e_inv = float(jnp.max(jnp.abs(inv - ref_inv)))
+            ok = bool(onp.allclose(mv, ref_mv, atol=atol, rtol=rtol)
+                      and onp.allclose(inv, ref_inv, atol=atol, rtol=rtol))
             out[name] = {"max_err_mv": e_mv, "max_err_inv": e_inv, "ok": ok}
         except Exception as e:
             out[name] = f"err: {_short(e)}"
@@ -396,12 +413,14 @@ def run_regime(problems_dict, configs, perf_fn, report_fn, args, is_solve):
     results = {}
     consistency_failed = False
     for problem, params in problems_dict.items():
+        params = dict(params)
+        memlight = params.pop("memlight", False)
         sd, qs = build_problem(**params)
         info = (f"dim {params['dim']} deg {params['degree']} elems {sd.domain.n_elements} "
                 f"angles {qs.angles.shape[0]} groups {sd.domain.cross_sections_indexed.n_energy_groups}")
         if args.progress:
             print(f"\n>>> building {problem} ({info})", flush=True)
-        built = build_configs(sd, qs, configs, _capabilities(params))
+        built = build_configs(sd, qs, configs, _capabilities(params), memlight=memlight)
         cons = consistency_pass(built, args.progress)
         for _, r in cons.items():
             if isinstance(r, dict) and not r.get("ok", True):
@@ -421,8 +440,8 @@ def main():
     p.add_argument("--regime", choices=["mv", "solve", "both"], default="both")
     p.add_argument("--problems", default="", help="comma list of problem names (overrides regime sizes)")
     p.add_argument("--configs", default="", help="comma list of config names (default: all)")
-    p.add_argument("--number", type=int, default=3, help="timed calls per measurement block")
-    p.add_argument("--repeats", type=int, default=2, help="measurement blocks (min-of-N)")
+    p.add_argument("--number", type=int, default=1, help="timed calls per measurement block")
+    p.add_argument("--repeats", type=int, default=3, help="measurement blocks, min-of-N (after a warm-up/precompile call)")
     p.add_argument("--progress", action="store_true", help="print each measurement as it runs")
     p.add_argument("--skip-grad", action="store_true", help="skip grad.solve.ltri (the most expensive solve op)")
     p.add_argument("--save", default="")
