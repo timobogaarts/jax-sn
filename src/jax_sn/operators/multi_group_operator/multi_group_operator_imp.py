@@ -1,12 +1,13 @@
 import jax
 import jax.numpy as jnp
+from typing import Type
 from jax_sn.domain.cross_sections import CrossSectionData
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.operators.single_group_operator import SingleGroupOperator
 from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
-from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles
-from jax_sn.operators.mass_operator import MassOperator
-from jax_sn.operators.scatter_operator import GatherScatterOperator
+from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles, TransportSpec, SolutionSetup
+from jax_sn.operators.mass_operator import MassOperator, MassStrategy, VmapMass
+from jax_sn.operators.scatter_operator import GatherScatterOperator, GatherScatterOperatorBroadcasted
 from jax_sn.quadrature_set import QuadratureSetBase
 import lineax as lx
 import equinox as eqx
@@ -112,50 +113,25 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     However, in some cases, e.g. downscattering only problems (such as often found in fusion applications), the multi-group operator is lower triangular. In these cases, it is much more efficient to solve the system directly using a block forward substitution approach, 
     solving each energy group sequentially using the single-group operator for that group and the already computed higher energy group solutions to form the scattering source. This is implemented in the function :func:`solve_lower_triangular`.    
 
-    Shared data
+    Data ownership
     ---------------------------
-    Some operators have shared underlying data. The reason why these are not merged is that each operator has its own meaning and can be applied separately. In principle, the alternative would be to discard the operator mechanism
-    and simply have all the data here.
+    This operator follows the ``operator = setup + spec + strategy`` decomposition. It owns a single
+    canonical :attr:`setup` (a :class:`~jax_sn.operators.transport_operator.SolutionSetup`) plus a
+    data-free :attr:`transport_spec` and strategy/config fields, and exposes :attr:`transport_operator`,
+    :attr:`mass_operator` and :attr:`gather_scatter_operator` as derived ``@property`` views. The data
+    those sub-operators previously duplicated -- :class:`CrossSectionsIndexed`,
+    :class:`PrecomputedGeometricData`, :class:`FEMMatrices` -- now lives in exactly **one** pytree
+    location (:attr:`setup`), so a single :func:`equinox.tree_at` updates every consumer at once and
+    there is no hand-synced invariant to maintain. (:attr:`moment_operator` and
+    :attr:`discrete_operator` remain stored fields, carrying the angular harmonics.)
 
-    The places are 
+    The canonical locations are exposed for pytree surgery via :attr:`cross_sections_indexed_loc`,
+    :attr:`precomputed_geometric_data_loc` and :attr:`fem_matrices_loc` (each now a single location).
+    For example, replacing the cross sections::
 
-    - The :class:`CrossSectionsIndexed <jax_sn.domain.cross_sections.CrossSectionsIndexed>` is shared between the transport operator and the gather-scatter operator. 
-      This is because both operators need access to the cross section data to perform their operations. Specifically, the transport operator uses the total data, while the gather-scatter operator uses the scattering data.
-      
-      - :attr:`transport_operator.solution_domain_data.domain.cross_sections_indexed`,
-      - :attr:`gather_scatter_operator.cross_sections_indexed`.
-
-    - The :class:`PrecomputedGeometricData <jax_sn.solution_domain.PrecomputedGeometricData>` is shared between the transport operator and the mass operator.
-      Both operators need access to geometric data to perform their operations. 
-      
-      - :attr:`transport_operator.solution_domain_data.precomputed_geometric_data`,
-      - :attr:`mass_operator.precomputed_geometric_data <jax_sn.operators.mass_operator.MassOperator.precomputed_geometric_data>`.
-
-    - The :class:`FEMMatrices <jax_sn.solution_domain.FEMMatrices>` is shared between the transport operator and the mass operator. Both require the application of the computed FEM matrices.
-
-      - :attr:`transport_operator.solution_domain_data.fem_matrices`,
-      - :attr:`mass_operator.fem_matrices <jax_sn.operators.mass_operator.MassOperator.fem_matrices>`.
-
-    The location of the shared data is crucial for correct pytree surgery (i.e. not replacing just one, but replacing both).
-
-    These are provided as property, see :attr:`cross_sections_indexed_loc`, :attr:`precomputed_geometric_data_loc`, and :attr:`fem_matrices_loc`.
-
-    Pytree surgery can then be performed as (e.g., for replacing cross section data)::
-        
-        multi_group_operator_new = eqx.tree_at(multi_group_operator.cross_sections_indexed_loc, 
-                                               multi_group_operator, 
+        multi_group_operator_new = eqx.tree_at(multi_group_operator.cross_sections_indexed_loc,
+                                               multi_group_operator,
                                                replace_fn = lambda _ : new_cross_sections_indexed)
-
-    (the normal replace will not work directly as it expects that the replace is a tuple of the same length as the number of locations, which we do not want to assume a priori).
-
-    If the sub-data needs to be replaced, the easiest is to stack two replaces. An example is :meth:`convert_to_lower_block_triangular`, which internally replaces the required cross section data in both locations::
-    
-        xs_indexed_new = eqx.tree_at(lambda xs_idx : xs_idx.cross_section_data, 
-                                     self.gather_scatter_operator.cross_sections_indexed, 
-                                     cs_data_lower)
-        return eqx.tree_at(self.cross_sections_indexed_loc, 
-                           self, 
-                           replace_fn = lambda _ : xs_indexed_new)
 
     Possible improvements
     ---------------------------
@@ -170,39 +146,57 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
       it would not actually provide that much improvement, since the main cost is still the transport sweeps, which would still need to be done sequentially.
 
     '''
+    setup                     : SolutionSetup
+    '''Canonical shared data: operator-defining :class:`SolutionDomainData` + operator-agnostic sweep plan. The single home for the data that the transport, mass and gather-scatter operators all draw on.'''
+
+    transport_spec            : TransportSpec
+    '''Data-free transport configuration (strategies + energy group); the transport operator is derived from :attr:`setup` + this via :meth:`TransportSpec.build`.'''
+
     moment_operator           : MomentOperator
     '''The single group moment operator used in the multi-group operator.'''
-    
+
     discrete_operator         : DiscreteOperator
     '''The single group discrete operator used in the multi-group operator.'''
 
-    transport_operator        : TransportOperatorMultipleAngles
-    '''The single group transport operator used in the multi-group operator.'''
-
-    mass_operator             : MassOperator
-    '''The single group mass operator used in the multi-group operator.'''
-
-    gather_scatter_operator   : GatherScatterOperator
-    '''The gather-scatter operator used to efficiently compute the scattering sources over all energy groups. This is not a linear operator, but a class that implements the required functionality.'''
-
     quadrature_set            : QuadratureSetBase
-    '''The angular quadrature set. Stored here (rather than duplicated inside the moment/discrete operators) as the single home for the angular discretisation.'''
+    '''The angular quadrature set. The single home for the angular discretisation (folds into :attr:`setup` at Stage C).'''
 
     n_energy_groups           : int
     '''Number of energy groups.'''
 
+    mass_strategy             : MassStrategy = eqx.field(default_factory=VmapMass)
+    '''Contraction strategy for the derived :attr:`mass_operator`.'''
+
+    gather_scatter_operator_cls : Type[GatherScatterOperator] = eqx.field(static=True, default=GatherScatterOperatorBroadcasted)
+    '''Implementation class for the derived :attr:`gather_scatter_operator` (built on :attr:`setup`'s cross sections).'''
+
     transpose_bool : bool = False
     r'''Whether to use the transposed operator.'''
 
+    @property
+    def transport_operator(self) -> TransportOperatorMultipleAngles:
+        '''The multi-angle transport operator, derived from :attr:`setup` + :attr:`transport_spec`.'''
+        return self.transport_spec.build(self.setup)
+
+    @property
+    def mass_operator(self) -> MassOperator:
+        '''The mass operator, derived from :attr:`setup` (shares its geometric data + FEM matrices).'''
+        return MassOperator.from_transport_operator(self.transport_operator, self.mass_strategy)
+
+    @property
+    def gather_scatter_operator(self) -> GatherScatterOperator:
+        '''The gather-scatter operator, derived from :attr:`setup`'s cross sections. This is not a linear operator, but a class that implements the required functionality.'''
+        return self.gather_scatter_operator_cls(self.setup.solution_domain_data.domain.cross_sections_indexed)
+
     def __check_init__(self):
+        assert isinstance(self.setup, SolutionSetup), f"setup must be SolutionSetup, but got {type(self.setup)}."
+        assert isinstance(self.transport_spec, TransportSpec), f"transport_spec must be TransportSpec, but got {type(self.transport_spec)}."
         assert isinstance(self.moment_operator, MomentOperator), f"moment_operator must be MomentOperator, but got {type(self.moment_operator)}."
         assert isinstance(self.discrete_operator, DiscreteOperator), f"discrete_operator must be DiscreteOperator, but got {type(self.discrete_operator)}."
-        assert isinstance(self.transport_operator, TransportOperatorMultipleAngles), f"transport_operator must be TransportOperatorMultipleAngles, but got {type(self.transport_operator)}."
-        assert isinstance(self.mass_operator, MassOperator), f"mass_operator must be MassOperator, but got {type(self.mass_operator)}."
-        assert isinstance(self.gather_scatter_operator, GatherScatterOperator), f"scatter_operator must be GatherScatterOperator, but got {type(self.gather_scatter_operator)}."
+        assert isinstance(self.mass_strategy, MassStrategy), f"mass_strategy must be MassStrategy, but got {type(self.mass_strategy)}."
         assert isinstance(self.quadrature_set, QuadratureSetBase), f"quadrature_set must be QuadratureSetBase, but got {type(self.quadrature_set)}."
         assert self.n_energy_groups > 0, f"n_energy_groups must be positive, but got {self.n_energy_groups}."
-        self.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data.assert_n_energy_groups(self.n_energy_groups)
+        self.setup.solution_domain_data.domain.cross_sections_indexed.cross_section_data.assert_n_energy_groups(self.n_energy_groups)
         assert self.moment_operator.out_structure() == self.discrete_operator.in_structure(), f"Moment operator out structure {self.moment_operator.out_structure()} must match discrete operator in structure {self.discrete_operator.in_structure()}."
     
     @eqx.filter_jit
@@ -221,14 +215,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         ...
     
     def transpose(self):
-        return type(self)(self.moment_operator,
-                          self.discrete_operator,
-                                  self.transport_operator,
-                                  self.mass_operator,
-                                  self.gather_scatter_operator,
-                                  self.quadrature_set,
-                                  self.n_energy_groups,
-                                    not self.transpose_bool)
+        return eqx.tree_at(lambda op: op.transpose_bool, self, not self.transpose_bool)
 
     def in_structure(self):
         return jax.ShapeDtypeStruct(
@@ -267,8 +254,8 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         '''
         Whether the structure of the multi-group operator is lower block triangular (downscattering only)
         '''
-        return self.gather_scatter_operator.cross_sections_indexed.cross_section_data.downscattering_only
-    
+        return self.setup.solution_domain_data.domain.cross_sections_indexed.cross_section_data.downscattering_only
+
     def convert_to_lower_block_triangular(self):
         r'''
         Convert to lower block triangular multi-group operator by discarding all upscattering cross sections.
@@ -277,63 +264,85 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         -------
         MultiGroupOperator
             The lower block triangular multi-group operator.
-        ''' 
-        cs_data_lower = self.gather_scatter_operator.cross_sections_indexed.cross_section_data.convert_to_downscattering_only()
-        xs_indexed_new = eqx.tree_at(lambda xs_idx : xs_idx.cross_section_data, self.gather_scatter_operator.cross_sections_indexed, cs_data_lower)
+        '''
+        cs_data_lower = self.setup.solution_domain_data.domain.cross_sections_indexed.cross_section_data.convert_to_downscattering_only()
+        return eqx.tree_at(self.cross_sections_indexed_loc, self, replace_fn = lambda xs_idx : eqx.tree_at(lambda xs : xs.cross_section_data, xs_idx, cs_data_lower))
 
-        return eqx.tree_at(self.cross_sections_indexed_loc, self, replace_fn = lambda _ : xs_indexed_new)
-        
-    @property 
+    @property
     def n_elements(self):
-        return self.transport_operator.solution_domain_data.domain.n_elements
-    
-    @property 
+        return self.setup.solution_domain_data.domain.n_elements
+
+    @property
     def n_angles(self):
-        return self.transport_operator.n_angles
-    
-    @property 
+        return self.setup.sweep_data.angle.shape[0]
+
+    @property
     def n_moments(self):
         return self.moment_operator.n_moments
-    
-    @property 
+
+    @property
     def n_basis(self):
-        return self.transport_operator.solution_domain_data.n_basis
-    
-    @property 
+        return self.setup.solution_domain_data.n_basis
+
+    @property
     def domain(self):
-        return self.transport_operator.solution_domain_data.domain
-    
+        return self.setup.solution_domain_data.domain
+
     @property
     def solution_domain_data(self):
-        return self.transport_operator.solution_domain_data
-        
+        return self.setup.solution_domain_data
+
     @property
     def cross_sections_indexed_loc(self):
         '''
-        Function that returns a function to get the location of the cross section data in the tree.
-        Since multiple places hold cross section data, we return a tuple of locations.
+        Returns a ``where`` function locating the cross sections in the tree. Now a single canonical
+        location (``setup``), shared by the derived transport and gather-scatter operators.
         '''
-        return lambda m :  (m.transport_operator.solution_domain_data.domain.cross_sections_indexed, m.gather_scatter_operator.cross_sections_indexed)
-    
+        return lambda m : m.setup.solution_domain_data.domain.cross_sections_indexed
+
     @property
     def precomputed_geometric_data_loc(self):
         '''
-        Function that returns a function to get the location of the precomputed geometric data in the tree.
-        Since multiple places hold precomputed geometric data, we return a tuple of locations.
+        Returns a ``where`` function locating the precomputed geometric data in the tree. Single
+        canonical location (``setup``), shared by the derived transport and mass operators.
         '''
-        return lambda m : (m.transport_operator.solution_domain_data.precomputed_geometric_data, m.mass_operator.precomputed_geometric_data)
-    
+        return lambda m : m.setup.solution_domain_data.precomputed_geometric_data
+
     @property
     def fem_matrices_loc(self):
         '''
-        Function that returns a function to get the location of the FEM matrices in the tree.
-        Since multiple places hold FEM matrices, we return a tuple of locations.
+        Returns a ``where`` function locating the FEM matrices in the tree. Single canonical location
+        (``setup``), shared by the derived transport and mass operators.
         '''
-        return lambda m : (m.transport_operator.solution_domain_data.fem_matrices, m.mass_operator.fem_matrices)
-    
+        return lambda m : m.setup.solution_domain_data.fem_matrices
+
     @classmethod
     def from_multigroup_operator(cls, mgop : "MultiGroupOperator"):
-        return cls(mgop.moment_operator, mgop.discrete_operator, mgop.transport_operator, mgop.mass_operator, mgop.gather_scatter_operator, mgop.quadrature_set, mgop.n_energy_groups, mgop.transpose_bool)
+        return cls(mgop.setup, mgop.transport_spec, mgop.moment_operator, mgop.discrete_operator, mgop.quadrature_set, mgop.n_energy_groups, mgop.mass_strategy, mgop.gather_scatter_operator_cls, mgop.transpose_bool)
+
+    @classmethod
+    def from_operators(cls, moment_operator : MomentOperator, discrete_operator : DiscreteOperator,
+                       transport_operator : TransportOperatorMultipleAngles, mass_operator : MassOperator,
+                       gather_scatter_operator : GatherScatterOperator, quadrature_set : QuadratureSetBase,
+                       n_energy_groups : int, transpose_bool : bool = False) -> "MultiGroupOperator":
+        r'''
+        Build a multi-group operator from already-constructed sub-operators. The canonical
+        :attr:`setup` is taken from ``transport_operator``; the :attr:`transport_spec`,
+        :attr:`mass_strategy` and :attr:`gather_scatter_operator_cls` are extracted from the supplied
+        operators. The shared cross-section / geometric / FEM data is therefore deduplicated into the
+        single :attr:`setup` (the transport and gather-scatter copies must already agree).
+        '''
+        return cls(
+            SolutionSetup(transport_operator.solution_domain_data, transport_operator.sweep_data),
+            TransportSpec.from_transport_operator(transport_operator),
+            moment_operator,
+            discrete_operator,
+            quadrature_set,
+            n_energy_groups,
+            mass_operator.strategy,
+            type(gather_scatter_operator),
+            transpose_bool,
+        )
     
 
 @lx.is_symmetric.register(MultiGroupOperator)

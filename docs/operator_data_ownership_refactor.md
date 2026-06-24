@@ -45,7 +45,8 @@ established:
 | A | Strategy-ify moment & discrete; resurrect streaming; rehome `quadrature_set` | **DONE & committed** (FE + warp suites green) |
 | B | `SingleGroupOperator` → setup + spec + derived views | **DONE** (FE + warp suites green) |
 | B.1 | `SolutionSetup` introduced; `sweep_data` moved off the spec into setup; `TransportSpec` made data-free | **DONE** (FE + warp suites green) |
-| C | `MultiGroupOperator` + fold angular data (quadrature + harmonics) into `SolutionSetup` | not started |
+| C.1 | `MultiGroupOperator` → one `SolutionSetup` + specs; transport/mass/gather-scatter derived; `*_loc` collapsed to single locations | **DONE** (FE + warp suites green; §1 dedup verified) |
+| C.2 | Fold angular data (quadrature + harmonics) into `SolutionSetup`; derive moment/discrete; close the `sweep_data.angle` wart | not started |
 
 ### Stage A — DONE (this session)
 
@@ -186,6 +187,40 @@ Changes:
 - **Validated here (jaxsbgeom env, CPU + warp):** full FE `-k "not warp"` 33 passed / 24 skipped and
   `test_warp_linear_tetrahedron.py` 18 passed (identical to baseline).
 
+### Stage C.1 — `MultiGroupOperator` ownership (this session)
+
+The actual §1 fix for the multigroup operator: it now owns one canonical `SolutionSetup` and derives
+the operators that previously duplicated data.
+
+- **`MultiGroupOperator` fields** → `setup: SolutionSetup`, `transport_spec: TransportSpec`,
+  `moment_operator`, `discrete_operator`, `quadrature_set`, `n_energy_groups`,
+  `mass_strategy: MassStrategy`, `gather_scatter_operator_cls` (static), `transpose_bool`.
+  Dropped the `transport_operator` / `mass_operator` / `gather_scatter_operator` *fields*; all three
+  are now `@property` derived views (`transport_spec.build(setup)`,
+  `MassOperator.from_transport_operator`, `gather_scatter_operator_cls(setup...cross_sections_indexed)`).
+  `moment_operator`/`discrete_operator` stay stored (harmonics; C.2 derives them).
+- **`*_loc` helpers collapsed to single canonical locations** (all three now return
+  `m.setup.solution_domain_data...`). `convert_to_lower_block_triangular` / `lower_block_triangular`
+  simplified accordingly. `transpose` is now a `transpose_bool` flip via `tree_at`.
+- **New `MultiGroupOperator.from_operators(...)`** (mirrors the single-group one) for building from
+  already-constructed sub-operators; `from_multigroup_operator` updated to the new fields. The adjoint
+  subclass and all `mv`/solve/RHS functions are unchanged — they read sub-operators by attribute, so the
+  derived properties just work.
+- **`multigroup_parametrisation.py` reconstruction massively simplified**: the fragile 5-surgery
+  `reconstruct_multigroup_operator_including_toposort` (with its `transport_operator.transport_operator...`
+  paths) is now ~3 single-location `tree_at`s on `op.setup...` (domain rebuild folds vertices +
+  face_normals + cross sections; then geom; then sweep). No `*_loc` tuples, no per-operator special-casing.
+- **`create_multi_group_operator`** builds `SolutionSetup` + `TransportSpec`; dropped the dead
+  `gather_scatter_operator_cls_kwargs` param (no caller used it; the class takes only cross sections).
+- **Call sites**: `test_breeding_blanket.py` / `test_multigroup_derivative.py` direct constructions →
+  `from_operators`; `test_single_group_ad.py:setup_mgop` now edits `transport_spec` strategies
+  (`BatchedForward/BatchedSweep`) instead of `tree_at`-ing the (now derived) `transport_operator`.
+- **Verified §1 dedup**: exactly **one** `CrossSectionData` node in the MGOp pytree, and a single
+  `tree_at` on the canonical cross-section location updates *both* the derived transport and
+  gather-scatter operators (no stale second copy).
+- **Validated here (jaxsbgeom env, CPU + warp):** full FE `-k "not warp"` 33 passed / 24 skipped and
+  `test_warp_linear_tetrahedron.py` 18 passed (identical to baseline).
+
 ### Stage C — `MultiGroupOperator` + `SolutionSetup`
 
 Files: `operators/multi_group_operator/multi_group_operator_imp.py`,
@@ -214,16 +249,15 @@ Land each stage as its own commit, green before the next.
 
 ## Resume
 
-Stage A is **committed**. Stages B + B.1 are **done & green** (FE + warp, in the `jaxsbgeom` conda
-env). Next session:
-1. Commit B + B.1 (if not already committed).
-2. Start Stage C (`MultiGroupOperator`). The composite `setup + spec + derived views` shape now exists
-   on `SingleGroupOperator` — including the canonical `SolutionSetup` (`solution_domain_data` +
-   `sweep_data`) and the data-free `TransportSpec`. Stage C: (a) give `MultiGroupOperator` one
-   `SolutionSetup` + per-energy-group specs, sub-operators as `@property`, collapsing the `*_loc`
-   helpers to single locations; (b) **fold the angular data (`quadrature_set` + precomputed
-   `wk_ylm`/`ylm`) into `SolutionSetup`** and let `sweep_data` read its angle from there (closing the
-   B.1 wart), so moment/discrete also derive from the canonical setup.
+Stage A is **committed**. Stages B + B.1 are **committed**. Stage C.1 is **done & green** (FE + warp,
+in the `jaxsbgeom` conda env). §1 (duplicated shared data) is now **fully resolved** for both the
+single- and multi-group operators. Next session:
+1. Commit C.1 (if not already committed).
+2. Stage C.2 (optional polish, *not* a §1 fix): **fold the angular data (`quadrature_set` + precomputed
+   `wk_ylm`/`ylm`) into `SolutionSetup`** so moment/discrete also derive from the canonical setup, and
+   let `sweep_data` read its angle from there (closing the B.1 `sweep_data.angle` wart). This is the
+   "single home for angular discretisation" cleanup; the actual data duplication is already gone, so
+   C.2 is lower priority.
 
 Note (env): tests run with `/home/tbogaarts/miniconda3/envs/jaxsbgeom/bin/python` — it has
 `jax_sbgeom`, `sympy`, and `warp` (so warp tests run locally too, contrary to the older notes).

@@ -10,10 +10,12 @@ from finite_elements.test_breeding_blanket import bb_data_dict, base_region_size
 
 
 def setup_mgop(dim, degree):
-    from jax_sn.operators.transport_operator import TransportOperatorBatched, TransportOperatorMultipleAnglesVmap
+    from jax_sn.operators.transport_operator import BatchedForward, BatchedSweep
     MGOP, source_eg0, solution_domain = _setup_bb_args(dim, degree, base_region_sizes(), base_resolutions(), 5.0, 10, 3)
-    transport_operator                = TransportOperatorMultipleAnglesVmap(TransportOperatorBatched(MGOP.transport_operator.solution_domain_data, MGOP.transport_operator.sweep_data, 0, 100))
-    MGOP                              = eqx.tree_at(lambda t : t.transport_operator, MGOP, transport_operator)
+    # Swap the (default vmap) transport strategy for the batched one (batch_size 100) by editing the
+    # data-free transport_spec; the transport operator is derived from it.
+    new_spec                          = eqx.tree_at(lambda s : (s.forward_strategy, s.inversion_strategy), MGOP.transport_spec, (BatchedForward(100), BatchedSweep(100)))
+    MGOP                              = eqx.tree_at(lambda t : t.transport_spec, MGOP, new_spec)
     return MGOP, source_eg0, solution_domain
 
 def setup_mgop_mod_theta(dim, degree, xs_data_indices, dx):

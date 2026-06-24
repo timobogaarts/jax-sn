@@ -1,13 +1,12 @@
 from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
-from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles
 from jax_sn.operators.transport_operator import ForwardStrategy, InversionStrategy, AngleLifting, VmapForward, VmapSweep, VmapAngles
-from jax_sn.operators.mass_operator import MassOperator, MassStrategy, VmapMass
+from jax_sn.operators.transport_operator import TransportSpec, SolutionSetup
+from jax_sn.operators.mass_operator import MassStrategy, VmapMass
 from jax_sn.operators.scatter_operator import GatherScatterOperator, GatherScatterOperatorBroadcasted
 from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan, MultiGroupOperator
-from jax_sn.quadrature_set import QuadratureSet, QuadratureSetBase
+from jax_sn.quadrature_set import QuadratureSetBase
 from typing import Dict, Type
 from jax_sn.solution_domain import SolutionDomain
-import jax.numpy as jnp
 
 def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set : QuadratureSetBase,
                                 forward_strategy : ForwardStrategy = VmapForward(),
@@ -16,7 +15,6 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
                                 sweep_data_kwargs : Dict = {},
                                 mass_strategy : MassStrategy = VmapMass(),
                                 gather_scatter_operator_cls : Type[GatherScatterOperator] = GatherScatterOperatorBroadcasted,
-                                gather_scatter_operator_cls_kwargs : Dict = {},
                                 multi_group_operator_cls : Type[MultiGroupOperatorScan] = MultiGroupOperatorScan,
                                 multi_group_operator_cls_kwargs : Dict = {}
                                 ) -> MultiGroupOperator:
@@ -49,8 +47,6 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
         The contraction strategy to use for the mass operator, by default :class:`VmapMass`
     gather_scatter_operator_cls : Type[GatherScatterOperator], optional
         The class to use for the gather scatter operator, by default :class:`GatherScatterOperatorBroadcasted`
-    gather_scatter_operator_cls_kwargs : Dict, optional
-        The kwargs to use for the gather scatter operator, by default {}
     multi_group_operator_cls : Type[MultiGroupOperatorScan], optional
         The class to use for the multi group operator, by default :class:`MultiGroupOperatorScan`
 
@@ -66,14 +62,11 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
     sweep_data_type = inversion_strategy.default_sweep_data_type()
     sweep_data     = sweep_data_type.from_domain_quadrature_set(solution_domain.domain, quadrature_set, **sweep_data_kwargs)
 
-    single_angle_operator         = TransportOperator(solution_domain.solution_domain_data, sweep_data, 0, forward_strategy, inversion_strategy)
-    transport_operator            = TransportOperatorMultipleAngles(single_angle_operator, angle_lifting)
+    setup                     = SolutionSetup(solution_domain.solution_domain_data, sweep_data)
+    transport_spec            = TransportSpec(forward_strategy, inversion_strategy, angle_lifting, energy_group=0)
 
-
-    mass_operator             = MassOperator.from_transport_operator(transport_operator, mass_strategy)
-    moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)            
+    moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
     discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
-    gather_scatter_operator   = gather_scatter_operator_cls(cross_sections_indexed=solution_domain.domain.cross_sections_indexed, **gather_scatter_operator_cls_kwargs)
-    
-    return multi_group_operator_cls(moment_operator, discrete_operator, transport_operator, mass_operator, gather_scatter_operator, quadrature_set, n_energy_groups, **multi_group_operator_cls_kwargs)
+
+    return multi_group_operator_cls(setup, transport_spec, moment_operator, discrete_operator, quadrature_set, n_energy_groups, mass_strategy, gather_scatter_operator_cls, **multi_group_operator_cls_kwargs)
     
