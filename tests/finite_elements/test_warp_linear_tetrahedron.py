@@ -42,6 +42,7 @@ def make_sequential_warp_single_angle(base_mgop, angle_i):
     return TransportOperatorSequentialWarpSingleAngle(
         base_mgop.solution_domain_data,
         base_mgop.transport_operator[angle_i].sweep_data,
+        base_mgop.transport_operator[angle_i].angle,
         0,
         batch_size=100
     )
@@ -53,6 +54,7 @@ def make_level_warp_single_angle(base_mgop, angle_i):
     return TransportOperatorLevelsWarpSingleAngle(
         base_mgop.solution_domain_data,
         level_toposort,
+        base_mgop.transport_operator[angle_i].angle,
         0,
         batch_size=100
     )
@@ -64,6 +66,7 @@ def make_level_warp_single_angle_pad(base_mgop, angle_i):
     return TransportOperatorLevelsWarpSingleAngle(
         base_mgop.solution_domain_data,
         level_toposort,
+        base_mgop.transport_operator[angle_i].angle,
         0,
         batch_size=100
     )
@@ -76,6 +79,7 @@ def make_sequential_warp_multi_angle(base_mgop):
     top_sa = TransportOperatorSequentialWarpSingleAngle(
         base_mgop.solution_domain_data,
         base_mgop.transport_operator.sweep_data,
+        base_mgop.transport_operator.angle,
         0,
         batch_size=100
     )
@@ -92,6 +96,7 @@ def make_levels_warp_multi_angle(base_mgop):
     top_sa = TransportOperatorLevelsWarpSingleAngle(
         base_mgop.solution_domain_data,
         level_toposort,
+        base_mgop.transport_operator.angle,
         0,
         batch_size=100
     )
@@ -107,6 +112,7 @@ def make_levels_warp_multi_angle_pad(base_mgop):
     top_sa = TransportOperatorLevelsWarpSingleAngle(
         base_mgop.solution_domain_data,
         level_toposort,
+        base_mgop.transport_operator.angle,
         0,
         batch_size=100
     )

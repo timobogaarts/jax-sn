@@ -47,7 +47,7 @@ established:
 | B.1 | `SolutionSetup` introduced; `sweep_data` moved off the spec into setup; `TransportSpec` made data-free | **DONE** (FE + warp suites green) |
 | C.1 | `MultiGroupOperator` → one `SolutionSetup` + specs; transport/mass/gather-scatter derived; `*_loc` collapsed to single locations | **DONE** (FE + warp suites green; §1 dedup verified) |
 | C.2 | Fold angular data (quadrature + harmonics) into `SolutionSetup`; derive moment/discrete | **DONE** (FE + warp suites green) |
-| C.2b | Remove `angle` from `sweep_data` (read it from the angular setup) | **not planned** — kernel surgery for benign duplication; see rationale below |
+| C.2b | Remove `angle` from `sweep_data` (read it from the angular setup) | **DONE** (FE + warp suites green; angle now stored once) |
 
 ### Stage A — DONE (this session)
 
@@ -248,15 +248,34 @@ Completes the symmetric design: **every** sub-operator now derives from one cano
 - **Validated here (jaxsbgeom env, CPU + warp):** full FE `-k "not warp"` 33 passed / 24 skipped and
   `test_warp_linear_tetrahedron.py` 18 passed (identical to baseline).
 
-### Stage C.2b — *not planned* (rationale)
+### Stage C.2b — `angle` out of `sweep_data` (this session)
 
-Removing `angle` from `sweep_data` so it reads from `angular_setup` (making `sweep_data` "purely
-operator-agnostic") was the last item. **Decided against it.** It would require threading the angle into
-the transport forward/inversion kernels from a new source (touching `_forward_data` / `_inversion_args`
-and the warp/pallas paths) — real kernel surgery — to remove a **benign** duplication: `sweep_data.angle`
-and `angular_setup.quadrature_set.angles` are never hand-synced and never drift (angles don't change under
-domain deformation; changing the quadrature rebuilds everything). Poor cost/benefit, so `sweep_data` keeps
-its `angle` (documented as a cached copy in `solution_setup.py`).
+The final dedup: the transport direction now lives in exactly **one** place. (Initially deferred as
+"benign duplication / kernel surgery", then done at the user's request -- and it turned out clean because
+`transport_operator` is a derived `@property`, so the angle it carries is *transient*, not a second
+stored copy.)
+
+- **`SweepData` is now purely operator-agnostic** (`levels` + `levels_argsort`; no `angle`).
+  `reverse` reverses only the ordering; `reconstruct(domain, angle)` / `_rebuilt_sort(domain, angle)`
+  take the angle as an argument; `__getitem__` slices only the ordering; `from_domain_*` compute from the
+  angle but don't store it.
+- **`TransportOperator` gains an `angle` field**, injected by `TransportSpec.build` from
+  `setup.angular_setup.quadrature_set.angles`. `_forward_data` returns `self.angle`; `_inversion_args`
+  returns `(*sdd, xs, angle, sweep_data)`; `transpose` negates `self.angle` *and* reverses the ordering;
+  `__getitem__` / `VmapAngles` slice/map `(angle, sweep_data)` in lockstep.
+- **Kernels take `angle` explicitly**: the sweep kernels (`transport_inverse_sweep_*`), their pallas and
+  warp counterparts, `_assert_shape`, and `_flatten_base_args` gained an `angle` parameter (the
+  `batch_size` `static_argnums` shifted 6->7 accordingly). Forward kernels already took `angle`, so they
+  were unaffected. (`_flatten_transport_operator` consumes `_inversion_args()`, so it matched the new
+  order automatically.)
+- **Call sites**: the direct `TransportOperator*` factory constructors (`TransportOperatorVmap/Batched`,
+  the pallas + warp single-angle factories) gained an `angle` parameter; the test fixtures + examples
+  pass it (from the quadrature, or the indexed operator's `.angle`). Source-broadcast sites that read
+  `sweep_data.angle.shape[0]` now read `quadrature_set.angles.shape[0]`.
+- **Verified**: exactly **one** array of the angle's shape in the stored MGOp pytree; `sweep_data` has
+  only `{levels, levels_argsort}`; adjoint holds to ~1e-16.
+- **Validated here (jaxsbgeom env, CPU + warp):** full FE `-k "not warp"` 33 passed / 24 skipped and
+  `test_warp_linear_tetrahedron.py` 18 passed (identical to baseline).
 
 ## Verification (per stage, on stellsim)
 
@@ -270,12 +289,13 @@ Land each stage as its own commit, green before the next.
 
 ## Resume
 
-**The refactor is complete.** Stages A, B, B.1, C.1, C.2 are all done & green (FE + warp, `jaxsbgeom`
-conda env). §1 (duplicated shared data) is fully resolved: both `SingleGroupOperator` and
+**The refactor is complete.** Stages A, B, B.1, C.1, C.2, C.2b are all done & green (FE + warp,
+`jaxsbgeom` conda env). §1 (duplicated shared data) is fully resolved: both `SingleGroupOperator` and
 `MultiGroupOperator` own one canonical `SolutionSetup` (spatial + angular + sweep) and a data-free
 `TransportSpec`, and derive *every* sub-operator (transport, mass, gather-scatter, moment, discrete,
-inscatter) as `@property` views. C.2b (removing the cached `sweep_data.angle`) was deliberately not done
-— see rationale above. Nothing outstanding unless we revisit C.2b.
+inscatter) as `@property` views. Every shared array now lives in exactly one pytree location -- including
+the transport direction (C.2b): `SolutionSetup.angular_setup` is the sole home of the angle, and
+`sweep_data` is purely the operator-agnostic ordering. Nothing outstanding.
 
 Note (env): tests run with `/home/tbogaarts/miniconda3/envs/jaxsbgeom/bin/python` — it has
 `jax_sbgeom`, `sympy`, and `warp` (so warp tests run locally too, contrary to the older notes).

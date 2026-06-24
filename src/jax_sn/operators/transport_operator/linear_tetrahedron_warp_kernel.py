@@ -254,10 +254,11 @@ from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup
 from .sweep_data import BasicSweepData
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 
-def _flatten_base_args(geometric_domain           : GeometricDomain, 
-                       fem_matrices               : FEMMatrices, 
-                       precomputed_geometric_data : PrecomputedGeometricData,                                      
-                       cross_sections             : CrossSectionDataSingleGroup, 
+def _flatten_base_args(geometric_domain           : GeometricDomain,
+                       fem_matrices               : FEMMatrices,
+                       precomputed_geometric_data : PrecomputedGeometricData,
+                       cross_sections             : CrossSectionDataSingleGroup,
+                       angle                      : jnp.ndarray,
                        sweep_data   : BasicSweepData
                        ):
     """Build warp arrays from a transport operator in the same order as the sweep requires them
@@ -276,7 +277,7 @@ def _flatten_base_args(geometric_domain           : GeometricDomain,
         fem_matrices.derivative_matrix,
         fem_matrices.outflow_matrices,
         fem_matrices.inflow_matrices,
-        jnp.atleast_2d(sweep_data.angle) , 
+        jnp.atleast_2d(angle) ,
         sweep_data.levels_argsort,
         cross_sections.total
     )
@@ -380,29 +381,31 @@ def _sequential_multi_angle_sweep(
 sweep_ma_jax = jax_callable(_sequential_multi_angle_sweep)
 
 @eqx.filter_jit
-def single_angle_warp_sweep(                   geometric_domain           : GeometricDomain, 
-                                               fem_matrices               : FEMMatrices, 
-                                               precomputed_geometric_data : PrecomputedGeometricData, 
-                                               cross_sections             : CrossSectionDataSingleGroup,                                                
-                                               sweep_data   : BasicSweepData, 
+def single_angle_warp_sweep(                   geometric_domain           : GeometricDomain,
+                                               fem_matrices               : FEMMatrices,
+                                               precomputed_geometric_data : PrecomputedGeometricData,
+                                               cross_sections             : CrossSectionDataSingleGroup,
+                                               angle                      : jnp.ndarray,
+                                               sweep_data   : BasicSweepData,
                                                x                          : jnp.ndarray
-                                               ) -> jnp.ndarray:    
+                                               ) -> jnp.ndarray:
 
-    args_flat_ta = _flatten_base_args(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data)
+    args_flat_ta = _flatten_base_args(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data)
     return sweep_sa_jax(*args_flat_ta, x, output_dims = {"result" :  x.shape})[0]
 
 
 @eqx.filter_jit
-def multi_angle_warp_sweep(                    geometric_domain           : GeometricDomain, 
-                                               fem_matrices               : FEMMatrices, 
-                                               precomputed_geometric_data : PrecomputedGeometricData, 
-                                               cross_sections             : CrossSectionDataSingleGroup,                                                
-                                               sweep_data   : BasicSweepData, 
+def multi_angle_warp_sweep(                    geometric_domain           : GeometricDomain,
+                                               fem_matrices               : FEMMatrices,
+                                               precomputed_geometric_data : PrecomputedGeometricData,
+                                               cross_sections             : CrossSectionDataSingleGroup,
+                                               angle                      : jnp.ndarray,
+                                               sweep_data   : BasicSweepData,
                                                x                          : jnp.ndarray
-                                               ) -> jnp.ndarray:    
+                                               ) -> jnp.ndarray:
 
-    args_flat_ta = _flatten_base_args(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data)
-    return sweep_ma_jax(*args_flat_ta, x, output_dims = {"result" :  x.shape})[0]    
+    args_flat_ta = _flatten_base_args(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data)
+    return sweep_ma_jax(*args_flat_ta, x, output_dims = {"result" :  x.shape})[0]
 
 #==============================================================================
 # Levels based
@@ -477,16 +480,17 @@ level_sweep_sa_jax = jax_callable(_level_single_angle_sweep, graph_mode=GraphMod
 from .sweep_data import LevelBasedParallelism
 
 @eqx.filter_jit
-def level_single_angle_warp_sweep(             geometric_domain           : GeometricDomain, 
-                                               fem_matrices               : FEMMatrices, 
-                                               precomputed_geometric_data : PrecomputedGeometricData, 
-                                               cross_sections             : CrossSectionDataSingleGroup,                                                
-                                               sweep_data   : BasicSweepData, 
+def level_single_angle_warp_sweep(             geometric_domain           : GeometricDomain,
+                                               fem_matrices               : FEMMatrices,
+                                               precomputed_geometric_data : PrecomputedGeometricData,
+                                               cross_sections             : CrossSectionDataSingleGroup,
+                                               angle                      : jnp.ndarray,
+                                               sweep_data   : BasicSweepData,
                                                x                          : jnp.ndarray,
                                                levelsetup                 : LevelBasedParallelism
-                                               ) -> jnp.ndarray:    
-    
-    args_flat_ta = _flatten_base_args(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data)
+                                               ) -> jnp.ndarray:
+
+    args_flat_ta = _flatten_base_args(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data)
     return level_sweep_sa_jax(*args_flat_ta, levelsetup.first_occurences, levelsetup.ends, levelsetup.sizes, x, output_dims = {"result" :  x.shape})[0]
 
 
@@ -571,10 +575,11 @@ def level_multi_angle_warp_sweep(              geometric_domain           : Geom
                                                fem_matrices               : FEMMatrices,
                                                precomputed_geometric_data : PrecomputedGeometricData,
                                                cross_sections             : CrossSectionDataSingleGroup,
+                                               angle                      : jnp.ndarray,
                                                sweep_data   : BasicSweepData,
                                                x                          : jnp.ndarray,
                                                levelsetup                 : LevelBasedParallelism
                                                ) -> jnp.ndarray:
 
-    args_flat_ta = _flatten_base_args(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data)
+    args_flat_ta = _flatten_base_args(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data)
     return levels_sweep_ma_jax(*args_flat_ta, levelsetup.first_occurences, levelsetup.ends, levelsetup.sizes, x, output_dims = {"result" :  x.shape})[0]

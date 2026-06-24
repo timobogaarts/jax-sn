@@ -52,11 +52,9 @@ class SolutionSetup(eqx.Module):
     Which *subset* of the operator-defining leaves a parametrisation differentiates is a separate
     concern, chosen at the ``ParametrisedModule.theta_base`` boundary -- not encoded here.
 
-    .. note::
-        :attr:`sweep_data` currently also carries its ``angle`` (the transport direction), which *is*
-        operator-defining and is a cached copy of :attr:`angular_setup`'s quadrature angles. Reading
-        the sweep angle from the angular setup (so ``sweep_data`` carries only the ordering) is a
-        possible follow-up; the duplication is benign (angles don't change under domain deformation).
+    The transport direction :math:`\Omega` lives in exactly one place: :attr:`angular_setup`'s
+    quadrature. :attr:`sweep_data` carries only the (operator-agnostic) ordering; the derived transport
+    operator is handed the angle from the angular setup at build time, so there is no second copy.
     '''
 
     solution_domain_data : SolutionDomainData

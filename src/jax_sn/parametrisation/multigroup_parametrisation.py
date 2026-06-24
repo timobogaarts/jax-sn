@@ -142,7 +142,7 @@ def reconstruct_multigroup_operator_including_toposort(operator : MultiGroupOper
         if replace_topological_sort:
             # The sweep data knows how to recompute itself for the deformed domain, reusing its own stored
             # angles and preserving its concrete type. So this needs no operator/sweep-class special-casing.
-            sweep_data_replaced = jax.lax.stop_gradient(operator.setup.sweep_data.reconstruct(domain_replaced))
+            sweep_data_replaced = jax.lax.stop_gradient(operator.setup.sweep_data.reconstruct(domain_replaced, operator.setup.angular_setup.quadrature_set.angles))
             return eqx.tree_at(lambda op : op.setup.sweep_data, operator_precomp, replace = sweep_data_replaced)
         else:
             return operator_precomp

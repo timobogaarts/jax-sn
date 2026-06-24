@@ -87,7 +87,7 @@ def check_moment_operator(dimension, degree, tn_order, lmax, _verts_conn_functio
     solution_domain, quadrature_set, total_toposorts, sweep_array, source_total = _setup_all(dimension, degree, tn_order, _verts_conn_function, _source_function, _cross_section_function)
 
     transport_operator = jax_sn.operators.transport_operator.transport_operator_base.TransportOperatorMultipleAnglesVmap(
-        jax_sn.operators.transport_operator.transport_operator_base.TransportOperatorBatched(solution_domain.solution_domain_data, total_toposorts, 0, batch_size = 10))
+        jax_sn.operators.transport_operator.transport_operator_base.TransportOperatorBatched(solution_domain.solution_domain_data, total_toposorts, quadrature_set.angles, 0, batch_size = 10))
     #sweep_angles = jax_sn.operators.transport_operator.transport_inverse_sweep_multiple_angles_batched(*solution_domain.solution_domain_data, solution_domain.map_cross_sections_to_full_array(0), total_toposorts, source_total, sweep_array, 10)
     moment_operator = jax_sn.operators.moment_operator.MomentOperator.from_quadrature_set(quadrature_set, lmax, solution_domain.elements_basis_shape)
 

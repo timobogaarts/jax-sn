@@ -128,10 +128,10 @@ def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim,
     solution_domain, sources, quadrature_set = setup_anisotropic(dim, degree, n_elem_regions, d_other_dim, n_other_dim, tn_order) 
 
     sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
-    transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorVmap(solution_domain.solution_domain_data, sweep_data, 0))
+    transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorVmap(solution_domain.solution_domain_data, sweep_data, quadrature_set.angles, 0))
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
-    source_total              = jnp.broadcast_to(sources[0][None, :, :], (sweep_data.angle.shape[0],) + sources[0].shape) # source for all angles
+    source_total              = jnp.broadcast_to(sources[0][None, :, :], (quadrature_set.angles.shape[0],) + sources[0].shape) # source for all angles
     discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
     Aop = SingleGroupOperator.from_operators(moment_operator, transport_operator, mass_operator, discrete_operator, quadrature_set)
     return Aop, source_total, solution_domain

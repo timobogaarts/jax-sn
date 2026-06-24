@@ -13,6 +13,8 @@ subclass. The level-parallel variant carries its level setup inside a
 :class:`LeveledSweepData` toposort.
 '''
 
+import jax.numpy as jnp
+
 from .sweep_data import SweepData, LeveledSweepData, ProvidesLevels
 from jax_sn.solution_domain import SolutionDomainData
 
@@ -105,19 +107,19 @@ class WarpLevelAngles(AngleLifting):
 # ---------------------------------------------------------------------------
 # Convenience constructors
 # ---------------------------------------------------------------------------
-def TransportOperatorSequentialWarpSingleAngle(solution_domain_data: SolutionDomainData, sweep_data: SweepData, energy_group: int, batch_size: int) -> TransportOperator:
+def TransportOperatorSequentialWarpSingleAngle(solution_domain_data: SolutionDomainData, sweep_data: SweepData, angle: jnp.ndarray, energy_group: int, batch_size: int) -> TransportOperator:
     '''Single-angle operator: batched forward + sequential Warp inverse sweep.'''
-    return TransportOperator(solution_domain_data, sweep_data, energy_group, BatchedForward(batch_size), WarpSequentialSweep())
+    return TransportOperator(solution_domain_data, sweep_data, angle, energy_group, BatchedForward(batch_size), WarpSequentialSweep())
 
 
-def TransportOperatorLevelsWarpSingleAngle(solution_domain_data: SolutionDomainData, sweep_data: LeveledSweepData, energy_group: int, batch_size: int) -> TransportOperator:
+def TransportOperatorLevelsWarpSingleAngle(solution_domain_data: SolutionDomainData, sweep_data: LeveledSweepData, angle: jnp.ndarray, energy_group: int, batch_size: int) -> TransportOperator:
     '''
     Single-angle operator: batched forward + level-based-parallelism Warp inverse sweep. The toposort
     must already be a :class:`LeveledSweepData` (build it explicitly via
     ``LeveledSweepData.from_basic_sweep_data(plain_toposort, max_n_levels)``);
     construction just validates that.
     '''
-    return TransportOperator(solution_domain_data, sweep_data, energy_group, BatchedForward(batch_size), WarpLevelSweep())
+    return TransportOperator(solution_domain_data, sweep_data, angle, energy_group, BatchedForward(batch_size), WarpLevelSweep())
 
 
 def TransportOperatorSequentialWarpMultipleAngles(transport_operator: TransportOperator) -> TransportOperatorMultipleAngles:

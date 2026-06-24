@@ -159,8 +159,9 @@ def _int_setup_solution_domain_data_and_toposort_sb(request):
     toposorts = [jax_sn.operators.transport_operator.BasicSweepData.from_domain_angle(domain, angle, 100) for angle in quad_set.angles]
     total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
 
-    source_angle = jax.tree.map(lambda ts : jnp.repeat(ts, total_toposorts.angle.shape[0], axis=0).reshape((total_toposorts.angle.shape[0],)+ts.shape), source)
-    return solution_domain, toposort, mapped_xs, source, expected_values, quad_set, total_toposorts, source_angle
+    n_angles = quad_set.angles.shape[0]
+    source_angle = jax.tree.map(lambda ts : jnp.repeat(ts, n_angles, axis=0).reshape((n_angles,)+ts.shape), source)
+    return solution_domain, angle, toposort, mapped_xs, source, expected_values, quad_set, total_toposorts, source_angle
 
 
 @pytest.fixture(params=[1,2,3], scope='session')
@@ -215,15 +216,15 @@ def _all_transport_operators_pallas():
 
 @pytest.fixture(params=[1,2,3], scope='session')
 def setup_all_transport_operators(request):        
-    solution_domain, toposort, mapped_xs, source, expected_values, quad_set, total_toposorts, source_angle = _int_setup_solution_domain_data_and_toposort_sb(request)
-    
+    solution_domain, angle, toposort, mapped_xs, source, expected_values, quad_set, total_toposorts, source_angle = _int_setup_solution_domain_data_and_toposort_sb(request)
+
     desired_ops = _all_transport_operators_pallas() if ( request.config.getoption("--runpallas")) else _all_transport_operators()
     operators = []
-    for operator_class, operator_kwargs in desired_ops.items():        
-        operators.append(operator_class(solution_domain.solution_domain_data, toposort, 0, **operator_kwargs))
+    for operator_class, operator_kwargs in desired_ops.items():
+        operators.append(operator_class(solution_domain.solution_domain_data, toposort, angle, 0, **operator_kwargs))
 
-    for operator_class, operator_kwargs in desired_ops.items():        
-        operators.append(jax_sn.operators.transport_operator.transport_operator_base.TransportOperatorMultipleAnglesVmap(operator_class(solution_domain.solution_domain_data, total_toposorts, 0, **operator_kwargs)))
+    for operator_class, operator_kwargs in desired_ops.items():
+        operators.append(jax_sn.operators.transport_operator.transport_operator_base.TransportOperatorMultipleAnglesVmap(operator_class(solution_domain.solution_domain_data, total_toposorts, quad_set.angles, 0, **operator_kwargs)))
     
     return operators
 
@@ -323,7 +324,7 @@ def test_transport_operator_batching(setup_all_transport_operators):
     tinv_singles = []    
     tinvt_singles = []
     for i in range(x_batch.shape[0]):
-        transport_operator_single = jax_sn.operators.transport_operator.TransportOperatorVmap(operators[0].solution_domain_data, operators[-1].transport_operator.sweep_data[i], 0)
+        transport_operator_single = jax_sn.operators.transport_operator.TransportOperatorVmap(operators[0].solution_domain_data, operators[-1].transport_operator.sweep_data[i], operators[-1].transport_operator.angle[i], 0)
         tx_singles.append(transport_operator_single.mv(x_batch[i]))
         ttx_singles.append(transport_operator_single.T.mv(x_batch[i]))
         tinv_singles.append(transport_operator_single.inv(x_batch[i]))

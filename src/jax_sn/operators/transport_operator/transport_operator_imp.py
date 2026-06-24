@@ -19,14 +19,15 @@ import numpy as onp
 # In principle, all these functions only use simple matrix algebra. They could be implemented in custom kernels for performance.
 # All setup is done in precomputation functions in base_fem.py and elsewhere.
 
-@partial(jax.jit, static_argnums = (6,))
-def transport_inverse_sweep_batched(geometric_domain           : GeometricDomain, 
-                                    fem_matrices               : FEMMatrices, 
-                                    precomputed_geometric_data : PrecomputedGeometricData,                                      
-                                    cross_sections             : CrossSectionDataSingleGroup, 
-                                    sweep_data   : BasicSweepData,                                     
-                                    x                          : jnp.ndarray,                                   
-                                    batch_size                 : int):    
+@partial(jax.jit, static_argnums = (7,))
+def transport_inverse_sweep_batched(geometric_domain           : GeometricDomain,
+                                    fem_matrices               : FEMMatrices,
+                                    precomputed_geometric_data : PrecomputedGeometricData,
+                                    cross_sections             : CrossSectionDataSingleGroup,
+                                    angle                      : jnp.ndarray,
+                                    sweep_data   : BasicSweepData,
+                                    x                          : jnp.ndarray,
+                                    batch_size                 : int):
     '''
     Perform a complete transport inverse sweep over all elements in the geometric domain using batched vmap and fori_loop.
 
@@ -55,26 +56,27 @@ def transport_inverse_sweep_batched(geometric_domain           : GeometricDomain
     sweep_result : jnp.ndarray [n_elements, n_basis]    
         The computed sweep result array after performing the transport sweep.
     '''    
-    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data, x, False)
-    
-    n_batches                  = jnp.ceil(geometric_domain.n_elements / batch_size).astype(int)        
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data, x, False)
+
+    n_batches                  = jnp.ceil(geometric_domain.n_elements / batch_size).astype(int)
 
     def single_batch(batch_i, sweep_result):
-        batch_indices                               = jnp.clip(jnp.arange(batch_size) + batch_i * batch_size, 0, geometric_domain.n_elements - 1)    
-        batch_elements                              = sweep_data.levels_argsort[batch_indices]        
+        batch_indices                               = jnp.clip(jnp.arange(batch_size) + batch_i * batch_size, 0, geometric_domain.n_elements - 1)
+        batch_elements                              = sweep_data.levels_argsort[batch_indices]
         gij_inv_batch, dij_f_p_fm_batch, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(batch_elements, geometric_domain, fem_matrices,
-                                                            precomputed_geometric_data, cross_sections, sweep_data.angle)        
+                                                            precomputed_geometric_data, cross_sections, angle)
         return _sweep_elements(batch_elements, sweep_result, gij_inv_batch, x, dij_f_p_fm_batch, geometric_domain, abs_omega_dot_n_Je)    
     return jax.lax.fori_loop(0, n_batches, single_batch, jnp.zeros_like(x))
 
 @jax.jit
-def transport_inverse_sweep_complete_vmap(geometric_domain                : GeometricDomain, 
-                                               fem_matrices               : FEMMatrices, 
-                                               precomputed_geometric_data : PrecomputedGeometricData, 
-                                               cross_sections             : CrossSectionDataSingleGroup,                                                
-                                               sweep_data   : BasicSweepData, 
+def transport_inverse_sweep_complete_vmap(geometric_domain                : GeometricDomain,
+                                               fem_matrices               : FEMMatrices,
+                                               precomputed_geometric_data : PrecomputedGeometricData,
+                                               cross_sections             : CrossSectionDataSingleGroup,
+                                               angle                      : jnp.ndarray,
+                                               sweep_data   : BasicSweepData,
                                                x                          : jnp.ndarray
-                                               ) -> jnp.ndarray:    
+                                               ) -> jnp.ndarray:
     '''
     Perform a complete transport inverse sweep over all elements in the geometric domain using vmap and fori_loop.
 
@@ -102,10 +104,10 @@ def transport_inverse_sweep_complete_vmap(geometric_domain                : Geom
     sweep_result : jnp.ndarray [n_elements, n_basis]    
         The computed sweep result array after performing the transport sweep.
     '''    
-    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data, x, False)
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data, x, False)
 
     gij_inv_all, dij_f_p_fm_all, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(sweep_data.levels_argsort, geometric_domain, fem_matrices,
-                                                            precomputed_geometric_data, cross_sections, sweep_data.angle)                                                            
+                                                            precomputed_geometric_data, cross_sections, angle)
     sweep_result = jnp.zeros_like(x)
     return _sweep_elements(sweep_data.levels_argsort, sweep_result, gij_inv_all, x, dij_f_p_fm_all, geometric_domain, abs_omega_dot_n_Je)
 
@@ -277,19 +279,20 @@ def _setup_elements_idx_in_precomp(element_indices : jnp.ndarray, geometric_doma
     return gij_inv_all, dij_f_p_fm_all
 
 @jax.jit
-def _setup_elements_from_args(                 geometric_domain           : GeometricDomain, 
-                                               fem_matrices               : FEMMatrices, 
-                                               precomputed_geometric_data : PrecomputedGeometricData, 
-                                               cross_sections             : CrossSectionDataSingleGroup,                                                
-                                               sweep_data   : BasicSweepData, 
-                                               x) -> jnp.ndarray:    
+def _setup_elements_from_args(                 geometric_domain           : GeometricDomain,
+                                               fem_matrices               : FEMMatrices,
+                                               precomputed_geometric_data : PrecomputedGeometricData,
+                                               cross_sections             : CrossSectionDataSingleGroup,
+                                               angle                      : jnp.ndarray,
+                                               sweep_data   : BasicSweepData,
+                                               x) -> jnp.ndarray:
     '''
     Convenience function to setup all Gij_inv and Dij_f_p_fm matrices for all elements in the geometric domain using the topological sorted angle.
     (same as _setup_elements_idx_in_precomp_with_omega_n_calculation)
     '''
-    
+
     gij_inv_all, dij_f_p_fm_all, _, abs_omega_dot_n_Je = _setup_elements_idx_in_precomp_with_omega_n_calculation(sweep_data.levels_argsort, geometric_domain, fem_matrices,
-                                                            precomputed_geometric_data, cross_sections, sweep_data.angle)    
+                                                            precomputed_geometric_data, cross_sections, angle)
     return gij_inv_all, dij_f_p_fm_all, abs_omega_dot_n_Je
 
 def _setup_elements_idx_in_precomp_with_omega_n_calculation(element_indices : jnp.ndarray, geometric_domain : GeometricDomain, fem_matrices : FEMMatrices, precomputed_geometric_data : PrecomputedGeometricData, cross_sections : CrossSectionDataSingleGroup, angle : jnp.ndarray):
@@ -440,18 +443,19 @@ def _assert_types(geometric_domain           : GeometricDomain,
     assert isinstance(cross_sections, CrossSectionDataSingleGroup), f"cross_sections is not of type CrossSectionDataSingleGroup but {type(cross_sections)}"
     assert isinstance(sweep_data, SweepData), f"sweep_data is not of type SweepData but {type(sweep_data)}"
 
-def _assert_shape(geometric_domain           : GeometricDomain, 
-                  fem_matrices               : FEMMatrices, 
-                  precomputed_geometric_data : PrecomputedGeometricData, 
-                  cross_sections             : CrossSectionDataSingleGroup,                                                
-                  sweep_data   : BasicSweepData,                   
+def _assert_shape(geometric_domain           : GeometricDomain,
+                  fem_matrices               : FEMMatrices,
+                  precomputed_geometric_data : PrecomputedGeometricData,
+                  cross_sections             : CrossSectionDataSingleGroup,
+                  angle                      : jnp.ndarray,
+                  sweep_data   : BasicSweepData,
                   x                          : jnp.ndarray,
                   multiple_angles : bool):
     _assert_types(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data, x)
-    if multiple_angles:                 
-        assert sweep_data.angle.ndim == 2, f"sweep_data.angle should have 2 dimensions [n_angles, n_dim] but has shape {sweep_data.angle.shape}"                
-        assert x.ndim == 3, f"sweep_result should have 3 dimensions [n_angles, n_elements, n_basis] but has shape {x.shape}"  
-        n_angles = sweep_data.angle.shape[0]
+    if multiple_angles:
+        assert angle.ndim == 2, f"angle should have 2 dimensions [n_angles, n_dim] but has shape {angle.shape}"
+        assert x.ndim == 3, f"sweep_result should have 3 dimensions [n_angles, n_elements, n_basis] but has shape {x.shape}"
+        n_angles = angle.shape[0]
         assert sweep_data.levels_argsort.shape[0] == n_angles, f"topological sorted_angles.levels_argsort first dimension {sweep_data.levels_argsort.shape[0]} does not match number of angles {n_angles}"
         
         assert x.shape[0] == n_angles, f"sweep_result first dimension {x.shape[0]} does not match number of angles {n_angles}"
@@ -469,12 +473,13 @@ def _assert_shape(geometric_domain           : GeometricDomain,
 
                                 
 
-@partial(jax.jit, static_argnums = (6,))
+@partial(jax.jit, static_argnums = (7,))
 def transport_inverse_sweep_multiple_angles_batched(geometric_domain           : GeometricDomain,
                                                     fem_matrices               : FEMMatrices,
                                                     precomputed_geometric_data : PrecomputedGeometricData,
                                                     cross_sections             : CrossSectionDataSingleGroup,
-                                                    sweep_data  : BasicSweepData,                                                                                                                                                             
+                                                    angle                      : jnp.ndarray,
+                                                    sweep_data  : BasicSweepData,
                                                     x                          : jnp.ndarray,
                                                     batch_size                 : int):
     '''
@@ -500,16 +505,17 @@ def transport_inverse_sweep_multiple_angles_batched(geometric_domain           :
         The x vector to apply the transport inverse sweep to.
     '''
         
-    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data, x, True)
-    f_batch = jax.vmap(transport_inverse_sweep_batched, in_axes=(None, None, None, None, 0, 0, None ))
-    return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data, x, batch_size)
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data, x, True)
+    f_batch = jax.vmap(transport_inverse_sweep_batched, in_axes=(None, None, None, None, 0, 0, 0, None ))
+    return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data, x, batch_size)
 
 @jax.jit
 def transport_inverse_sweep_multiple_angles_complete_vmap(geometric_domain           : GeometricDomain,
                                                           fem_matrices               : FEMMatrices,
                                                           precomputed_geometric_data : PrecomputedGeometricData,
                                                           cross_sections             : CrossSectionDataSingleGroup,
-                                                          sweep_data  : BasicSweepData,                                                                                                         
+                                                          angle                      : jnp.ndarray,
+                                                          sweep_data  : BasicSweepData,
                                                           x                          : jnp.ndarray
                                                           ):
     '''
@@ -534,7 +540,7 @@ def transport_inverse_sweep_multiple_angles_complete_vmap(geometric_domain      
     x : jnp.ndarray [n_angles, n_elements, n_basis]
         The x vector to apply the transport inverse sweep to.
     '''        
-    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data, x, True)
-    f_batch = jax.vmap(transport_inverse_sweep_complete_vmap, in_axes=(None, None, None, None, 0, 0))
-    return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, sweep_data, x)
+    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data, x, True)
+    f_batch = jax.vmap(transport_inverse_sweep_complete_vmap, in_axes=(None, None, None, None, 0, 0, 0))
+    return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data, x)
 

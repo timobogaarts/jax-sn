@@ -7,11 +7,19 @@ topological order of elements -- is the :class:`SweepData` family. It is a *sibl
 base + final concrete leaves), not a subclass-with-optional-fields, so a half-initialised instance is
 never constructible:
 
-- :class:`SweepData`        -- abstract base: the angles + the per-angle topological order.
+- :class:`SweepData`        -- abstract base: the per-angle topological order (``levels`` /
+  ``levels_argsort``).
 - :class:`BasicSweepData`   -- just the order. Cheap; serves every non-level sweep.
 - :class:`LeveledSweepData` -- the order *plus* the level-based-parallelism setup (a longest-path
   layering of the same sweep DAG) for the fused warp kernels. Large -- O(n_elements x n_angles) -- so
   it is built only when a level sweep is actually selected.
+
+This is **purely operator-agnostic** data: its *value* never changes the operator's result -- any valid
+topological order yields the identical inverse. In particular it does **not** carry the angle ``Ω``
+(which is operator-defining and lives in the angular setup). The angle is supplied alongside the sweep
+data where needed (``reverse`` / ``reconstruct`` take it, and the transport operator passes it to the
+sweep kernels) -- so the order and the angle it was computed for are kept consistent by construction
+without the sweep data storing a second copy of the angle.
 
 Capabilities
 ------------
@@ -37,14 +45,18 @@ from jax_sn.tools.graph_tools import multiple_angle_level_bounds_safe
 class SweepData(eqx.Module):
     '''
     Abstract base for the data required to invert (sweep) the transport operator. Holds the shared
-    state -- the element ``levels``, the ``angle``, and the ``levels_argsort`` -- and declares the
-    polymorphic interface (``reverse``, ``__getitem__``, ``reconstruct``) as abstract. Concrete
-    (final) leaves decide what additional precomputed data, if any, rides along with the sort (see
+    state -- the element ``levels`` and the ``levels_argsort`` -- and declares the polymorphic
+    interface (``reverse``, ``__getitem__``, ``reconstruct``) as abstract. Concrete (final) leaves
+    decide what additional precomputed data, if any, rides along with the sort (see
     :class:`BasicSweepData` and :class:`LeveledSweepData`).
+
+    The angle ``Ω`` is **not** stored here (it is operator-defining and lives in the angular setup);
+    it is supplied by the caller to :meth:`reverse` and :meth:`reconstruct` where the transform/rebuild
+    needs it.
 
     ``reverse`` / ``__getitem__`` / ``reconstruct`` are abstract: each leaf provides its own final
     implementation so that nothing is overridden (abstract-or-final, never "maybe"). The shared
-    mechanical part -- the transform of the three base fields -- lives in the final, non-polymorphic
+    mechanical part -- the transform of the base fields -- lives in the final, non-polymorphic
     helpers :meth:`_reversed_base`, :meth:`_indexed_base` and :meth:`_rebuilt_sort`, which the leaves
     compose with their own fields. All are written with :func:`equinox.tree_at`, so they preserve the
     concrete type.
@@ -52,9 +64,6 @@ class SweepData(eqx.Module):
 
     levels         : eqx.AbstractVar[jnp.ndarray] #[..., n_elements]
     '''Levels of the elements in the topological sort. Each level can be computed in parallel.'''
-
-    angle          : eqx.AbstractVar[jnp.ndarray] #[..., n_dim]
-    '''The angle for which the topological sort is computed.'''
 
     levels_argsort : eqx.AbstractVar[jnp.ndarray] #[..., n_elements]
     '''The indices that sort the elements by their levels.'''
@@ -80,8 +89,9 @@ class SweepData(eqx.Module):
     @abstractmethod
     def reverse(self) -> "SweepData":
         '''
-        Reverses the angle and topological sort. This is also correct for batched angles.
-        Type-preserving -- each leaf returns its own concrete type, reversing its own extra fields.
+        Reverses the topological sort (the partner of negating the angle, done on the operator). This
+        is also correct for batched data. Type-preserving -- each leaf returns its own concrete type,
+        reversing its own extra fields.
 
         Returns
         -------
@@ -93,16 +103,15 @@ class SweepData(eqx.Module):
     def _reversed_base(self) -> "SweepData":
         '''
         Final helper (not part of the polymorphic interface): returns a copy of ``self`` with only the
-        three base fields reversed, leaving any extra leaf fields untouched. Leaves compose this
-        with their own field reversal. The levels are reversed by subtracting from the maximum level,
-        which is non-optimal but produces a valid topological sort.
+        base fields reversed, leaving any extra leaf fields untouched. Leaves compose this with their
+        own field reversal. The levels are reversed by subtracting from the maximum level, which is
+        non-optimal but produces a valid topological sort.
         '''
         return eqx.tree_at(
-            lambda t : (t.levels, t.angle, t.levels_argsort),
+            lambda t : (t.levels, t.levels_argsort),
             self,
             (
                 jnp.max(self.levels, axis = -1, keepdims=True) - self.levels, # technically not optimal, but produces valid levels [not entirely sure, but in general we don't use this anyway except for level-based parallelism....]
-                -1.0 * self.angle,
                 self.levels_argsort[..., ::-1],
             ),
         )
@@ -110,24 +119,30 @@ class SweepData(eqx.Module):
     def _indexed_base(self, idx : int) -> "SweepData":
         '''
         Final helper (not part of the polymorphic interface): returns a copy of ``self`` with only the
-        three base fields indexed at ``idx``, leaving any extra leaf fields untouched. Leaves
-        compose this with their own field slicing.
+        base fields indexed at ``idx``, leaving any extra leaf fields untouched. Leaves compose this
+        with their own field slicing.
         '''
         assert self.levels.ndim == 2, "Indexing is only supported for batched SweepData instances."
         return eqx.tree_at(
-            lambda t : (t.levels, t.angle, t.levels_argsort),
+            lambda t : (t.levels, t.levels_argsort),
             self,
-            (self.levels[idx], self.angle[idx], self.levels_argsort[idx]),
+            (self.levels[idx], self.levels_argsort[idx]),
         )
 
     @abstractmethod
-    def reconstruct(self, geometric_domain : GeometricDomain, n_iterations_per_loop : int = 100) -> "SweepData":
+    def reconstruct(self, geometric_domain : GeometricDomain, angle : jnp.ndarray, n_iterations_per_loop : int = 100) -> "SweepData":
         '''
-        Recompute this sweep data for a new (deformed) geometric domain, reusing this instance's own
-        stored ``angle`` -- so a parametrisation can rebuild it after moving the vertices without
-        re-deriving which angles to use. Type-preserving: each leaf returns its own concrete type and
-        rebuilds its own extra data (e.g. a leveled sweep rebuilds its level setup with the same
-        padding). Only the (batched) sweep data produced from a quadrature set is supported.
+        Recompute this sweep data for a new (deformed) geometric domain and the given ``angle`` -- so a
+        parametrisation can rebuild it after moving the vertices. Type-preserving: each leaf returns its
+        own concrete type and rebuilds its own extra data (e.g. a leveled sweep rebuilds its level setup
+        with the same padding). Only the (batched) sweep data produced from a quadrature set is supported.
+
+        Parameters
+        ----------
+        geometric_domain : GeometricDomain
+            The deformed domain to recompute the sort for.
+        angle : jnp.ndarray [n_angles, n_dim]
+            The angles the sort is for (carried by the angular setup, not by this sweep data).
 
         Returns
         -------
@@ -136,15 +151,14 @@ class SweepData(eqx.Module):
         '''
         ...
 
-    def _rebuilt_sort(self, geometric_domain : GeometricDomain, n_iterations_per_loop : int = 100):
+    def _rebuilt_sort(self, geometric_domain : GeometricDomain, angle : jnp.ndarray, n_iterations_per_loop : int = 100):
         '''
-        Final helper (not part of the polymorphic interface): recompute ``(levels, angle, levels_argsort)``
-        for this instance's stored angles on a new domain. ``angle`` is unchanged (the directions don't
-        move with the vertices). Leaves wrap this into their own concrete type.
+        Final helper (not part of the polymorphic interface): recompute ``(levels, levels_argsort)`` for
+        the given ``angle`` on a new domain. Leaves wrap this into their own concrete type.
         '''
-        assert self.angle.ndim == 2, "reconstruct is only supported for batched (quadrature-set) sweep data."
-        levels, levels_argsort = _levels_argsort_from_domain_angles(geometric_domain, self.angle, n_iterations_per_loop)
-        return levels, self.angle, levels_argsort
+        assert angle.ndim == 2, "reconstruct is only supported for batched (quadrature-set) angles."
+        levels, levels_argsort = _levels_argsort_from_domain_angles(geometric_domain, angle, n_iterations_per_loop)
+        return levels, levels_argsort
 
 
 class BasicSweepData(SweepData):
@@ -155,13 +169,13 @@ class BasicSweepData(SweepData):
     '''
 
     levels         : jnp.ndarray #[..., n_elements]
-    angle          : jnp.ndarray #[..., n_dim]
     levels_argsort : jnp.ndarray #[..., n_elements]
 
     @classmethod
     def from_domain_angle(cls, geometric_domain : GeometricDomain, angle : jnp.ndarray, n_iterations_per_loop : int = 100):
         '''
-        Computes a (plain) topological sort for the given angle and geometric domain.
+        Computes a (plain) topological sort for the given angle and geometric domain. The ``angle`` is
+        used to compute the order but is *not* stored (it lives in the angular setup).
         This function is not jittable because it uses Python control flow to safely compute levels, which can throw if there is a cycle in the graph.
 
         Parameters
@@ -181,7 +195,7 @@ class BasicSweepData(SweepData):
         from jax_sn.domain.graph_generation import compute_levels_domain_safe, compute_levels_domain_safe_jax
         levels = compute_levels_domain_safe_jax(geometric_domain, angle, n_iterations_per_loop)
         levels_argsort = jnp.argsort(levels)
-        return cls(levels=levels, angle=angle, levels_argsort=levels_argsort)
+        return cls(levels=levels, levels_argsort=levels_argsort)
 
     @classmethod
     def from_domain_quadrature_set(cls, geometric_domain : GeometricDomain, quadrature_set : QuadratureSetBase, n_iterations_per_loop : int = 100):
@@ -211,8 +225,8 @@ class BasicSweepData(SweepData):
     def reverse(self) -> "BasicSweepData":
         return self._reversed_base()
 
-    def reconstruct(self, geometric_domain : GeometricDomain, n_iterations_per_loop : int = 100) -> "BasicSweepData":
-        return BasicSweepData(*self._rebuilt_sort(geometric_domain, n_iterations_per_loop))
+    def reconstruct(self, geometric_domain : GeometricDomain, angle : jnp.ndarray, n_iterations_per_loop : int = 100) -> "BasicSweepData":
+        return BasicSweepData(*self._rebuilt_sort(geometric_domain, angle, n_iterations_per_loop))
 
 
 @eqx.filter_jit
@@ -231,11 +245,10 @@ def _sweep_data_from_domain_quadrature_set_scan(geometric_domain : GeometricDoma
         The number of iterations per loop for the level computation. The default is 100.
     Returns
     -------
-    (levels, angles, levels_argsort)
+    (levels, levels_argsort)
         The computed sweep data fields for all angles in the quadrature set. Batched over angles.
     '''
-    levels, levels_argsort = _levels_argsort_from_domain_angles(geometric_domain, quadrature_set.angles, n_iterations_per_loop)
-    return levels, quadrature_set.angles, levels_argsort
+    return _levels_argsort_from_domain_angles(geometric_domain, quadrature_set.angles, n_iterations_per_loop)
 
 
 @eqx.filter_jit
@@ -341,13 +354,12 @@ class LeveledSweepData(SweepData, ProvidesLevels):
     '''
 
     levels         : jnp.ndarray #[..., n_elements]
-    angle          : jnp.ndarray #[..., n_dim]
     levels_argsort : jnp.ndarray #[..., n_elements]
 
     level_fwd : LevelBasedParallelism
-    '''Level-based-parallelism setup for the (forward) sweep along ``angle``.'''
+    '''Level-based-parallelism setup for the (forward) sweep along the angle.'''
     level_rev : LevelBasedParallelism
-    '''Level-based-parallelism setup for the reversed sweep (along ``-angle``).'''
+    '''Level-based-parallelism setup for the reversed sweep (along the negated angle).'''
 
     @classmethod
     def from_basic_sweep_data(cls, sweep_data : "SweepData", maximum_number_of_levels : Union[int, None] = None) -> "LeveledSweepData":
@@ -357,7 +369,6 @@ class LeveledSweepData(SweepData, ProvidesLevels):
         '''
         return cls(
             levels         = sweep_data.levels,
-            angle          = sweep_data.angle,
             levels_argsort = sweep_data.levels_argsort,
             level_fwd      = LevelBasedParallelism.from_sweep_data(sweep_data, maximum_number_of_levels),
             level_rev      = LevelBasedParallelism.from_sweep_data(sweep_data.reverse, maximum_number_of_levels),
@@ -381,8 +392,8 @@ class LeveledSweepData(SweepData, ProvidesLevels):
     def reverse(self) -> "LeveledSweepData":
         return eqx.tree_at(lambda t : (t.level_fwd, t.level_rev), self._reversed_base(), (self.level_rev, self.level_fwd))
 
-    def reconstruct(self, geometric_domain : GeometricDomain, n_iterations_per_loop : int = 100) -> "LeveledSweepData":
+    def reconstruct(self, geometric_domain : GeometricDomain, angle : jnp.ndarray, n_iterations_per_loop : int = 100) -> "LeveledSweepData":
         # Rebuild the plain sort for the new domain, then rebuild the level setup with the same padding
         # (read back from the current level setup) so the recomputed sweep data stays drop-in compatible.
-        rebuilt_plain = BasicSweepData(*self._rebuilt_sort(geometric_domain, n_iterations_per_loop))
+        rebuilt_plain = BasicSweepData(*self._rebuilt_sort(geometric_domain, angle, n_iterations_per_loop))
         return LeveledSweepData.from_basic_sweep_data(rebuilt_plain, self.level_fwd.n_levels)

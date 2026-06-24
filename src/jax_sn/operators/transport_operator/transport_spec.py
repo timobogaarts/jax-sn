@@ -33,10 +33,14 @@ class TransportSpec(eqx.Module):
     '''Energy group index for which the transport operator is defined.'''
 
     def build(self, setup : SolutionSetup) -> TransportOperatorMultipleAngles:
-        '''Construct the multi-angle transport operator for this spec on the given :class:`SolutionSetup`.'''
+        '''Construct the multi-angle transport operator for this spec on the given :class:`SolutionSetup`.
+
+        The transport direction is injected from ``setup.angular_setup`` (the single home of the angle);
+        the sweep data carries only the operator-agnostic ordering.'''
         single_angle = TransportOperator(
             setup.solution_domain_data,
             setup.sweep_data,
+            setup.angular_setup.quadrature_set.angles,
             self.energy_group,
             self.forward_strategy,
             self.inversion_strategy,

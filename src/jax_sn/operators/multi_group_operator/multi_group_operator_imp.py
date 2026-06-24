@@ -287,7 +287,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
 
     @property
     def n_angles(self):
-        return self.setup.sweep_data.angle.shape[0]
+        return self.setup.angular_setup.quadrature_set.angles.shape[0]
 
     @property
     def n_moments(self):
