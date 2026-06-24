@@ -59,7 +59,7 @@ def time_executions(degree: int):
     buffer_sweep                         = jnp.zeros((domain.n_elements, element_type.n_basis))
     buffer_sweep_pl                      = jnp.zeros((domain.n_elements, n_basis_pow2))
 
-    base_parameters                      = (*solution_domain.solution_domain_data, solution_domain.map_cross_sections_to_full_array(0), toposort, source_x)
+    base_parameters                      = (*solution_domain.solution_domain_data, solution_domain.map_cross_sections_to_full_array(0), quad_set[0][0], toposort, source_x)
 
     def run_setup():
         return _setup_elements_from_args(*base_parameters)[0].block_until_ready()
@@ -121,7 +121,7 @@ def test_multiple_angles():
 
         n_basis_pow2                         = _next_power_of_two(element_type.n_basis)
 
-        base_parameters                      = (*solution_domain.solution_domain_data, solution_domain.map_cross_sections_to_full_array(0), total_toposorts, source_x)
+        base_parameters                      = (*solution_domain.solution_domain_data, solution_domain.map_cross_sections_to_full_array(0), quad_set.angles, total_toposorts, source_x)
 
         def run_batch():            
             return transport_inverse_sweep_multiple_angles_batched(*base_parameters, batch_size=multiple_angles_batch_size).block_until_ready()
