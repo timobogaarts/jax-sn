@@ -34,7 +34,7 @@ def setup_mgop_mod_theta(dim, degree, xs_data_indices, dx):
     sgop = MGOP.to_single_group_operator(0)
 
     xs_data_new = CrossSectionData(total_xs, scattering_xs)
-    sgop_new = eqx.tree_at(lambda sgop : [sgop.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data, sgop.inscatter_operator.cross_sections_indexed.cross_section_data], sgop,[xs_data_new,xs_data_new])
+    sgop_new = eqx.tree_at(lambda sgop : sgop.setup.solution_domain_data.domain.cross_sections_indexed.cross_section_data, sgop, xs_data_new)
     return sgop_new, source_eg0, solution_domain
 
 def total_solve(sgop, source_eg0, solver):

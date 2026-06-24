@@ -1,11 +1,10 @@
-import jax
 import jax.numpy as jnp
 from abc import abstractmethod
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
-from jax_sn.operators.mass_operator import MassOperator
+from jax_sn.operators.mass_operator import MassOperator, MassStrategy, VmapMass
 from jax_sn.operators.scatter_operator import ScatterOperator
-from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles
+from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles, TransportSpec, SolutionSetup
 import lineax as lx
 
 import equinox as eqx
@@ -21,6 +20,20 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
 
     where :math:`\mathbf{T}` is the (multi-angle) transport operator (see :class:`TransportOperatorMultipleAngles`), :math:`\mathbf{H}` the batched (over angles) mass operator (see :class:`MassOperator`), :math:`\mathbf{M}` the batched (over element and basis function)
     moment operator (see :class:`MomentOperator`),  :math:`\mathbf{S}_{gg}` the inscattering operator (see :class:`ScatterOperator`).
+
+    Data ownership
+    ---------------------------
+    This operator follows the ``operator = setup + spec + strategy`` decomposition. It owns a
+    single canonical :attr:`setup` (a :class:`~jax_sn.operators.transport_operator.SolutionSetup`,
+    bundling the operator-defining :class:`~jax_sn.solution_domain.SolutionDomainData` with the
+    operator-agnostic sweep execution plan) and a small data-free
+    :attr:`transport_spec` (:class:`~jax_sn.operators.transport_operator.TransportSpec`), and
+    exposes :attr:`transport_operator`, :attr:`mass_operator` and :attr:`inscatter_operator` as
+    derived ``@property`` views built from those. The shared spatial/cross-section data therefore
+    lives in exactly **one** pytree location (:attr:`setup`), so a single :func:`equinox.tree_at`
+    on it updates every sub-operator at once -- there is no hand-synced duplication to keep
+    consistent. :attr:`moment_operator` and :attr:`discrete_operator` remain stored fields (they
+    carry the angular harmonics).
 
     Direction handling
     ---------------------------
@@ -59,22 +72,43 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
 
     '''
 
+    setup              : SolutionSetup
+    r'''Canonical shared data: operator-defining :class:`SolutionDomainData` + operator-agnostic sweep plan.'''
+
+    transport_spec     : TransportSpec
+    r'''Data-free transport configuration (strategies + energy group); consumes :attr:`setup` via :meth:`TransportSpec.build`.'''
+
     moment_operator    : MomentOperator
-    transport_operator : TransportOperatorMultipleAngles
-    mass_operator      : MassOperator
     discrete_operator  : DiscreteOperator
-    inscatter_operator : ScatterOperator
+
+    mass_strategy      : MassStrategy = eqx.field(default_factory=VmapMass)
+    r'''Contraction strategy for the derived :attr:`mass_operator`.'''
 
     transpose_bool     : bool = False
     r'''Whether this operator applies the transposed action instead of the forward action.'''
 
+    @property
+    def transport_operator(self) -> TransportOperatorMultipleAngles:
+        r'''The multi-angle transport operator, derived from :attr:`setup` + :attr:`transport_spec`.'''
+        return self.transport_spec.build(self.setup)
+
+    @property
+    def mass_operator(self) -> MassOperator:
+        r'''The mass operator, derived from :attr:`setup` (shares its geometric data + FEM matrices).'''
+        return MassOperator.from_transport_operator(self.transport_operator, self.mass_strategy)
+
+    @property
+    def inscatter_operator(self) -> ScatterOperator:
+        r'''The within-group scatter operator, derived from :attr:`setup`'s cross sections and the energy group.'''
+        eg = self.transport_spec.energy_group
+        return ScatterOperator(self.setup.domain.cross_sections_indexed, self.moment_operator.out_structure(), eg, eg)
+
     def __check_init__(self):
-        #assert self.transport_operator.energy_group == self.inscatter_operator.energy_group, f"Energy group mismatch between operators: transport: {self.transport_operator.energy_group}, scatter: {self.inscatter_operator.energy_group}"
-        assert isinstance(self.transport_operator, TransportOperatorMultipleAngles), f"transport_operator must be of type TransportOperatorMultipleAngles but is {type(self.transport_operator)}"
+        assert isinstance(self.setup, SolutionSetup), f"setup must be of type SolutionSetup but is {type(self.setup)}"
+        assert isinstance(self.transport_spec, TransportSpec), f"transport_spec must be of type TransportSpec but is {type(self.transport_spec)}"
         assert isinstance(self.moment_operator, MomentOperator), f"moment_operator must be of type MomentOperator but is {type(self.moment_operator)}"
-        assert isinstance(self.mass_operator, MassOperator), f"mass_operator must be of type MassOperator but is {type(self.mass_operator)}"
-        assert isinstance(self.inscatter_operator, ScatterOperator), f"inscatter_operator must be of type ScatterOperator but is {type(self.inscatter_operator)}"
         assert isinstance(self.discrete_operator, DiscreteOperator), f"discrete_operator must be of type DiscreteOperator but is {type(self.discrete_operator)}"
+        assert isinstance(self.mass_strategy, MassStrategy), f"mass_strategy must be of type MassStrategy but is {type(self.mass_strategy)}"
         assert self.mass_operator.out_structure() == self.transport_operator.out_structure(), f"mass_operator out_structure {self.mass_operator.out_structure()} must match transport_operator [note it is inverted] out_structure {self.transport_operator.out_structure()}"
         assert self.inscatter_operator.in_structure() == self.moment_operator.out_structure(), f"inscatter_operator in_structure {self.inscatter_operator.in_structure()} must match moment_operator out_structure {self.moment_operator.out_structure()}"
         assert self.transport_operator.in_structure() == self.moment_operator.in_structure(), f"transport_operator in_structure [note it is inverted] {self.transport_operator.in_structure()} must match moment_operator in_structure {self.moment_operator.in_structure()}"
@@ -101,22 +135,43 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
         return eqx.tree_at(lambda op: op.transpose_bool, self, not self.transpose_bool)
 
     def to_energy_group(self, energy_group) -> "SingleGroupOperatorBase":
-        '''Returns this operator for a different energy group, preserving the implementation type and transpose direction.'''
-        return eqx.tree_at(
-            lambda op: (op.transport_operator, op.inscatter_operator),
-            self,
-            (self.transport_operator.to_energy_group(energy_group),
-             self.inscatter_operator.to_energy_group(energy_group, energy_group)))
+        '''Returns this operator for a different energy group, preserving the implementation type and transpose direction.
+
+        Only :attr:`transport_spec`'s energy group is swapped; :attr:`inscatter_operator` follows
+        automatically since it is derived from it.'''
+        return eqx.tree_at(lambda op: op.transport_spec.energy_group, self, energy_group)
+
+    @classmethod
+    def from_operators(cls, moment_operator : MomentOperator, transport_operator : TransportOperatorMultipleAngles,
+                       mass_operator : MassOperator, discrete_operator : DiscreteOperator,
+                       transpose_bool : bool = False) -> "SingleGroupOperator":
+        r'''
+        Build a single-group operator from already-constructed sub-operators.
+
+        The canonical :attr:`setup` is taken from ``transport_operator`` and the
+        :attr:`transport_spec` / :attr:`mass_strategy` are extracted from the transport and mass
+        operators. The within-group scatter operator is *not* taken as an argument: it is derived
+        from the (shared) cross sections in ``transport_operator``'s solution domain data, which is
+        exactly the duplication this design removes.
+        '''
+        return cls(
+            SolutionSetup(transport_operator.solution_domain_data, transport_operator.sweep_data),
+            TransportSpec.from_transport_operator(transport_operator),
+            moment_operator,
+            discrete_operator,
+            mass_operator.strategy,
+            transpose_bool,
+        )
 
     def in_structure(self):
-        return jax.ShapeDtypeStruct((self.moment_operator.wk_yklm.shape[-1],) + self.transport_operator.out_structure().shape[1:] , self.moment_operator.wk_yklm.dtype)
+        return self.moment_operator.out_structure()
 
     def out_structure(self):
-        return jax.ShapeDtypeStruct((self.moment_operator.wk_yklm.shape[-1],) + self.transport_operator.out_structure().shape[1:] , self.moment_operator.wk_yklm.dtype)
+        return self.moment_operator.out_structure()
 
     @property
     def energy_group(self):
-        return self.transport_operator.energy_group
+        return self.transport_spec.energy_group
 
 
 @lx.is_symmetric.register(SingleGroupOperatorBase)

@@ -42,9 +42,10 @@ established:
 
 | Stage | What | State |
 |---|---|---|
-| A | Strategy-ify moment & discrete; resurrect streaming; rehome `quadrature_set` | **DONE** (validated standalone; FE suite pending on stellsim) |
-| B | `SingleGroupOperator` → setup + specs + derived views | not started |
-| C | `MultiGroupOperator` + canonical `SolutionSetup` (harmonics in setup) | not started |
+| A | Strategy-ify moment & discrete; resurrect streaming; rehome `quadrature_set` | **DONE & committed** (FE + warp suites green) |
+| B | `SingleGroupOperator` → setup + spec + derived views | **DONE** (FE + warp suites green) |
+| B.1 | `SolutionSetup` introduced; `sweep_data` moved off the spec into setup; `TransportSpec` made data-free | **DONE** (FE + warp suites green) |
+| C | `MultiGroupOperator` + fold angular data (quadrature + harmonics) into `SolutionSetup` | not started |
 
 ### Stage A — DONE (this session)
 
@@ -119,19 +120,71 @@ moment/discrete adjoint `⟨Mx,y⟩=⟨x,Mᵀy⟩` (~1e-14), jit + in/out struct
 and the multigroup tests (MGOp constructor signature changed: `quadrature_set` added before
 `n_energy_groups`).
 
-### Stage B — `SingleGroupOperator` (next)
+### Stage B — `SingleGroupOperator` — DONE (this session)
 
-File: `operators/single_group_operator/single_group_operator_imp.py`.
-- Fields → canonical owner + `moment_operator`, `discrete_operator`, mass/scatter **config**,
-  `transpose_bool`. Drop the `mass_operator` / `inscatter_operator` *fields*; make them `@property`:
-  `mass_operator = mass_operator_cls.from_transport_operator(transport_operator)`;
-  `inscatter_operator = ScatterOperator(sdd.domain.cross_sections_indexed,
-  moment_operator.out_structure(), eg, eg)`.
-- `to_energy_group` replaces **only** the transport part (inscatter follows via its property).
-- Consumers: `parametrisation/singlegroup_parametrisation.py:13` and
-  `tests/.../test_single_group_ad.py:37` two-target `tree_at` → single-target on the SDD location.
-- (Decide at B: keep SDD inside `transport_operator` for the single-group case, or already hoist a
-  composite `setup`+`TransportSpec` here for full symmetry. Stage C needs the composite form.)
+**Decision taken (user): the full-symmetry composite form**, so Stage C's `MultiGroupOperator`
+reuses the same shape. `SingleGroupOperator` now owns a canonical `setup` + a `TransportSpec`, and
+the transport operator itself is a derived view (not just mass/scatter).
+
+- **New `operators/transport_operator/transport_spec.py`** — `TransportSpec(eqx.Module)` bundling
+  transport config minus the shared `SolutionDomainData`: `sweep_data` + `forward_strategy` /
+  `inversion_strategy` / `angle_lifting` (strategy defaults) + `energy_group`. Methods:
+  `build(solution_domain_data) -> TransportOperatorMultipleAngles` (keeps transport-construction
+  knowledge in the transport layer — the composite never names a strategy),
+  `from_transport_operator(top, energy_group=None)`, `to_energy_group(eg)`. Exported from
+  `jax_sn.operators.transport_operator`.
+- **`SingleGroupOperator` fields** → `setup: SolutionDomainData`, `transport_spec: TransportSpec`,
+  `moment_operator`, `discrete_operator`, `mass_strategy: MassStrategy`, `transpose_bool`.
+  Dropped `transport_operator` / `mass_operator` / `inscatter_operator` *fields*; all three are now
+  `@property` derived views (`transport_spec.build(setup)`; `MassOperator.from_transport_operator`;
+  `ScatterOperator(setup.domain.cross_sections_indexed, moment.out_structure(), eg, eg)`). So the
+  shared spatial + cross-section data lives in exactly **one** pytree location (`setup`).
+- **New classmethod `SingleGroupOperator.from_operators(moment, transport, mass, discrete,
+  transpose_bool=False)`** — builds from already-constructed sub-operators (extracts `setup` from
+  transport, spec via `TransportSpec.from_transport_operator`, `mass_strategy` from `mass.strategy`).
+  Note: it takes **no** inscatter arg — that's the duplication being removed (derived from `setup`).
+- `to_energy_group` now swaps only `transport_spec.energy_group` (inscatter follows automatically).
+  `in_structure`/`out_structure` simplified to `moment_operator.out_structure()`.
+- **Consumers updated to a single `tree_at` on the canonical location**:
+  `parametrisation/singlegroup_parametrisation.py` (`op.setup.domain.cross_sections_indexed.
+  cross_section_data`, was two-target) and `tests/.../test_single_group_ad.py:37` (same).
+  `MultiGroupOperator.to_single_group_operator` now calls `SingleGroupOperator.from_operators`.
+  Direct constructions in `test_anisotropic_scattering.py` + `examples/single_group_perf_mem_analysis.py`
+  switched to `from_operators`.
+- **Validated here (jaxsbgeom env, CPU + warp):** full FE suite `-k "not warp"` 33 passed / 24 skipped
+  (identical to pre-Stage-B baseline) and `test_warp_linear_tetrahedron.py` 18 passed.
+
+### Stage B.1 — `SolutionSetup` + data-free `TransportSpec` (this session)
+
+Follow-up to B after a design review: `sweep_data` was sitting on `TransportSpec`, which mixed *data*
+into what should be pure config. Reframed around the **operator-defining / operator-agnostic** axis
+(preferred over diff/non-diff, which is user-dependent and arbitrary):
+
+- **operator-agnostic** = data needed to *compute* the action whose *value never changes the result*.
+  Essentially just the sweep execution plan (`sweep_data.levels` / `levels_argsort` — any valid
+  topological order yields the identical inverse).
+- **operator-defining** = everything else that's array data (geometry, FEM matrices, geometric data,
+  cross sections; angular quadrature/harmonics once folded in at Stage C). Which *subset* of these a
+  parametrisation differentiates stays a `theta_base` concern — *not* encoded in the type (decision 4
+  unchanged: convention, not container, for the diff boundary).
+
+Changes:
+- **New `operators/transport_operator/solution_setup.py`** — `SolutionSetup(eqx.Module)` =
+  `solution_domain_data` (operator-defining) + `sweep_data` (operator-agnostic). This is the canonical
+  ``setup``; Stage C folds the angular data (quadrature + harmonics) in here too.
+- **`TransportSpec` is now data-free**: dropped the `sweep_data` field; holds only
+  `forward_strategy` / `inversion_strategy` / `angle_lifting` / `energy_group`. `build(setup)` reads
+  `setup.solution_domain_data` + `setup.sweep_data`. (`TransportOperator`'s own two fields are
+  unchanged, so warp/pallas/kernels are untouched.)
+- **`SingleGroupOperator.setup`** is now a `SolutionSetup` (was a bare `SolutionDomainData`);
+  `from_operators` builds `SolutionSetup(top.solution_domain_data, top.sweep_data)`.
+- Consumers' canonical path is now `op.setup.solution_domain_data.domain...` (parametrisation + AD test).
+- **Known wart (deferred to Stage C):** `sweep_data` still carries its `angle`, which is
+  operator-*defining* (a cached copy of the quadrature angle). When quadrature/harmonics fold into
+  `SolutionSetup` at C, the sweep should read its angle from there and carry only the ordering, making
+  `sweep_data` purely operator-agnostic.
+- **Validated here (jaxsbgeom env, CPU + warp):** full FE `-k "not warp"` 33 passed / 24 skipped and
+  `test_warp_linear_tetrahedron.py` 18 passed (identical to baseline).
 
 ### Stage C — `MultiGroupOperator` + `SolutionSetup`
 
@@ -159,8 +212,18 @@ Land each stage as its own commit, green before the next.
 - B/C extra: construct an MGOp via `create_multi_group_operator`, assert one `eqx.tree_at` on the
   single `cross_sections_indexed` location round-trips with no stale second copy.
 
-## Resume tomorrow
+## Resume
 
-Stage A is committed-ready but **uncommitted** and **unvalidated on stellsim**. Next session:
-1. Run the FE suite on stellsim to confirm Stage A; commit it.
-2. Start Stage B (`SingleGroupOperator`).
+Stage A is **committed**. Stages B + B.1 are **done & green** (FE + warp, in the `jaxsbgeom` conda
+env). Next session:
+1. Commit B + B.1 (if not already committed).
+2. Start Stage C (`MultiGroupOperator`). The composite `setup + spec + derived views` shape now exists
+   on `SingleGroupOperator` — including the canonical `SolutionSetup` (`solution_domain_data` +
+   `sweep_data`) and the data-free `TransportSpec`. Stage C: (a) give `MultiGroupOperator` one
+   `SolutionSetup` + per-energy-group specs, sub-operators as `@property`, collapsing the `*_loc`
+   helpers to single locations; (b) **fold the angular data (`quadrature_set` + precomputed
+   `wk_ylm`/`ylm`) into `SolutionSetup`** and let `sweep_data` read its angle from there (closing the
+   B.1 wart), so moment/discrete also derive from the canonical setup.
+
+Note (env): tests run with `/home/tbogaarts/miniconda3/envs/jaxsbgeom/bin/python` — it has
+`jax_sbgeom`, `sympy`, and `warp` (so warp tests run locally too, contrary to the older notes).

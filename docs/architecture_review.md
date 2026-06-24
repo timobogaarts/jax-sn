@@ -27,11 +27,14 @@ for the warp operator (already flagged with a TODO).
 **Recommendation:** invert the ownership: one canonical store (e.g. `SolutionDomainData`) that
 all sub-operators reference, so there is exactly one location to replace.
 
-> **Update (2026-06-12, in progress):** being addressed via the
+> **Update (2026-06-24, in progress):** being addressed via the
 > `operator = setup + spec + strategy` pattern (composite owns one canonical `setup`; sub-operators
-> are derived views). Full design + staging in `operator_data_ownership_refactor.md`. **Stage A done**
-> (moment/discrete strategy-ified; `quadrature_set` rehomed onto `MultiGroupOperator`); Stages B
-> (`SingleGroupOperator`) and C (`MultiGroupOperator` + `SolutionSetup`) remain.
+> are derived views). Full design + staging in `operator_data_ownership_refactor.md`. **Stage A done
+> & committed** (moment/discrete/mass strategy-ified; `quadrature_set` rehomed onto
+> `MultiGroupOperator`). **Stage B done** (`SingleGroupOperator` now owns one canonical `setup`
+> (`SolutionDomainData`) + a `TransportSpec`; transport/mass/inscatter are derived `@property` views,
+> so the shared data lives in one pytree location — a single `tree_at` updates all sub-operators).
+> Stage C (`MultiGroupOperator` + canonical `SolutionSetup`) remains.
 
 
 ## 3. Transpose-via-subclass breaks substitutability
@@ -208,8 +211,9 @@ take. There are also recurring typos ("Mathetmatical", "hasing", "jax-snj",
    still open.
 3. ~~`__check_init` typo (§7)~~ — done. ~~`as_matrix` assert→raise (§7)~~ — done. The warp
    `AttributeError` path (§5) still open.
-4. Longer term: single ownership for shared operator data (§1) — **in progress, Stage A done**, see
-   `operator_data_ownership_refactor.md`. ~~sibling-class / flag transposes (§3)~~ — done.
+4. Longer term: single ownership for shared operator data (§1) — **in progress, Stages A & B done**
+   (Stage C remains), see `operator_data_ownership_refactor.md`. ~~sibling-class / flag transposes
+   (§3)~~ — done.
 
 ### Progress log (2026-06-12)
 - Quick cleanups: §7 (`as_matrix`, `__check_init__`), §8 (warp-kernel stray imports, `graph_tools`

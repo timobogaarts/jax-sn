@@ -256,12 +256,11 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         SingleGroupOperator
             The single group operator for energy group g_i.
         ''' 
-        return SingleGroupOperator(self.moment_operator,
-                                   self.transport_operator.to_energy_group(g_i),
-                                   self.mass_operator,
-                                   self.discrete_operator,
-                                   self.gather_scatter_operator.to_scatter_operator(g_i, g_i, self.moment_operator.out_structure()),
-                                   transpose_bool=self.transpose_bool)
+        return SingleGroupOperator.from_operators(self.moment_operator,
+                                                  self.transport_operator.to_energy_group(g_i),
+                                                  self.mass_operator,
+                                                  self.discrete_operator,
+                                                  transpose_bool=self.transpose_bool)
         
     @property
     def lower_block_triangular(self):

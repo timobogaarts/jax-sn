@@ -131,10 +131,9 @@ def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim,
     transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorVmap(solution_domain.solution_domain_data, sweep_data, 0))
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
-    scatter_op                = ScatterOperator(solution_domain.domain.cross_sections_indexed, moment_operator.out_structure(), energy_group_in=0, energy_group_out=0)
     source_total              = jnp.broadcast_to(sources[0][None, :, :], (sweep_data.angle.shape[0],) + sources[0].shape) # source for all angles
     discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
-    Aop = SingleGroupOperator(moment_operator, transport_operator, mass_operator, discrete_operator,  scatter_op)
+    Aop = SingleGroupOperator.from_operators(moment_operator, transport_operator, mass_operator, discrete_operator)
     return Aop, source_total, solution_domain
 
 @pytest.fixture(params=[1,2,3], scope='session')
