@@ -80,3 +80,45 @@ API (after a one-line update of its `base_parameters` to pass `angle`). The othe
 (`time_warp*.py`, `single_group_perf_mem_analysis.py`, the pareto/fw_cadis notebooks) rely on the
 older `single_angle_transport_operator_cls=` argument to `create_multi_group_operator`, removed by the
 earlier transport-operator strategy refactor (pre-dating this work), so they were not run here.
+
+---
+
+## Whole-machinery check — `examples/refactor_perf_verify.py`
+
+A second, broader check that exercises **everything the refactor touched** end-to-end on the GPU and
+reports peak memory + wall time per operation: MGOp construction (`create_multi_group_operator`), the
+derived sub-operators (`transport` / `mass` / `gather_scatter` / `moment` / `discrete`),
+`to_single_group_operator`, `transpose`, the parametrised reconstruction
+(`MultigroupOperatorParametrisedVerticesXS` — vertices + cross sections + sweep rebuild), and a grad
+through the lower-triangular solve. The script is written against the API common to both states and
+brings its own measurement, so the *same file* runs on the pre-refactor commit (`88bcff9`, via a
+worktree + `PYTHONPATH`) and on `HEAD` for a direct diff. It is parametrizable by `--degree` /
+`--n-other` / `--res-mult` / `--tn-order`.
+
+**Breeding-blanket slab, dim 3, 4 groups, 72 angles, on RTX 3080. Peak memory (MB), baseline `88bcff9`
+→ refactored `HEAD`:**
+
+| op | deg1 (1.56M DOF) base→new | deg2 (3.89M DOF) base→new |
+|---|---|---|
+| MGOp.mv                  | 82.9 → 82.9   | 421.2 → 421.1 |
+| MGOp.transpose().mv      | 89.6 → 89.6   | 436.7 → 436.7 |
+| SingleGroupOp.mv         | 74.0 → 74.0   | 398.2 → 398.2 |
+| transport.mv             | 23.4 → 23.4   | 97.3 → 97.3   |
+| transport.inv            | 71.0 → 71.0   | 391.4 → 391.4 |
+| transport.transpose().inv| 71.8 → 71.8   | 392.2 → 392.2 |
+| mass.mv                  | 11.9 → 11.9   | 26.3 → 26.3   |
+| moment.mv                | 7.5 → 7.5     | 15.1 → 15.1   |
+| discrete.mv              | 6.0 → 6.0     | 14.9 → 14.9   |
+| reconstruct_operator     | 3.7 → 3.5     | 4.0 → 3.6     |
+| solve (lower-tri)        | 93.6 → 93.6   | — |
+| value_and_grad(solve)    | 274.2 → 274.2 | — |
+
+**Peak memory is identical** (to the MB) across every operation at both DOF scales — exactly as
+expected, since the refactor only relocates where data lives in the pytree, not what the compiled
+program allocates. Wall times match within run-to-run noise (≤10%, both directions); the rewritten
+`reconstruct_operator` (now ~3 single-location `tree_at`s instead of 5) is if anything marginally
+faster (453 → 399 ms at deg1) at the same memory. All paths produced correct results on the GPU
+(device confirmed `CudaDevice`).
+
+**Conclusion:** no memory or timing regression across the full touched surface, at both ~1.6M and
+~3.9M discrete DOFs.

@@ -72,13 +72,13 @@ def _setup_operators(solution_domain: SolutionDomain, sources: jnp.ndarray, quad
     lmax                      = solution_domain.domain.cross_sections_indexed.l_max
 
     sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
-    transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorBatched(solution_domain.solution_domain_data, sweep_data, 0, batch_size))
+    transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorBatched(solution_domain.solution_domain_data, sweep_data, quadrature_set.angles, 0, batch_size))
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)    
     discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
     gather_scatter_operator   = GatherScatterOperatorBroadcasted(cross_sections_indexed=solution_domain.domain.cross_sections_indexed)
     source_total              = jnp.broadcast_to(sources[None, :, :], (quadrature_set.angles.shape[0],) + sources.shape) # source for all angles
-    Aop                       = MultiGroupOperatorScan(moment_operator, discrete_operator, transport_operator, mass_operator, gather_scatter_operator, n_energy_groups)
+    Aop                       = MultiGroupOperatorScan.from_operators(moment_operator, discrete_operator, transport_operator, mass_operator, gather_scatter_operator, quadrature_set, n_energy_groups)
     return Aop.convert_to_lower_block_triangular(), source_total, solution_domain
 
 def modify_setup_mgop(dim, degree, modify_verts_xs):
@@ -139,7 +139,7 @@ grad_theta_everything = eqx.filter_jit(jax.grad(solve_result_everything, argnums
 
 # %%
 from jax_sn.operators.multi_group_operator.multi_group_operator_imp import MultiGroupOperatorScanCheckpoint
-MGOP_cp = MultiGroupOperatorScanCheckpoint(MGOP.moment_operator, MGOP.discrete_operator, MGOP.transport_operator, MGOP.mass_operator, MGOP.gather_scatter_operator, MGOP.n_energy_groups, MGOP.transpose_bool)
+MGOP_cp = MultiGroupOperatorScanCheckpoint.from_multigroup_operator(MGOP)
 
 # %%
 
