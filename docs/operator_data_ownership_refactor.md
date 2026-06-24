@@ -46,7 +46,8 @@ established:
 | B | `SingleGroupOperator` → setup + spec + derived views | **DONE** (FE + warp suites green) |
 | B.1 | `SolutionSetup` introduced; `sweep_data` moved off the spec into setup; `TransportSpec` made data-free | **DONE** (FE + warp suites green) |
 | C.1 | `MultiGroupOperator` → one `SolutionSetup` + specs; transport/mass/gather-scatter derived; `*_loc` collapsed to single locations | **DONE** (FE + warp suites green; §1 dedup verified) |
-| C.2 | Fold angular data (quadrature + harmonics) into `SolutionSetup`; derive moment/discrete; close the `sweep_data.angle` wart | not started |
+| C.2 | Fold angular data (quadrature + harmonics) into `SolutionSetup`; derive moment/discrete | **DONE** (FE + warp suites green) |
+| C.2b | Remove `angle` from `sweep_data` (read it from the angular setup) | **not planned** — kernel surgery for benign duplication; see rationale below |
 
 ### Stage A — DONE (this session)
 
@@ -221,21 +222,41 @@ the operators that previously duplicated data.
 - **Validated here (jaxsbgeom env, CPU + warp):** full FE `-k "not warp"` 33 passed / 24 skipped and
   `test_warp_linear_tetrahedron.py` 18 passed (identical to baseline).
 
-### Stage C — `MultiGroupOperator` + `SolutionSetup`
+### Stage C.2 — fold angular data into `SolutionSetup` (this session)
 
-Files: `operators/multi_group_operator/multi_group_operator_imp.py`,
-`solution_domain/solution_domain.py`, `multi_group_operator_creation.py`.
-- Introduce canonical `SolutionSetup` = spatial (`SolutionDomainData`: domain+fem+geom) + angular
-  (`quadrature_set` + precomputed `wk_ylm`/`ylm` via `quadrature_set.wk_ylm_real(l_max)` /
-  `ylm_real(l_max)`). Fold the interim `MGOp.quadrature_set` field into it.
-- Composite stores one `setup` + `transport_spec` + `moment_spec` + `discrete_spec` + static config;
-  all sub-operators become `@property`. Rewrite `transpose`, `from_multigroup_operator`,
-  `to_single_group_operator`, `__check_init__`, `convert_to_lower_block_triangular` (single canonical
-  location); collapse `*_loc` helpers to single-target lambdas (keep names for API).
-- Consumers: `multigroup_parametrisation.py` reconstruction simplifies (flat `op.setup.domain...`
-  instead of `op.transport_operator.transport_operator.solution_domain_data...`); read-only
-  consumers (`mv` impls, `adjoint_multigroup_operator.py`, `right_hand_side.py`,
-  `lower_triangular_solver.py`) need no change — properties return real operators.
+Completes the symmetric design: **every** sub-operator now derives from one canonical `SolutionSetup`.
+
+- **New `AngularSetup`** (in `solution_setup.py`): `quadrature_set` + precomputed harmonics `wk_ylm`
+  (weighted, moment operator) + `ylm` (unweighted, discrete operator). `from_quadrature_set(quad, l_max)`.
+  The single home for the angular discretisation.
+- **`SolutionSetup`** gains `angular_setup` → `solution_domain_data` (operator-defining spatial) +
+  `angular_setup` (operator-defining angular) + `sweep_data` (operator-agnostic). Added
+  `elements_basis_shape` passthrough; `SolutionDomainData` gained `elements_basis_shape` / `n_elements`.
+- **`moment_operator` / `discrete_operator` are now derived `@property` views** on both
+  `MultiGroupOperator` and `SingleGroupOperator` (built from `setup.angular_setup.wk_ylm`/`ylm` +
+  `moment_strategy` / `discrete_strategy` config fields). The stored fields + the interim
+  `quadrature_set` field are gone; `MultiGroupOperator.quadrature_set` is a property onto
+  `setup.angular_setup.quadrature_set`.
+- **`to_single_group_operator`** shares the *same* `SolutionSetup` (only the energy group differs) —
+  full dedup including angular data. `from_operators` (both operators) build the `AngularSetup` from the
+  supplied `quadrature_set` + the operators' harmonics; `create_multi_group_operator` builds it via
+  `AngularSetup.from_quadrature_set` and gained `moment_strategy` / `discrete_strategy` args.
+- **Call sites**: `test_anisotropic_scattering` (+`quadrature_set` to single-group `from_operators`);
+  examples updated likewise.
+- **Verified**: one `CrossSectionData` *and* one `AngularSetup` node in the MGOp pytree; mv / transpose /
+  `to_single_group_operator` consistent.
+- **Validated here (jaxsbgeom env, CPU + warp):** full FE `-k "not warp"` 33 passed / 24 skipped and
+  `test_warp_linear_tetrahedron.py` 18 passed (identical to baseline).
+
+### Stage C.2b — *not planned* (rationale)
+
+Removing `angle` from `sweep_data` so it reads from `angular_setup` (making `sweep_data` "purely
+operator-agnostic") was the last item. **Decided against it.** It would require threading the angle into
+the transport forward/inversion kernels from a new source (touching `_forward_data` / `_inversion_args`
+and the warp/pallas paths) — real kernel surgery — to remove a **benign** duplication: `sweep_data.angle`
+and `angular_setup.quadrature_set.angles` are never hand-synced and never drift (angles don't change under
+domain deformation; changing the quadrature rebuilds everything). Poor cost/benefit, so `sweep_data` keeps
+its `angle` (documented as a cached copy in `solution_setup.py`).
 
 ## Verification (per stage, on stellsim)
 
@@ -249,15 +270,12 @@ Land each stage as its own commit, green before the next.
 
 ## Resume
 
-Stage A is **committed**. Stages B + B.1 are **committed**. Stage C.1 is **done & green** (FE + warp,
-in the `jaxsbgeom` conda env). §1 (duplicated shared data) is now **fully resolved** for both the
-single- and multi-group operators. Next session:
-1. Commit C.1 (if not already committed).
-2. Stage C.2 (optional polish, *not* a §1 fix): **fold the angular data (`quadrature_set` + precomputed
-   `wk_ylm`/`ylm`) into `SolutionSetup`** so moment/discrete also derive from the canonical setup, and
-   let `sweep_data` read its angle from there (closing the B.1 `sweep_data.angle` wart). This is the
-   "single home for angular discretisation" cleanup; the actual data duplication is already gone, so
-   C.2 is lower priority.
+**The refactor is complete.** Stages A, B, B.1, C.1, C.2 are all done & green (FE + warp, `jaxsbgeom`
+conda env). §1 (duplicated shared data) is fully resolved: both `SingleGroupOperator` and
+`MultiGroupOperator` own one canonical `SolutionSetup` (spatial + angular + sweep) and a data-free
+`TransportSpec`, and derive *every* sub-operator (transport, mass, gather-scatter, moment, discrete,
+inscatter) as `@property` views. C.2b (removing the cached `sweep_data.angle`) was deliberately not done
+— see rationale above. Nothing outstanding unless we revisit C.2b.
 
 Note (env): tests run with `/home/tbogaarts/miniconda3/envs/jaxsbgeom/bin/python` — it has
 `jax_sbgeom`, `sympy`, and `warp` (so warp tests run locally too, contrary to the older notes).

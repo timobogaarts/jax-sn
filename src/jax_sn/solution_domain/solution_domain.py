@@ -62,6 +62,15 @@ class SolutionDomainData:
     def n_basis(self) -> int:
         return self.fem_matrices.n_basis
 
+    @property
+    def n_elements(self) -> int:
+        return self.domain.n_elements
+
+    @property
+    def elements_basis_shape(self) -> jax.ShapeDtypeStruct:
+        '''The ``[n_elements, n_basis]`` structure operators batch over (identified with :math:`F`).'''
+        return jax.ShapeDtypeStruct((self.domain.n_elements, self.fem_matrices.n_basis), self.fem_matrices.mass_matrix.dtype)
+
 
 class SolutionDomain(eqx.Module):
     '''

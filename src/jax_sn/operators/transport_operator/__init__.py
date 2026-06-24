@@ -1,7 +1,7 @@
 from .sweep_data import SweepData, BasicSweepData, LeveledSweepData, LevelBasedParallelism, ProvidesLevels
 from .transport_operator_base import TransportOperator, TransportOperatorMultipleAngles
 from .transport_operator_base import TransportOperatorBatched, TransportOperatorVmap, TransportOperatorMultipleAnglesVmap
-from .solution_setup import SolutionSetup
+from .solution_setup import SolutionSetup, AngularSetup
 from .transport_spec import TransportSpec
 from .transport_operator_strategies import (
     ForwardStrategy, InversionStrategy, AngleLifting,
@@ -39,6 +39,7 @@ __all__ = [
     'TransportOperatorVmap',
     'TransportOperatorMultipleAnglesVmap',
     'SolutionSetup',
+    'AngularSetup',
     'TransportSpec',
     'TransportOperatorVmapPallas',
     'TransportOperatorBatchedPallas',

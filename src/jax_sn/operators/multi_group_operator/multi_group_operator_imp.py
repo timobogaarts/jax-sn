@@ -4,8 +4,8 @@ from typing import Type
 from jax_sn.domain.cross_sections import CrossSectionData
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.operators.single_group_operator import SingleGroupOperator
-from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
-from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles, TransportSpec, SolutionSetup
+from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator, MomentStrategy, DiscreteStrategy, BatchedMoment, BatchedDiscrete
+from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles, TransportSpec, SolutionSetup, AngularSetup
 from jax_sn.operators.mass_operator import MassOperator, MassStrategy, VmapMass
 from jax_sn.operators.scatter_operator import GatherScatterOperator, GatherScatterOperatorBroadcasted
 from jax_sn.quadrature_set import QuadratureSetBase
@@ -147,22 +147,19 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
 
     '''
     setup                     : SolutionSetup
-    '''Canonical shared data: operator-defining :class:`SolutionDomainData` + operator-agnostic sweep plan. The single home for the data that the transport, mass and gather-scatter operators all draw on.'''
+    '''Canonical shared data: operator-defining spatial + angular data + operator-agnostic sweep plan. The single home every sub-operator draws on.'''
 
     transport_spec            : TransportSpec
     '''Data-free transport configuration (strategies + energy group); the transport operator is derived from :attr:`setup` + this via :meth:`TransportSpec.build`.'''
 
-    moment_operator           : MomentOperator
-    '''The single group moment operator used in the multi-group operator.'''
-
-    discrete_operator         : DiscreteOperator
-    '''The single group discrete operator used in the multi-group operator.'''
-
-    quadrature_set            : QuadratureSetBase
-    '''The angular quadrature set. The single home for the angular discretisation (folds into :attr:`setup` at Stage C).'''
-
     n_energy_groups           : int
     '''Number of energy groups.'''
+
+    moment_strategy           : MomentStrategy = eqx.field(default_factory=BatchedMoment)
+    '''Contraction strategy for the derived :attr:`moment_operator`.'''
+
+    discrete_strategy         : DiscreteStrategy = eqx.field(default_factory=BatchedDiscrete)
+    '''Contraction strategy for the derived :attr:`discrete_operator`.'''
 
     mass_strategy             : MassStrategy = eqx.field(default_factory=VmapMass)
     '''Contraction strategy for the derived :attr:`mass_operator`.'''
@@ -179,6 +176,16 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         return self.transport_spec.build(self.setup)
 
     @property
+    def moment_operator(self) -> MomentOperator:
+        '''The moment operator, derived from :attr:`setup`'s angular harmonics.'''
+        return MomentOperator(self.setup.angular_setup.wk_ylm, self.setup.elements_basis_shape, self.moment_strategy)
+
+    @property
+    def discrete_operator(self) -> DiscreteOperator:
+        '''The discrete (moment-to-discrete) operator, derived from :attr:`setup`'s angular harmonics.'''
+        return DiscreteOperator(self.setup.angular_setup.ylm, self.setup.elements_basis_shape, self.discrete_strategy)
+
+    @property
     def mass_operator(self) -> MassOperator:
         '''The mass operator, derived from :attr:`setup` (shares its geometric data + FEM matrices).'''
         return MassOperator.from_transport_operator(self.transport_operator, self.mass_strategy)
@@ -188,13 +195,17 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         '''The gather-scatter operator, derived from :attr:`setup`'s cross sections. This is not a linear operator, but a class that implements the required functionality.'''
         return self.gather_scatter_operator_cls(self.setup.solution_domain_data.domain.cross_sections_indexed)
 
+    @property
+    def quadrature_set(self) -> QuadratureSetBase:
+        '''The angular quadrature set (the single angular home lives in :attr:`setup`).'''
+        return self.setup.angular_setup.quadrature_set
+
     def __check_init__(self):
         assert isinstance(self.setup, SolutionSetup), f"setup must be SolutionSetup, but got {type(self.setup)}."
         assert isinstance(self.transport_spec, TransportSpec), f"transport_spec must be TransportSpec, but got {type(self.transport_spec)}."
-        assert isinstance(self.moment_operator, MomentOperator), f"moment_operator must be MomentOperator, but got {type(self.moment_operator)}."
-        assert isinstance(self.discrete_operator, DiscreteOperator), f"discrete_operator must be DiscreteOperator, but got {type(self.discrete_operator)}."
+        assert isinstance(self.moment_strategy, MomentStrategy), f"moment_strategy must be MomentStrategy, but got {type(self.moment_strategy)}."
+        assert isinstance(self.discrete_strategy, DiscreteStrategy), f"discrete_strategy must be DiscreteStrategy, but got {type(self.discrete_strategy)}."
         assert isinstance(self.mass_strategy, MassStrategy), f"mass_strategy must be MassStrategy, but got {type(self.mass_strategy)}."
-        assert isinstance(self.quadrature_set, QuadratureSetBase), f"quadrature_set must be QuadratureSetBase, but got {type(self.quadrature_set)}."
         assert self.n_energy_groups > 0, f"n_energy_groups must be positive, but got {self.n_energy_groups}."
         self.setup.solution_domain_data.domain.cross_sections_indexed.cross_section_data.assert_n_energy_groups(self.n_energy_groups)
         assert self.moment_operator.out_structure() == self.discrete_operator.in_structure(), f"Moment operator out structure {self.moment_operator.out_structure()} must match discrete operator in structure {self.discrete_operator.in_structure()}."
@@ -243,11 +254,13 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         SingleGroupOperator
             The single group operator for energy group g_i.
         ''' 
-        return SingleGroupOperator.from_operators(self.moment_operator,
-                                                  self.transport_operator.to_energy_group(g_i),
-                                                  self.mass_operator,
-                                                  self.discrete_operator,
-                                                  transpose_bool=self.transpose_bool)
+        # Shares the *same* canonical setup (spatial + angular + sweep); only the energy group differs.
+        return SingleGroupOperator(self.setup,
+                                   self.transport_spec.to_energy_group(g_i),
+                                   self.moment_strategy,
+                                   self.discrete_strategy,
+                                   self.mass_strategy,
+                                   self.transpose_bool)
         
     @property
     def lower_block_triangular(self):
@@ -318,7 +331,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
 
     @classmethod
     def from_multigroup_operator(cls, mgop : "MultiGroupOperator"):
-        return cls(mgop.setup, mgop.transport_spec, mgop.moment_operator, mgop.discrete_operator, mgop.quadrature_set, mgop.n_energy_groups, mgop.mass_strategy, mgop.gather_scatter_operator_cls, mgop.transpose_bool)
+        return cls(mgop.setup, mgop.transport_spec, mgop.n_energy_groups, mgop.moment_strategy, mgop.discrete_strategy, mgop.mass_strategy, mgop.gather_scatter_operator_cls, mgop.transpose_bool)
 
     @classmethod
     def from_operators(cls, moment_operator : MomentOperator, discrete_operator : DiscreteOperator,
@@ -327,18 +340,22 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
                        n_energy_groups : int, transpose_bool : bool = False) -> "MultiGroupOperator":
         r'''
         Build a multi-group operator from already-constructed sub-operators. The canonical
-        :attr:`setup` is taken from ``transport_operator``; the :attr:`transport_spec`,
-        :attr:`mass_strategy` and :attr:`gather_scatter_operator_cls` are extracted from the supplied
-        operators. The shared cross-section / geometric / FEM data is therefore deduplicated into the
-        single :attr:`setup` (the transport and gather-scatter copies must already agree).
+        :attr:`setup` bundles the transport operator's spatial data + sweep plan with the angular data
+        (``quadrature_set`` + the harmonics read off the moment/discrete operators); the strategies are
+        extracted from the supplied operators. All the data the sub-operators previously duplicated is
+        therefore deduplicated into the single :attr:`setup`.
         '''
+        setup = SolutionSetup(
+            transport_operator.solution_domain_data,
+            AngularSetup(quadrature_set, moment_operator.wk_yklm, discrete_operator.yklm),
+            transport_operator.sweep_data,
+        )
         return cls(
-            SolutionSetup(transport_operator.solution_domain_data, transport_operator.sweep_data),
+            setup,
             TransportSpec.from_transport_operator(transport_operator),
-            moment_operator,
-            discrete_operator,
-            quadrature_set,
             n_energy_groups,
+            moment_operator.strategy,
+            discrete_operator.strategy,
             mass_operator.strategy,
             type(gather_scatter_operator),
             transpose_bool,

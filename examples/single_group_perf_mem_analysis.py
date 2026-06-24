@@ -71,7 +71,7 @@ def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim,
     scatter_op                = ScatterOperator(solution_domain.domain.cross_sections_indexed, moment_operator.out_structure(), energy_group_in=0, energy_group_out=0)
     source_total              = jnp.broadcast_to(sources[0][None, :, :], (sweep_data.angle.shape[0],) + sources[0].shape) # source for all angles
     discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
-    Aop = SingleGroupOperator.from_operators(moment_operator, transport_operator, mass_operator, discrete_operator)
+    Aop = SingleGroupOperator.from_operators(moment_operator, transport_operator, mass_operator, discrete_operator, quadrature_set)
     return Aop, source_total, solution_domain
 
 
@@ -103,7 +103,7 @@ def _run_multi_angle_operators(dim, degree, pallas = False):
         print(f"\tinv memory     : {mem_inv}")
         print(f"\tgrad inv memory: {mem_inv_grad}")           
         print("\tTotal Operator:")
-        anew = SingleGroupOperator.from_operators(Aop.moment_operator, operator_instance, Aop.mass_operator, Aop.discrete_operator)
+        anew = SingleGroupOperator.from_operators(Aop.moment_operator, operator_instance, Aop.mass_operator, Aop.discrete_operator, angle_i)
         mem_mv, mem_mv_grad   = analyze_grad_memory(SingleGroupOperatorSigmaAllParametrised, anew, method="mv")            
         print(f"\t\tmv memory      : {mem_mv}")
         print(f"\t\tgrad mv memory : {mem_mv_grad}")        
@@ -118,7 +118,7 @@ def _run_multi_angle_operators(dim, degree, pallas = False):
         print(f"\tinv time     : {time_inv      * 1000:.2f} ms")
         print(f"\tgrad inv time: {time_inv_grad * 1000:.2f} ms")
 
-        anew = SingleGroupOperator.from_operators(Aop.moment_operator, operator_instance, Aop.mass_operator, Aop.discrete_operator)
+        anew = SingleGroupOperator.from_operators(Aop.moment_operator, operator_instance, Aop.mass_operator, Aop.discrete_operator, angle_i)
         time_mv, time_mv_grad = analyze_grad_timing(SingleGroupOperatorSigmaAllParametrised, anew, method="mv", n_samples = 3, ignore_n = 1)    
 
         print(f"\tTotal operator")        
@@ -169,7 +169,7 @@ def _solve_single_group(dim, degree, pallas = True):
 
         rhs = Aop.moment_operator.mv(operator_instance.inv(source_total))
         
-        anew                  = SingleGroupOperator.from_operators(Aop.moment_operator, operator_instance, Aop.mass_operator, Aop.discrete_operator)
+        anew                  = SingleGroupOperator.from_operators(Aop.moment_operator, operator_instance, Aop.mass_operator, Aop.discrete_operator, angle_i)
         
         mem_solve , mem_grad_solve = analyze_grad_memory(SingleGroupOperatorSigmaAllParametrised, anew, method=solve_bicgstab)
         

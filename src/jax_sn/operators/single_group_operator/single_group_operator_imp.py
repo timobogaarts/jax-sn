@@ -1,10 +1,10 @@
 import jax.numpy as jnp
 from abc import abstractmethod
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
-from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
+from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator, MomentStrategy, DiscreteStrategy, BatchedMoment, BatchedDiscrete
 from jax_sn.operators.mass_operator import MassOperator, MassStrategy, VmapMass
 from jax_sn.operators.scatter_operator import ScatterOperator
-from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles, TransportSpec, SolutionSetup
+from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles, TransportSpec, SolutionSetup, AngularSetup
 import lineax as lx
 
 import equinox as eqx
@@ -73,13 +73,16 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
     '''
 
     setup              : SolutionSetup
-    r'''Canonical shared data: operator-defining :class:`SolutionDomainData` + operator-agnostic sweep plan.'''
+    r'''Canonical shared data: operator-defining spatial + angular data + operator-agnostic sweep plan. The single home every sub-operator derives from.'''
 
     transport_spec     : TransportSpec
     r'''Data-free transport configuration (strategies + energy group); consumes :attr:`setup` via :meth:`TransportSpec.build`.'''
 
-    moment_operator    : MomentOperator
-    discrete_operator  : DiscreteOperator
+    moment_strategy    : MomentStrategy = eqx.field(default_factory=BatchedMoment)
+    r'''Contraction strategy for the derived :attr:`moment_operator`.'''
+
+    discrete_strategy  : DiscreteStrategy = eqx.field(default_factory=BatchedDiscrete)
+    r'''Contraction strategy for the derived :attr:`discrete_operator`.'''
 
     mass_strategy      : MassStrategy = eqx.field(default_factory=VmapMass)
     r'''Contraction strategy for the derived :attr:`mass_operator`.'''
@@ -91,6 +94,16 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
     def transport_operator(self) -> TransportOperatorMultipleAngles:
         r'''The multi-angle transport operator, derived from :attr:`setup` + :attr:`transport_spec`.'''
         return self.transport_spec.build(self.setup)
+
+    @property
+    def moment_operator(self) -> MomentOperator:
+        r'''The moment operator, derived from :attr:`setup`'s angular harmonics.'''
+        return MomentOperator(self.setup.angular_setup.wk_ylm, self.setup.elements_basis_shape, self.moment_strategy)
+
+    @property
+    def discrete_operator(self) -> DiscreteOperator:
+        r'''The discrete (moment-to-discrete) operator, derived from :attr:`setup`'s angular harmonics.'''
+        return DiscreteOperator(self.setup.angular_setup.ylm, self.setup.elements_basis_shape, self.discrete_strategy)
 
     @property
     def mass_operator(self) -> MassOperator:
@@ -106,8 +119,8 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
     def __check_init__(self):
         assert isinstance(self.setup, SolutionSetup), f"setup must be of type SolutionSetup but is {type(self.setup)}"
         assert isinstance(self.transport_spec, TransportSpec), f"transport_spec must be of type TransportSpec but is {type(self.transport_spec)}"
-        assert isinstance(self.moment_operator, MomentOperator), f"moment_operator must be of type MomentOperator but is {type(self.moment_operator)}"
-        assert isinstance(self.discrete_operator, DiscreteOperator), f"discrete_operator must be of type DiscreteOperator but is {type(self.discrete_operator)}"
+        assert isinstance(self.moment_strategy, MomentStrategy), f"moment_strategy must be of type MomentStrategy but is {type(self.moment_strategy)}"
+        assert isinstance(self.discrete_strategy, DiscreteStrategy), f"discrete_strategy must be of type DiscreteStrategy but is {type(self.discrete_strategy)}"
         assert isinstance(self.mass_strategy, MassStrategy), f"mass_strategy must be of type MassStrategy but is {type(self.mass_strategy)}"
         assert self.mass_operator.out_structure() == self.transport_operator.out_structure(), f"mass_operator out_structure {self.mass_operator.out_structure()} must match transport_operator [note it is inverted] out_structure {self.transport_operator.out_structure()}"
         assert self.inscatter_operator.in_structure() == self.moment_operator.out_structure(), f"inscatter_operator in_structure {self.inscatter_operator.in_structure()} must match moment_operator out_structure {self.moment_operator.out_structure()}"
@@ -144,21 +157,26 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
     @classmethod
     def from_operators(cls, moment_operator : MomentOperator, transport_operator : TransportOperatorMultipleAngles,
                        mass_operator : MassOperator, discrete_operator : DiscreteOperator,
-                       transpose_bool : bool = False) -> "SingleGroupOperator":
+                       quadrature_set, transpose_bool : bool = False) -> "SingleGroupOperator":
         r'''
         Build a single-group operator from already-constructed sub-operators.
 
-        The canonical :attr:`setup` is taken from ``transport_operator`` and the
-        :attr:`transport_spec` / :attr:`mass_strategy` are extracted from the transport and mass
-        operators. The within-group scatter operator is *not* taken as an argument: it is derived
-        from the (shared) cross sections in ``transport_operator``'s solution domain data, which is
-        exactly the duplication this design removes.
+        The canonical :attr:`setup` bundles the transport operator's spatial data + sweep plan with the
+        angular data (``quadrature_set`` + the harmonics read off the moment/discrete operators). The
+        strategies are extracted from the supplied operators. The within-group scatter operator and the
+        moment/discrete operators are *not* stored: they are derived from :attr:`setup`, which is exactly
+        the duplication this design removes.
         '''
+        setup = SolutionSetup(
+            transport_operator.solution_domain_data,
+            AngularSetup(quadrature_set, moment_operator.wk_yklm, discrete_operator.yklm),
+            transport_operator.sweep_data,
+        )
         return cls(
-            SolutionSetup(transport_operator.solution_domain_data, transport_operator.sweep_data),
+            setup,
             TransportSpec.from_transport_operator(transport_operator),
-            moment_operator,
-            discrete_operator,
+            moment_operator.strategy,
+            discrete_operator.strategy,
             mass_operator.strategy,
             transpose_bool,
         )

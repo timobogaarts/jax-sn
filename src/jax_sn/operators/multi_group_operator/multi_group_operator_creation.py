@@ -1,7 +1,7 @@
-from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
 from jax_sn.operators.transport_operator import ForwardStrategy, InversionStrategy, AngleLifting, VmapForward, VmapSweep, VmapAngles
-from jax_sn.operators.transport_operator import TransportSpec, SolutionSetup
+from jax_sn.operators.transport_operator import TransportSpec, SolutionSetup, AngularSetup
 from jax_sn.operators.mass_operator import MassStrategy, VmapMass
+from jax_sn.operators.moment_operator import MomentStrategy, DiscreteStrategy, BatchedMoment, BatchedDiscrete
 from jax_sn.operators.scatter_operator import GatherScatterOperator, GatherScatterOperatorBroadcasted
 from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan, MultiGroupOperator
 from jax_sn.quadrature_set import QuadratureSetBase
@@ -13,6 +13,8 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
                                 inversion_strategy : InversionStrategy = VmapSweep(),
                                 angle_lifting : AngleLifting = VmapAngles(),
                                 sweep_data_kwargs : Dict = {},
+                                moment_strategy : MomentStrategy = BatchedMoment(),
+                                discrete_strategy : DiscreteStrategy = BatchedDiscrete(),
                                 mass_strategy : MassStrategy = VmapMass(),
                                 gather_scatter_operator_cls : Type[GatherScatterOperator] = GatherScatterOperatorBroadcasted,
                                 multi_group_operator_cls : Type[MultiGroupOperatorScan] = MultiGroupOperatorScan,
@@ -62,11 +64,9 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
     sweep_data_type = inversion_strategy.default_sweep_data_type()
     sweep_data     = sweep_data_type.from_domain_quadrature_set(solution_domain.domain, quadrature_set, **sweep_data_kwargs)
 
-    setup                     = SolutionSetup(solution_domain.solution_domain_data, sweep_data)
+    angular_setup             = AngularSetup.from_quadrature_set(quadrature_set, lmax)
+    setup                     = SolutionSetup(solution_domain.solution_domain_data, angular_setup, sweep_data)
     transport_spec            = TransportSpec(forward_strategy, inversion_strategy, angle_lifting, energy_group=0)
 
-    moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
-    discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
-
-    return multi_group_operator_cls(setup, transport_spec, moment_operator, discrete_operator, quadrature_set, n_energy_groups, mass_strategy, gather_scatter_operator_cls, **multi_group_operator_cls_kwargs)
+    return multi_group_operator_cls(setup, transport_spec, n_energy_groups, moment_strategy, discrete_strategy, mass_strategy, gather_scatter_operator_cls, **multi_group_operator_cls_kwargs)
     

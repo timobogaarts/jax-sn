@@ -36,8 +36,9 @@ all sub-operators reference, so there is exactly one location to replace.
 > `PrecomputedGeometricData` / `FEMMatrices` now live in exactly **one** pytree location each — a
 > single `eqx.tree_at` updates every consumer (verified: one `CrossSectionData` node in the MGOp
 > pytree). The fragile `reconstruct_multigroup_operator_including_toposort` is now ~3 single-location
-> surgeries with no `isinstance`/warp special-casing. Remaining: optional polish (C.2) folding the
-> angular data (`quadrature_set` + harmonics) into `SolutionSetup` so moment/discrete derive too.
+> surgeries with no `isinstance`/warp special-casing. The angular data (`quadrature_set` + harmonics)
+> also folded into `SolutionSetup` (C.2), so moment/discrete derive from it too — **every** sub-operator
+> is now a derived view onto one canonical setup. **Done.**
 
 
 ## 3. Transpose-via-subclass breaks substitutability
@@ -214,9 +215,8 @@ take. There are also recurring typos ("Mathetmatical", "hasing", "jax-snj",
    still open.
 3. ~~`__check_init` typo (§7)~~ — done. ~~`as_matrix` assert→raise (§7)~~ — done. The warp
    `AttributeError` path (§5) still open.
-4. ~~Longer term: single ownership for shared operator data (§1)~~ — **essentially done** (Stages
-   A, B, B.1, C.1; only optional angular-folding C.2 remains), see
-   `operator_data_ownership_refactor.md`. ~~sibling-class / flag transposes (§3)~~ — done.
+4. ~~Longer term: single ownership for shared operator data (§1)~~ — **done** (Stages A, B, B.1, C.1,
+   C.2), see `operator_data_ownership_refactor.md`. ~~sibling-class / flag transposes (§3)~~ — done.
 
 ### Progress log (2026-06-12)
 - Quick cleanups: §7 (`as_matrix`, `__check_init__`), §8 (warp-kernel stray imports, `graph_tools`
