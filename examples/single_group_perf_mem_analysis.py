@@ -76,9 +76,11 @@ def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim,
 
 
 def _run_multi_angle_operators(dim, degree, pallas = False):
-    from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, BatchedForward, BatchedSweep, VmapAngles, TransportOperatorBatchedPallas
+    from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, BatchedForward, BatchedSweep, VmapAngles, BatchedPallasSweep
     def _batched_op(*args, batch_size=None):
         return TransportOperator(*args, BatchedForward(batch_size), BatchedSweep(batch_size))
+    def _batched_pallas_op(*args, batch_size=None):
+        return TransportOperator(*args, BatchedForward(batch_size), BatchedPallasSweep(batch_size))
     from jax_sn.operators.transport_operator import BasicSweepData
     
     from jax_sn.operators.single_group_operator import SingleGroupOperator    
@@ -87,7 +89,7 @@ def _run_multi_angle_operators(dim, degree, pallas = False):
         _batched_op : {"batch_size" : 100},             
     }
     if pallas:
-        transportoperators_ma[TransportOperatorBatchedPallas] = {"batch_size" : 100}
+        transportoperators_ma[_batched_pallas_op] = {"batch_size" : 100}
     
     Aop, source_total, solution_domain = _setup_anisotropic_scattering_args(*_get_anisotropic_args(dim, degree))
     
@@ -146,9 +148,11 @@ def solve_bicgstab_stat(Aop, rhs):
 
 
 def _solve_single_group(dim, degree, pallas = True):
-    from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, BatchedForward, BatchedSweep, VmapAngles, TransportOperatorBatchedPallas
+    from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, BatchedForward, BatchedSweep, VmapAngles, BatchedPallasSweep
     def _batched_op(*args, batch_size=None):
         return TransportOperator(*args, BatchedForward(batch_size), BatchedSweep(batch_size))
+    def _batched_pallas_op(*args, batch_size=None):
+        return TransportOperator(*args, BatchedForward(batch_size), BatchedPallasSweep(batch_size))
     from jax_sn.operators.transport_operator import BasicSweepData
     
     from jax_sn.operators.single_group_operator import SingleGroupOperator    
@@ -158,9 +162,9 @@ def _solve_single_group(dim, degree, pallas = True):
     }
     if pallas:
         transportoperators_ma = {
-            TransportOperatorBatchedPallas : {"batch_size" : 100}
+            _batched_pallas_op : {"batch_size" : 100}
         }
-        #transportoperators_ma[TransportOperatorBatchedPallas] = {"batch_size" : 100}
+        #transportoperators_ma[_batched_pallas_op] = {"batch_size" : 100}
     
     Aop, source_total, solution_domain = _setup_anisotropic_scattering_args(*_get_anisotropic_args(dim, degree))
     

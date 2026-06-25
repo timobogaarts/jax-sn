@@ -1,5 +1,5 @@
 '''
-Contains pure JAX implementations of the single-angletransport operator sweep functions.
+Contains pure JAX implementations of the single-angle transport operator sweep functions.
 Both pure VMAP (vmap single-element inversion) and batched (batched single-element inversion). 
 ''' 
 import jax 
@@ -7,9 +7,7 @@ import jax.numpy as jnp
 from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup
 from ..sweep_data import SweepData, BasicSweepData
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
-from jax_sn.solution_domain import FEMMatrices
 from functools import partial
-import numpy as onp
 from typing import TYPE_CHECKING
 from ..transport_operator_strategies import InversionStrategy
 from .angle_liftings import VmapAngles

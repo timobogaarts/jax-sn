@@ -160,7 +160,7 @@ class BasicSweepData(SweepData):
         sweep_data : BasicSweepData
             The computed sweep data.
         '''
-        from jax_sn.domain.graph_generation import compute_levels_domain_safe, compute_levels_domain_safe_jax
+        from jax_sn.domain.graph_generation import compute_levels_domain_safe_jax
         levels = compute_levels_domain_safe_jax(geometric_domain, angle, n_iterations_per_loop)
         levels_argsort = jnp.argsort(levels)
         return cls(levels=levels, levels_argsort=levels_argsort)

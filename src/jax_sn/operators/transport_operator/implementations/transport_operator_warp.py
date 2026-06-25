@@ -15,15 +15,11 @@ subclass. The level-parallel variant carries its level setup inside a
 
 from typing import ClassVar
 
-import jax.numpy as jnp
-
-from ..sweep_data import SweepData, LeveledSweepData, ProvidesLevels
+from ..sweep_data import LeveledSweepData, ProvidesLevels
 from jax_sn.solution_domain import SolutionDomainData
 
-from ..transport_operator_interface import TransportOperator, TransportOperatorMultipleAngles
 from ..transport_operator_strategies import InversionStrategy, AngleLifting
 from .angle_liftings import VmapAngles
-from .transport_operator_forward import BatchedForward
 from .linear_tetrahedron_warp_kernel import (
     single_angle_warp_sweep, multi_angle_warp_sweep,
     level_single_angle_warp_sweep, level_multi_angle_warp_sweep,
@@ -117,31 +113,3 @@ class WarpLevelAngles(AngleLifting):
     def check_compatible(self, single_op):
         assert isinstance(single_op.inversion_strategy, WarpLevelSweep), \
             f"WarpLevelAngles needs a single-angle operator with a WarpLevelSweep inverse, got {type(single_op.inversion_strategy).__name__}"
-
-
-# ---------------------------------------------------------------------------
-# Convenience constructors
-# ---------------------------------------------------------------------------
-def TransportOperatorSequentialWarpSingleAngle(solution_domain_data: SolutionDomainData, sweep_data: SweepData, angle: jnp.ndarray, energy_group: int, batch_size: int) -> TransportOperator:
-    '''Single-angle operator: batched forward + sequential Warp inverse sweep.'''
-    return TransportOperator(solution_domain_data, sweep_data, angle, energy_group, BatchedForward(batch_size), WarpSequentialSweep())
-
-
-def TransportOperatorLevelsWarpSingleAngle(solution_domain_data: SolutionDomainData, sweep_data: LeveledSweepData, angle: jnp.ndarray, energy_group: int, batch_size: int) -> TransportOperator:
-    '''
-    Single-angle operator: batched forward + level-based-parallelism Warp inverse sweep. The toposort
-    must already be a :class:`LeveledSweepData` (build it explicitly via
-    ``LeveledSweepData.from_basic_sweep_data(plain_toposort, max_n_levels)``);
-    construction just validates that.
-    '''
-    return TransportOperator(solution_domain_data, sweep_data, angle, energy_group, BatchedForward(batch_size), WarpLevelSweep())
-
-
-def TransportOperatorSequentialWarpMultipleAngles(transport_operator: TransportOperator) -> TransportOperatorMultipleAngles:
-    '''Multi-angle operator using the fused sequential Warp sweep.'''
-    return TransportOperatorMultipleAngles(transport_operator, WarpSequentialAngles())
-
-
-def TransportOperatorLevelsWarpMultipleAngles(transport_operator: TransportOperator) -> TransportOperatorMultipleAngles:
-    '''Multi-angle operator using the fused level-based-parallelism Warp sweep.'''
-    return TransportOperatorMultipleAngles(transport_operator, WarpLevelAngles())

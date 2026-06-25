@@ -10,9 +10,7 @@ from .implementations.transport_operator_jax import VmapSweep, BatchedSweep
 from .implementations.angle_liftings import VmapAngles
 
 
-from .implementations import transport_operator_pallas
 from .implementations.transport_operator_pallas import (
-    TransportOperatorVmapPallas, TransportOperatorBatchedPallas,
     VmapPallasSweep, BatchedPallasSweep,
 )
 
@@ -33,8 +31,6 @@ __all__ = [
     'SolutionSetup',
     'AngularSetup',
     'TransportSpec',
-    'TransportOperatorVmapPallas',
-    'TransportOperatorBatchedPallas',
     'ForwardStrategy',
     'InversionStrategy',
     'AngleLifting',

@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-from abc import abstractmethod
-from typing import Tuple
-
-import jax
 import numpy as onp
 import warp as wp
-from dataclasses import dataclass
 import jax.numpy as jnp
 
 
@@ -241,15 +236,12 @@ def _sweep_level_kernel_ma(topo_offset_ids : wp.array2d[JAXINDEXDTYPE], padded_l
 # Public Python wrapper
 # =============================================================================
 import equinox as eqx
-from ..transport_operator_interface import TransportOperatorMultipleAngles, TransportOperator
-
 
 
 # =============================================================================
 # Utilities to map from transport operator to flattened array
 # =============================================================================
 from warp.jax_experimental import jax_callable, GraphMode
-from typing import Union
 from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup
 from ..sweep_data import BasicSweepData
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
@@ -281,13 +273,6 @@ def _flatten_base_args(geometric_domain           : GeometricDomain,
         sweep_data.levels_argsort,
         cross_sections.total
     )
-
-def _flatten_transport_operator(transport_operator : Union[TransportOperatorMultipleAngles, TransportOperator]):
-    """Build warp arrays from a transport operator in the same order as the sweep requires them
-
-    All arrays are zero-copy views of the underlying JAX buffers.    
-    """
-    return _flatten_base_args(*transport_operator._inversion_args())
 
 # =============================================================================
 # Sequential warp launches

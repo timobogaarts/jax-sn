@@ -13,13 +13,19 @@ from jax_sn.operators.transport_operator import BasicSweepData
 from jax_sn.solution_domain import BasixLagrangianSimplex, SolutionDomain
 from jax_sn.domain.domain_generation import create_cartesian_setup
 
-from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, VmapForward, VmapSweep, BatchedForward, BatchedSweep, VmapAngles, TransportOperatorBatchedPallas, TransportOperatorVmapPallas
+from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, VmapForward, VmapSweep, BatchedForward, BatchedSweep, VmapAngles, VmapPallasSweep, BatchedPallasSweep
 
 def _vmap_op(*args):
     return TransportOperator(*args, VmapForward(), VmapSweep())
 
 def _batched_op(*args, batch_size=None):
     return TransportOperator(*args, BatchedForward(batch_size), BatchedSweep(batch_size))
+
+def _vmap_pallas_op(*args):
+    return TransportOperator(*args, VmapForward(), VmapPallasSweep())
+
+def _batched_pallas_op(*args, batch_size=None):
+    return TransportOperator(*args, BatchedForward(batch_size), BatchedPallasSweep(batch_size))
 import pyvista as pv
 import equinox as eqx
 import numpy as onp
@@ -55,8 +61,8 @@ def _run_single_angle_operators(dim, degree):
     transportoperators_sa = {    
         _vmap_op : {}, 
         _batched_op : {"batch_size" : 1000}, 
-        TransportOperatorVmapPallas : {},
-        TransportOperatorBatchedPallas: {"batch_size" : 1000}, 
+        _vmap_pallas_op : {},
+        _batched_pallas_op: {"batch_size" : 1000}, 
     }
     solution_domain, sources = setup_base_case(3,2)
     i_tn     = 50
@@ -85,7 +91,7 @@ def _run_single_angle_operators(dim, degree):
 def _run_multi_angle_operators(dim, degree):
     transportoperators_ma = {    
         _batched_op : {"batch_size" : 100},             
-        TransportOperatorBatchedPallas: {"batch_size" : 100}}
+        _batched_pallas_op: {"batch_size" : 100}}
     
     solution_domain, sources = setup_base_case(3,2)    
     

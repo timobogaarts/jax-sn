@@ -216,11 +216,19 @@ def _batched_op(solution_domain_data, sweep_data, angle, energy_group, batch_siz
     _to = jax_sn.operators.transport_operator
     return _to.TransportOperator(solution_domain_data, sweep_data, angle, energy_group, _to.BatchedForward(batch_size), _to.BatchedSweep(batch_size))
 
+def _vmap_pallas_op(solution_domain_data, sweep_data, angle, energy_group):
+    _to = jax_sn.operators.transport_operator
+    return _to.TransportOperator(solution_domain_data, sweep_data, angle, energy_group, _to.VmapForward(), _to.VmapPallasSweep())
+
+def _batched_pallas_op(solution_domain_data, sweep_data, angle, energy_group, batch_size=None):
+    _to = jax_sn.operators.transport_operator
+    return _to.TransportOperator(solution_domain_data, sweep_data, angle, energy_group, _to.BatchedForward(batch_size), _to.BatchedPallasSweep(batch_size))
+
 def _all_transport_operators():
     return {_vmap_op : {}, _batched_op : {'batch_size' : 5} }
 
 def _all_transport_operators_pallas():
-    return {_vmap_op : {}, _batched_op : {'batch_size' : 5} , jax_sn.operators.transport_operator.TransportOperatorVmapPallas : {}, jax_sn.operators.transport_operator.TransportOperatorBatchedPallas : {'batch_size' : 5} }
+    return {_vmap_op : {}, _batched_op : {'batch_size' : 5} , _vmap_pallas_op : {}, _batched_pallas_op : {'batch_size' : 5} }
 
 
 @pytest.fixture(params=[1,2,3], scope='session')

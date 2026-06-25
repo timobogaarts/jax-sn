@@ -10,7 +10,7 @@ import jax
 import numpy as onp
 from functools import partial
 jax.config.update("jax_enable_x64", True)
-from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, VmapForward, VmapSweep, BatchedForward, BatchedSweep, VmapAngles, TransportOperatorBatchedPallas
+from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, VmapForward, VmapSweep, BatchedForward, BatchedSweep, VmapAngles
 
 def _vmap_op(*args):
     return TransportOperator(*args, VmapForward(), VmapSweep())

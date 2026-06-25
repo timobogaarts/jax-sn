@@ -1,17 +1,11 @@
-import jax 
-import jax.numpy as jnp 
-from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup, Domain
+import jax
+import jax.numpy as jnp
+from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup
 from ..sweep_data import BasicSweepData
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
-from jax_sn.solution_domain import FEMMatrices
-from jax_sn.source import Source
 from functools import partial
 from typing import Tuple
-
-import numpy as onp
-from dataclasses import dataclass
 from .transport_operator_jax import _setup_elements_idx_in_precomp_with_omega_n_calculation, _assert_shape
-from ..transport_operator_interface import TransportOperator, SolutionDomainData
 
 from jax.experimental import pallas as pl
 
@@ -429,54 +423,10 @@ def transport_inverse_sweep_multiple_angles_batched_pallas(geometric_domain    :
     f_batch = jax.vmap(transport_inverse_sweep_batched_pallas, in_axes=(None, None, None, None, 0, 0, 0, None ))
     return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data, x, batch_size)
 
-@jax.jit
-def transport_inverse_sweep_multiple_angles_complete_vmap_pallas(geometric_domain    : GeometricDomain,
-                                                            fem_matrices               : FEMMatrices,
-                                                            precomputed_geometric_data : PrecomputedGeometricData,
-                                                            cross_sections             : CrossSectionDataSingleGroup,
-                                                            angle                      : jnp.ndarray,
-                                                            sweep_data  : BasicSweepData,
-                                                            x                          : jnp.ndarray
-                                                            ):
-        '''
-        Perform a complete transport inverse sweep over all elements in the geometric domain for multiple angles using fully vmap-based sweeps with Pallas.
-    
-        vmap is used to compute all Gij_inv, QM_i and Dij_f_p_fm matrices for all elements in a vectorized manner for multiple angles.
-        Then, a fori_loop is used to iterate over the elements in topological order to compute the sweep result. The sweep kernel uses Pallas for improved performance.
-        
-        Parameters
-        ----------
-        geometric_domain : GeometricDomain
-            The geometric domain data.
-        fem_matrices : FEMMatrices
-            The finite element method matrices.
-        precomputed_geometric_data : PrecomputedGeometricData
-            The precomputed geometric data (Jacobian determinants and inverses).
-        cross_sections : CrossSectionDataSingleGroup
-            The cross section data.
-        sweep_data : BasicSweepData
-            The topologically sorted angle data for multiple angles. (batch dimension is the first dimension)
-        x : jnp.ndarray [n_angles, n_elements, n_basis]
-            The source data. Should also be batched over angles (batch dimension is the first dimension).
-        Returns
-        -------
-        jnp.ndarray [n_angles, n_elements, n_basis]
-            The sweep result after performing the transport inverse sweep for all angles.
-        '''
-            
-        _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data, x, True)
-        f_batch = jax.vmap(transport_inverse_sweep_complete_vmap_pallas, in_axes=(None, None, None, None, 0, 0, 0))
-        return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data, x)
-
-
-
-
 # ---------------------------------------------------------------------------
 # Pallas strategies + convenience constructors
 # ---------------------------------------------------------------------------
-from ..sweep_data import SweepData
 from ..transport_operator_strategies import InversionStrategy
-from .transport_operator_forward import VmapForward, BatchedForward
 from .angle_liftings import VmapAngles
 
 
@@ -502,13 +452,3 @@ class BatchedPallasSweep(InversionStrategy):
     @classmethod
     def default_angle_lifting(cls):
         return VmapAngles()
-
-
-def TransportOperatorVmapPallas(solution_domain_data: SolutionDomainData, sweep_data: SweepData, angle: jnp.ndarray, energy_group: int) -> TransportOperator:
-    '''Convenience constructor: vmap forward + Pallas vmap inverse sweep.'''
-    return TransportOperator(solution_domain_data, sweep_data, angle, energy_group, VmapForward(), VmapPallasSweep())
-
-
-def TransportOperatorBatchedPallas(solution_domain_data: SolutionDomainData, sweep_data: SweepData, angle: jnp.ndarray, energy_group: int, batch_size: int = None) -> TransportOperator:
-    '''Convenience constructor: batched forward + Pallas batched inverse sweep.'''
-    return TransportOperator(solution_domain_data, sweep_data, angle, energy_group, BatchedForward(batch_size), BatchedPallasSweep(batch_size))
