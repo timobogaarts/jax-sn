@@ -13,13 +13,16 @@ subclass. The level-parallel variant carries its level setup inside a
 :class:`LeveledSweepData` toposort.
 '''
 
+from typing import ClassVar
+
 import jax.numpy as jnp
 
-from .sweep_data import SweepData, LeveledSweepData, ProvidesLevels
+from ..sweep_data import SweepData, LeveledSweepData, ProvidesLevels
 from jax_sn.solution_domain import SolutionDomainData
 
-from .transport_operator_base import TransportOperator, TransportOperatorMultipleAngles
-from .transport_operator_strategies import InversionStrategy, AngleLifting, BatchedForward, VmapAngles
+from ..transport_operator_interface import TransportOperator, TransportOperatorMultipleAngles
+from ..transport_operator_strategies import InversionStrategy, AngleLifting, VmapAngles
+from .transport_operator_forward import BatchedForward
 from .linear_tetrahedron_warp_kernel import (
     single_angle_warp_sweep, multi_angle_warp_sweep,
     level_single_angle_warp_sweep, level_multi_angle_warp_sweep,
@@ -43,11 +46,17 @@ def _assert_warp_compatible(solution_domain_data: SolutionDomainData):
 class WarpSequentialSweep(InversionStrategy):
     '''Single-angle inverse via the sequential Warp sweep kernel (no batching).'''
 
+    vmappable: ClassVar[bool] = False   # opaque warp kernel: an outer vmap serialises
+
     def invert(self, operator, b):
         return single_angle_warp_sweep(*operator._inversion_args(), b)
 
     def check_compatible(self, operator):
         _assert_warp_compatible(operator.solution_domain_data)
+
+    @classmethod
+    def default_angle_lifting(cls):
+        return WarpSequentialAngles()   # the fused multi-angle kernel, not a vmap of this one
 
 
 class WarpLevelSweep(InversionStrategy):
@@ -60,6 +69,7 @@ class WarpLevelSweep(InversionStrategy):
     '''
 
     required_capabilities = (ProvidesLevels,)
+    vmappable: ClassVar[bool] = False   # opaque warp kernel: an outer vmap serialises
 
     def invert(self, operator, b):
         return level_single_angle_warp_sweep(*operator._inversion_args(), b, operator.sweep_data.level_fwd)
@@ -67,6 +77,10 @@ class WarpLevelSweep(InversionStrategy):
     @classmethod
     def default_sweep_data_type(cls):
         return LeveledSweepData
+
+    @classmethod
+    def default_angle_lifting(cls):
+        return WarpLevelAngles()   # the fused multi-angle kernel, not a vmap of this one
 
     def check_compatible(self, operator):
         super().check_compatible(operator)  # enforces required_capabilities (ProvidesLevels)

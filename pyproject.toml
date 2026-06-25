@@ -35,9 +35,6 @@ dependencies = [
 # GPU warp-kernel transport sweep (transport_operator_warp,
 # linear_tetrahedron_warp_kernel). Guarded by try/except at import.
 warp = ["warp-lang"]
-# Pallas/Triton transport sweep (transport_operator_pallas). Triton ships with
-# CUDA jaxlib, so this extra is only needed for a standalone install.
-pallas = ["triton"]
 # Mesh/BVH and Cartesian-setup helpers (mesh_tools, domain_generation).
 # jax_sbgeom is currently distributed via git, not PyPI; install it directly
 # from its repository if `pip install jax-sn[geometry]` cannot resolve it.

@@ -11,7 +11,7 @@ from jax_sn.solution_domain import SolutionDomain
 def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set : QuadratureSetBase,
                                 forward_strategy : ForwardStrategy = VmapForward(),
                                 inversion_strategy : InversionStrategy = VmapSweep(),
-                                angle_lifting : AngleLifting = VmapAngles(),
+                                angle_lifting : AngleLifting = None,
                                 sweep_data_kwargs : Dict = {},
                                 moment_strategy : MomentStrategy = BatchedMoment(),
                                 discrete_strategy : DiscreteStrategy = BatchedDiscrete(),
@@ -41,7 +41,10 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
         How the (single-angle) transport operator sweep-inverts, by default :class:`VmapSweep`. Also
         determines the toposort type that gets built (via ``default_sweep_data_type``).
     angle_lifting : AngleLifting, optional
-        How the single-angle operator is lifted over the angle axis, by default :class:`VmapAngles`.
+        How the single-angle operator is lifted over the angle axis. ``None`` (default) resolves to
+        ``inversion_strategy.default_angle_lifting()`` -- the generic :class:`VmapAngles` for an
+        ordinary inversion, or the matching fused lift for an opaque-kernel inversion (warp), so the
+        natural multi-angle path is chosen without the caller having to know. Pass one to override.
     sweep_data_kwargs : Dict, optional
         Build kwargs forwarded to ``default_sweep_data_type().from_domain_quadrature_set`` (e.g.
         ``{"maximum_number_of_levels": ...}`` for a level-parallel toposort), by default {}.
@@ -57,6 +60,9 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
     MultiGroupOperator
         The created multi group operator.
     '''
+
+    if angle_lifting is None:
+        angle_lifting = inversion_strategy.default_angle_lifting()
 
     n_energy_groups           = solution_domain.domain.cross_sections_indexed.n_energy_groups
     lmax                      = solution_domain.domain.cross_sections_indexed.l_max

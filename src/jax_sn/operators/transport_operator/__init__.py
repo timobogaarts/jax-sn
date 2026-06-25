@@ -1,28 +1,22 @@
 from .sweep_data import SweepData, BasicSweepData, LeveledSweepData, LevelBasedParallelism, ProvidesLevels
-from .transport_operator_base import TransportOperator, TransportOperatorMultipleAngles
-from .transport_operator_base import TransportOperatorBatched, TransportOperatorVmap, TransportOperatorMultipleAnglesVmap
+from .transport_operator_interface import TransportOperator, TransportOperatorMultipleAngles
 from .solution_setup import SolutionSetup, AngularSetup
 from .transport_spec import TransportSpec
 from .transport_operator_strategies import (
     ForwardStrategy, InversionStrategy, AngleLifting,
-    VmapForward, BatchedForward,
-    VmapSweep, BatchedSweep,
-    VmapAngles,
+    VmapSweep, BatchedSweep, VmapAngles,
 )
-from .transport_operator_imp import (
-    transport_inverse_sweep_complete_vmap,
-    transport_inverse_sweep_batched,
-    transport_inverse_sweep_multiple_angles_batched,
-)
+from .implementations.transport_operator_forward import VmapForward, BatchedForward
 
-from . import transport_operator_pallas
-from .transport_operator_pallas import (
+
+from .implementations import transport_operator_pallas
+from .implementations.transport_operator_pallas import (
     TransportOperatorVmapPallas, TransportOperatorBatchedPallas,
     VmapPallasSweep, BatchedPallasSweep,
 )
 
 try:
-    from . import transport_operator_warp
+    from .implementations import transport_operator_warp
     _warp_available = True
 except ImportError:
     _warp_available = False
@@ -35,9 +29,6 @@ __all__ = [
     'ProvidesLevels',
     'TransportOperator',
     'TransportOperatorMultipleAngles',
-    'TransportOperatorBatched',
-    'TransportOperatorVmap',
-    'TransportOperatorMultipleAnglesVmap',
     'SolutionSetup',
     'AngularSetup',
     'TransportSpec',
@@ -52,11 +43,7 @@ __all__ = [
     'BatchedSweep',
     'VmapAngles',
     'VmapPallasSweep',
-    'BatchedPallasSweep',
-    'transport_inverse_sweep_complete_vmap',
-    'transport_inverse_sweep_batched',
-    'transport_inverse_sweep_multiple_angles_batched',
-    'transport_operator_pallas',
+    'BatchedPallasSweep',    
 ]
 
 # Only export the warp submodule when warp is installed (optional dependency); otherwise

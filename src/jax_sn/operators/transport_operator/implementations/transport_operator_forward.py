@@ -1,13 +1,39 @@
+from typing import TYPE_CHECKING
 import jax
-import jax.numpy as jnp 
-from jax_sn.domain.geometric_domain import GeometricDomain, CrossSectionDataSingleGroup, Domain
+import jax.numpy as jnp
+from jax_sn.domain.geometric_domain import GeometricDomain, CrossSectionDataSingleGroup
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
-from jax_sn.source import Source
-from .transport_operator_imp import gij_kernel_idx_in_precomp, dij_f_p_fm_kernel_idx_in_precomp, _compute_omega_dot_n_Je_inflow_vmap, _compute_omega_dot_n_Je_inflow
 from functools import partial
+from ..transport_operator_strategies import ForwardStrategy
+from .transport_operator_jax import (
+    gij_kernel_idx_in_precomp,
+    dij_f_p_fm_kernel_idx_in_precomp,
+    _compute_omega_dot_n_Je_inflow,
+)
+
+if TYPE_CHECKING:
+    from ..transport_operator_interface import TransportOperator
 
 
+class VmapForward(ForwardStrategy):
+    '''Forward via vmap over all elements.'''
 
+    def forward(self, operator: "TransportOperator", x):
+        return forward_transport_operator_vmap(*operator._forward_data(), x)
+
+
+class BatchedForward(ForwardStrategy):
+    '''Forward via batched vmap + fori_loop. ``batch_size=None`` reproduces the non-batched version.'''
+
+    batch_size: int = None
+
+    def forward(self, operator: "TransportOperator", x):
+        return forward_transport_operator_batch(*operator._forward_data(), x, self.batch_size)
+
+
+#-----------------------------------------------------------
+# Function implementation
+#-----------------------------------------------------------
 
 def _forward_transport_operator_kernel(
                                        elem_idx                   : int,
@@ -88,7 +114,7 @@ def forward_transport_operator_vmap(
         Result of applying the forward transport operator. Shape [n_angles, n_elements, n_basis]
     '''    
     elements_all = jnp.arange(geometric_domain.n_elements)
-    return _single_compute_forward_vmap(
+    return jax.vmap(_single_compute_forward, in_axes=(0, None, None, None, None, None, None))(
         elements_all,
         geometric_domain,
         fem_matrices,
@@ -163,23 +189,4 @@ def _single_compute_forward(
         abs_omega_dot_n_Je,
         x
     )
-
-_single_compute_forward_vmap = jax.vmap(_single_compute_forward, in_axes=(0, None, None, None, None, None, None))
-
-@partial(jax.jit, static_argnums=(6,))
-def forward_transport_operator_multiple_angles_batch(
-    geometric_domain           : GeometricDomain, 
-    fem_matrices               : FEMMatrices, 
-    precomputed_geometric_data : PrecomputedGeometricData,                                      
-    cross_sections             : CrossSectionDataSingleGroup, 
-    angle                      : jnp.ndarray,
-    x                          : jnp.ndarray,  
-    batch_size                 : int) -> jnp.ndarray:
-    f_vmap = jax.vmap(forward_transport_operator_batch, in_axes=(None, None, None, None, 0, 0, None))
-    return f_vmap(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, x, batch_size)
-
-forward_transport_operator_multiple_angles_vmap = partial(forward_transport_operator_multiple_angles_batch, batch_size=None)
-
-
-
 

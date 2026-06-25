@@ -10,7 +10,13 @@ import jax
 import numpy as onp
 from functools import partial
 jax.config.update("jax_enable_x64", True)
-from jax_sn.operators.transport_operator import TransportOperatorBatched, TransportOperatorMultipleAnglesVmap, TransportOperatorVmap, TransportOperatorBatchedPallas, TransportOperatorMultipleAngles
+from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, VmapForward, VmapSweep, BatchedForward, BatchedSweep, VmapAngles, TransportOperatorBatchedPallas
+
+def _vmap_op(*args):
+    return TransportOperator(*args, VmapForward(), VmapSweep())
+
+def _batched_op(*args, batch_size=None):
+    return TransportOperator(*args, BatchedForward(batch_size), BatchedSweep(batch_size))
 import equinox as eqx
 from typing import List
 from jax_sn.tools.mesh_tools import _pad_last_dimension
@@ -46,7 +52,7 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
 
     def setup_mgop(dim, degree):
         MGOP, source_eg0, solution_domain = _setup_bb_args(dim,degree, base_region_sizes(), base_resolutions(), 5.0, 10, 3)
-        transport_operator                = TransportOperatorMultipleAnglesVmap(operator_cls(MGOP.transport_operator.solution_domain_data, MGOP.transport_operator.sweep_data, 0, **kwargs))
+        transport_operator                = TransportOperatorMultipleAngles(operator_cls(MGOP.transport_operator.solution_domain_data, MGOP.transport_operator.sweep_data, 0, **kwargs), VmapAngles())
         MGOP                              = eqx.tree_at(lambda t : t.transport_operator, MGOP, transport_operator)
         return MGOP, source_eg0, solution_domain
 
@@ -171,10 +177,10 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
     # 
 
 
-run_all_for_particular_operator(3,2, TransportOperatorBatched, batch_size=100)
+run_all_for_particular_operator(3,2, _batched_op, batch_size=100)
 run_all_for_particular_operator(3,2, TransportOperatorBatchedPallas, batch_size=100)
 
-run_all_for_particular_operator(2,2, TransportOperatorBatched, batch_size=100)
+run_all_for_particular_operator(2,2, _batched_op, batch_size=100)
 run_all_for_particular_operator(2,2, TransportOperatorBatchedPallas, batch_size=100)
 
 # Sample Output RTx3080:

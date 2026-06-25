@@ -6,7 +6,7 @@ import numpy as onp
 from typing import Tuple
 from functools import partial
 
-from jax_sn.operators.transport_operator import TransportOperatorBatched, TransportOperatorMultipleAnglesVmap
+from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, BatchedForward, BatchedSweep, VmapAngles
 from jax_sn.domain import Domain
 from jax_sn.operators.transport_operator import BasicSweepData
 from jax_sn.domain.cross_sections import CrossSectionData
@@ -53,7 +53,7 @@ def _setup_operators(solution_domain: SolutionDomain, sources: jnp.ndarray, quad
     lmax                      = solution_domain.domain.cross_sections_indexed.l_max
 
     sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
-    transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorBatched(solution_domain.solution_domain_data, sweep_data, quadrature_set.angles, 0, batch_size))
+    transport_operator        = TransportOperatorMultipleAngles(TransportOperator(solution_domain.solution_domain_data, sweep_data, quadrature_set.angles, 0, BatchedForward(batch_size), BatchedSweep(batch_size)), VmapAngles())
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)    
     discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)

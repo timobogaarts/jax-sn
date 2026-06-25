@@ -20,11 +20,11 @@ class AngularSetup(eqx.Module):
     quadrature_set : QuadratureSetBase
     '''The angular quadrature set (angles + weights).'''
 
-    wk_ylm         : jnp.ndarray   #[n_angles, n_moments]
-    r'''Weighted harmonics :math:`w_k Y_{l,m}(\Omega_k)` -- the moment operator's matrix.'''
+    wk_ylm         : jnp.ndarray
+    r'''Weighted harmonics :math:`w_k Y_{l,m}(\Omega_k)` -- the moment operator's matrix. [n_angles, n_moments]'''
 
-    ylm            : jnp.ndarray   #[n_angles, n_moments]
-    r'''Unweighted harmonics :math:`Y_{l,m}(\Omega_k)` -- the discrete operator's matrix.'''
+    ylm            : jnp.ndarray   
+    r'''Unweighted harmonics :math:`Y_{l,m}(\Omega_k)` -- the discrete operator's matrix. [n_angles, n_moments]'''
 
     @classmethod
     def from_quadrature_set(cls, quadrature_set : QuadratureSetBase, l_max : int) -> "AngularSetup":

@@ -357,7 +357,7 @@ def setup_bb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_d
 def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order):
     '''Construct all operators (transport, mass, moment, scatter) and the MultiGroupOperatorScan for the breeding blanket problem.'''
     from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
-    from jax_sn.operators.transport_operator import TransportOperatorMultipleAnglesVmap, TransportOperatorVmap
+    from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, VmapForward, VmapSweep, VmapAngles
     from jax_sn.operators.mass_operator import MassOperator
     from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
     from jax_sn.operators.transport_operator import BasicSweepData
@@ -370,7 +370,7 @@ def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_o
     lmax                      = solution_domain.domain.cross_sections_indexed.l_max
 
     sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
-    transport_operator        = TransportOperatorMultipleAnglesVmap(TransportOperatorVmap(solution_domain.solution_domain_data, sweep_data, quadrature_set.angles, 0))
+    transport_operator        = TransportOperatorMultipleAngles(TransportOperator(solution_domain.solution_domain_data, sweep_data, quadrature_set.angles, 0, VmapForward(), VmapSweep()), VmapAngles())
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)    
     

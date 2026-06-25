@@ -1,32 +1,25 @@
 import equinox as eqx
 
 from .solution_setup import SolutionSetup
-from .transport_operator_base import TransportOperator, TransportOperatorMultipleAngles
+from .transport_operator_interface import TransportOperator, TransportOperatorMultipleAngles
 from .transport_operator_strategies import (
     ForwardStrategy, InversionStrategy, AngleLifting,
-    VmapForward, VmapSweep, VmapAngles,
+    VmapSweep, VmapAngles,
 )
-
 
 class TransportSpec(eqx.Module):
     r'''
-    Per-operator *configuration* of a (multi-angle) transport operator -- the ``spec`` in the
-    ``operator = setup + spec + strategy`` decomposition.
-
-    This holds **no data**: only the strategy selections and the energy group. All precomputed data
-    (spatial *and* the sweep execution plan) lives in the :class:`SolutionSetup` that a composite
-    operator owns; :meth:`build` injects that setup to produce the operator. Keeping the spec
-    data-free means a composite can hold and forward it without knowing any transport-strategy
-    internals, and it partitions cleanly as a static pytree (no arrays) under ``jit``/``grad``.
+    Configuration of a multi-angle transport operator. Contains no data; only strategies (how to invert single angle and how to 
+    lift to multiple angles) and the energy group index. The operator's data is provided by a :class:`SolutionSetup` 
     '''
 
-    forward_strategy   : ForwardStrategy   = eqx.field(default_factory=VmapForward)
+    forward_strategy   : ForwardStrategy 
     '''How to apply the single-angle forward operator. See :mod:`.transport_operator_strategies`.'''
 
-    inversion_strategy : InversionStrategy = eqx.field(default_factory=VmapSweep)
+    inversion_strategy : InversionStrategy
     '''How to sweep-invert the single-angle operator.'''
 
-    angle_lifting      : AngleLifting      = eqx.field(default_factory=VmapAngles)
+    angle_lifting      : AngleLifting
     '''How to lift the single-angle operator over the angle axis.'''
 
     energy_group       : int = 0

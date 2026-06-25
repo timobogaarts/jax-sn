@@ -1,5 +1,7 @@
 Theory
 ==================
+The theory section contains an up-to-date overview of the derivation of the implemented model.
+
 
 .. toctree::
    :maxdepth: 2

@@ -241,7 +241,7 @@ def _sweep_level_kernel_ma(topo_offset_ids : wp.array2d[JAXINDEXDTYPE], padded_l
 # Public Python wrapper
 # =============================================================================
 import equinox as eqx
-from .transport_operator_base import TransportOperatorMultipleAngles, TransportOperator, TransportOperatorMultipleAnglesVmap
+from ..transport_operator_interface import TransportOperatorMultipleAngles, TransportOperator
 
 
 
@@ -251,7 +251,7 @@ from .transport_operator_base import TransportOperatorMultipleAngles, TransportO
 from warp.jax_experimental import jax_callable, GraphMode
 from typing import Union
 from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup
-from .sweep_data import BasicSweepData
+from ..sweep_data import BasicSweepData
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 
 def _flatten_base_args(geometric_domain           : GeometricDomain,
@@ -477,7 +477,7 @@ def _level_single_angle_sweep(
 level_sweep_sa_jax = jax_callable(_level_single_angle_sweep, graph_mode=GraphMode.NONE)
 
 
-from .sweep_data import LevelBasedParallelism
+from ..sweep_data import LevelBasedParallelism
 
 @eqx.filter_jit
 def level_single_angle_warp_sweep(             geometric_domain           : GeometricDomain,

@@ -1,7 +1,7 @@
 import jax 
 import jax.numpy as jnp 
 from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup, Domain
-from .sweep_data import BasicSweepData
+from ..sweep_data import BasicSweepData
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from jax_sn.solution_domain import FEMMatrices
 from jax_sn.source import Source
@@ -10,8 +10,8 @@ from typing import Tuple
 
 import numpy as onp
 from dataclasses import dataclass
-from .transport_operator_imp import _setup_elements_idx_in_precomp_with_omega_n_calculation, _assert_shape
-from .transport_operator_base import TransportOperator, SolutionDomainData
+from .transport_operator_jax import _setup_elements_idx_in_precomp_with_omega_n_calculation, _assert_shape
+from ..transport_operator_interface import TransportOperator, SolutionDomainData
 
 from jax.experimental import pallas as pl
 
@@ -474,8 +474,9 @@ def transport_inverse_sweep_multiple_angles_complete_vmap_pallas(geometric_domai
 # ---------------------------------------------------------------------------
 # Pallas strategies + convenience constructors
 # ---------------------------------------------------------------------------
-from .sweep_data import SweepData
-from .transport_operator_strategies import InversionStrategy, VmapForward, BatchedForward
+from ..sweep_data import SweepData
+from ..transport_operator_strategies import InversionStrategy
+from .transport_operator_forward import VmapForward, BatchedForward
 
 
 class VmapPallasSweep(InversionStrategy):

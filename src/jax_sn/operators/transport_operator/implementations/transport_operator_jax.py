@@ -1,13 +1,14 @@
+'''
+Contains pure JAX implementations of the single-angletransport operator sweep functions.
+Both pure VMAP (vmap single-element inversion) and batched (batched single-element inversion). 
+''' 
 import jax 
 import jax.numpy as jnp 
-from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup, Domain
-from .sweep_data import SweepData, BasicSweepData
+from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup
+from ..sweep_data import SweepData, BasicSweepData
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from jax_sn.solution_domain import FEMMatrices
-from jax_sn.source import Source
 from functools import partial
-from typing import Tuple
-
 import numpy as onp
 
 
@@ -355,8 +356,6 @@ def _collapse_dij(elem_idx : int, dij_f_p_fm : jnp.ndarray,  sweep_result : jnp.
     '''  
     values = sweep_result[etoe[elem_idx], :]        
     return jnp.einsum("f, fij, fj->i",abs_omega_dot_n_Je, dij_f_p_fm, values) 
-
-_collapse_dij_vmap = jax.vmap(_collapse_dij, in_axes=(0,0,None, None, 0))
     
 
 def _sweep_elements(elements_topological_sorting : jnp.ndarray, sweep_result : jnp.ndarray, 
@@ -377,10 +376,7 @@ def _sweep_elements(elements_topological_sorting : jnp.ndarray, sweep_result : j
         Sweep over all elements:                      ~730 ms
     Batching the sweep over angles at least parallelises this part, but further optimizations would be very beneficial.
 
-    TODO: Implement custom kernels for this part to reduce memory movement and increase performance.
-
     A first step using pallas is in transport_operator_pallas.py [increases performance up to 10x], but further optimizations might be possible. 
-
 
     Parameters
     ----------
@@ -465,82 +461,4 @@ def _assert_shape(geometric_domain           : GeometricDomain,
     else:
         assert x.shape == (geometric_domain.n_elements, fem_matrices.mass_matrix.shape[0]), f"sweep_result shape {x.shape} does not match expected (n_elements, n_basis): {(geometric_domain.n_elements, fem_matrices.mass_matrix.shape[0])}"
         assert cross_sections.total.shape[0] == geometric_domain.n_elements, f"cross_sections shape {cross_sections.total.shape} does not match expected (n_elements, ): {(geometric_domain.n_elements, )}"        
-
-
-#=============================================================================================================================================================================
-# Multiple angle functions
-#=============================================================================================================================================================================
-
-                                
-
-@partial(jax.jit, static_argnums = (7,))
-def transport_inverse_sweep_multiple_angles_batched(geometric_domain           : GeometricDomain,
-                                                    fem_matrices               : FEMMatrices,
-                                                    precomputed_geometric_data : PrecomputedGeometricData,
-                                                    cross_sections             : CrossSectionDataSingleGroup,
-                                                    angle                      : jnp.ndarray,
-                                                    sweep_data  : BasicSweepData,
-                                                    x                          : jnp.ndarray,
-                                                    batch_size                 : int):
-    '''
-    Perform a complete transport inverse sweep over all elements in the geometric domain for multiple angles using batched vmap and fori_loop.
-
-    vmap is used to compute all Gij_inv, QM_i and Dij_f_p_fm matrices for all elements in a vectorized manner for a fixed batch size and multiple angles.
-    Then, a fori_loop is used to iterate over the elements in topological order to compute the sweep result in batches.
-    This takes significantly less memory than using the complete vmap version.
-
-    Parameters
-    ----------
-    geometric_domain : GeometricDomain
-        The geometric domain data.
-    fem_matrices : FEMMatrices
-        The finite element method matrices.
-    precomputed_geometric_data : PrecomputedGeometricData
-        The precomputed geometric data (Jacobian determinants and inverses).
-    cross_sections : CrossSectionDataSingleGroup
-        The cross section data.
-    sweep_data : BasicSweepData
-        The topologically sorted angle data for multiple angles. (batch dimension is the first dimension)
-    x : jnp.ndarray [n_angles, n_elements, n_basis]
-        The x vector to apply the transport inverse sweep to.
-    '''
-        
-    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data, x, True)
-    f_batch = jax.vmap(transport_inverse_sweep_batched, in_axes=(None, None, None, None, 0, 0, 0, None ))
-    return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data, x, batch_size)
-
-@jax.jit
-def transport_inverse_sweep_multiple_angles_complete_vmap(geometric_domain           : GeometricDomain,
-                                                          fem_matrices               : FEMMatrices,
-                                                          precomputed_geometric_data : PrecomputedGeometricData,
-                                                          cross_sections             : CrossSectionDataSingleGroup,
-                                                          angle                      : jnp.ndarray,
-                                                          sweep_data  : BasicSweepData,
-                                                          x                          : jnp.ndarray
-                                                          ):
-    '''
-    Perform a complete transport inverse sweep over all elements in the geometric domain for multiple angles using batched vmap and fori_loop.
-
-    vmap is used to compute all Gij_inv, QM_i and Dij_f_p_fm matrices for all elements in a vectorized manner for a fixed batch size and multiple angles.
-    Then, a fori_loop is used to iterate over the elements in topological order to compute the sweep result in batches.
-    This takes significantly less memory than using the complete vmap version.
-
-    Parameters
-    ----------
-    geometric_domain : GeometricDomain
-        The geometric domain data.
-    fem_matrices : FEMMatrices
-        The finite element method matrices.
-    precomputed_geometric_data : PrecomputedGeometricData
-        The precomputed geometric data (Jacobian determinants and inverses).
-    cross_sections : CrossSectionDataSingleGroup
-        The cross section data.
-    sweep_data : BasicSweepData
-        The topologically sorted angle data for multiple angles. (batch dimension is the first dimension)
-    x : jnp.ndarray [n_angles, n_elements, n_basis]
-        The x vector to apply the transport inverse sweep to.
-    '''        
-    _assert_shape(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data, x, True)
-    f_batch = jax.vmap(transport_inverse_sweep_complete_vmap, in_axes=(None, None, None, None, 0, 0, 0))
-    return f_batch(geometric_domain, fem_matrices, precomputed_geometric_data, cross_sections, angle, sweep_data, x)
 

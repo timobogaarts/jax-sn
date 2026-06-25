@@ -1,0 +1,310 @@
+{
+  "discrete.mv": {
+    "BatchedDiscrete": {
+      "status": "ok",
+      "peak_mb": 201.77371215820312,
+      "t_ms": 8.069233500464179,
+      "reason": ""
+    }
+  },
+  "MGOp.mv": {
+    "VmapSweep": {
+      "status": "ok",
+      "peak_mb": 3682.5738830566406,
+      "t_ms": 5633.220543999414,
+      "reason": ""
+    },
+    "BatchedSweep(1000)": {
+      "status": "ok",
+      "peak_mb": 929.3085174560547,
+      "t_ms": 5737.009997999849,
+      "reason": ""
+    },
+    "VmapPallasSweep": {
+      "status": "ok",
+      "peak_mb": 3682.5738677978516,
+      "t_ms": 652.1661529986886,
+      "reason": ""
+    },
+    "BatchedPallasSweep(1000)": {
+      "status": "ok",
+      "peak_mb": 931.5057678222656,
+      "t_ms": 652.8437180004403,
+      "reason": ""
+    },
+    "WarpSequentialSweep": {
+      "status": "ok",
+      "peak_mb": 885.5178298950195,
+      "t_ms": 3147.620812000241,
+      "reason": ""
+    },
+    "WarpLevelSweep": {
+      "status": "ok",
+      "peak_mb": 886.226448059082,
+      "t_ms": 169.61540400006925,
+      "reason": ""
+    }
+  },
+  "MGOp.Tmv": {
+    "VmapSweep": {
+      "status": "ok",
+      "peak_mb": 3979.2064208984375,
+      "t_ms": 5699.105247000261,
+      "reason": ""
+    },
+    "BatchedSweep(1000)": {
+      "status": "ok",
+      "peak_mb": 1225.9410552978516,
+      "t_ms": 5855.370385999777,
+      "reason": ""
+    },
+    "VmapPallasSweep": {
+      "status": "ok",
+      "peak_mb": 3979.2064056396484,
+      "t_ms": 632.2173249991465,
+      "reason": ""
+    },
+    "BatchedPallasSweep(1000)": {
+      "status": "ok",
+      "peak_mb": 1228.1383056640625,
+      "t_ms": 673.8579100001516,
+      "reason": ""
+    },
+    "WarpSequentialSweep": {
+      "status": "ok",
+      "peak_mb": 1181.6925659179688,
+      "t_ms": 3279.6295400003146,
+      "reason": ""
+    },
+    "WarpLevelSweep": {
+      "status": "ok",
+      "peak_mb": 1182.4011840820312,
+      "t_ms": 174.4210300003033,
+      "reason": ""
+    }
+  },
+  "SGOp.mv": {
+    "VmapSweep": {
+      "status": "ok",
+      "peak_mb": 3258.106903076172,
+      "t_ms": 1413.5924059992249,
+      "reason": ""
+    },
+    "BatchedSweep(1000)": {
+      "status": "ok",
+      "peak_mb": 507.9827651977539,
+      "t_ms": 1410.0215720009146,
+      "reason": ""
+    },
+    "VmapPallasSweep": {
+      "status": "ok",
+      "peak_mb": 3287.065887451172,
+      "t_ms": 151.3241829998151,
+      "reason": ""
+    },
+    "BatchedPallasSweep(1000)": {
+      "status": "ok",
+      "peak_mb": 510.1800231933594,
+      "t_ms": 153.5840279993863,
+      "reason": ""
+    },
+    "WarpSequentialSweep": {
+      "status": "ok",
+      "peak_mb": 486.0099792480469,
+      "t_ms": 755.1351490001252,
+      "reason": ""
+    },
+    "WarpLevelSweep": {
+      "status": "ok",
+      "peak_mb": 486.7185974121094,
+      "t_ms": 34.521507999670575,
+      "reason": ""
+    }
+  },
+  "mass.mv": {
+    "VmapMass": {
+      "status": "ok",
+      "peak_mb": 399.9657287597656,
+      "t_ms": 13.625716001115507,
+      "reason": ""
+    },
+    "LaxMass": {
+      "status": "ok",
+      "peak_mb": 268.1297912597656,
+      "t_ms": 12.507724000897724,
+      "reason": ""
+    }
+  },
+  "moment.mv": {
+    "BatchedMoment": {
+      "status": "ok",
+      "peak_mb": 201.77371215820312,
+      "t_ms": 5.880867667049945,
+      "reason": ""
+    },
+    "StreamingMoment": {
+      "status": "ok",
+      "peak_mb": 199.6055908203125,
+      "t_ms": 21.295804999681422,
+      "reason": ""
+    }
+  },
+  "scatter.gather": {
+    "GatherScatterOperatorBroadcasted": {
+      "status": "ok",
+      "peak_mb": 330.5113983154297,
+      "t_ms": 1.4773084999433195,
+      "reason": ""
+    }
+  },
+  "transport.forward": {
+    "VmapForward": {
+      "status": "ok",
+      "peak_mb": 32.97234344482422,
+      "t_ms": 1.497068166675793,
+      "reason": ""
+    },
+    "BatchedForward(1000)": {
+      "status": "ok",
+      "peak_mb": 22.654075622558594,
+      "t_ms": 2.8095374997671265,
+      "reason": ""
+    }
+  },
+  "transport.inv": {
+    "VmapSweep": {
+      "status": "ok",
+      "peak_mb": 67.57267761230469,
+      "t_ms": 679.6811089989205,
+      "reason": ""
+    },
+    "BatchedSweep(1000)": {
+      "status": "ok",
+      "peak_mb": 29.772972106933594,
+      "t_ms": 654.8688140010199,
+      "reason": ""
+    },
+    "VmapPallasSweep": {
+      "status": "ok",
+      "peak_mb": 69.40372467041016,
+      "t_ms": 81.01362700108439,
+      "reason": ""
+    },
+    "BatchedPallasSweep(1000)": {
+      "status": "ok",
+      "peak_mb": 29.80347442626953,
+      "t_ms": 72.53467099872069,
+      "reason": ""
+    },
+    "WarpSequentialSweep": {
+      "status": "ok",
+      "peak_mb": 29.120521545410156,
+      "t_ms": 272.73923000029754,
+      "reason": ""
+    },
+    "WarpLevelSweep": {
+      "status": "ok",
+      "peak_mb": 29.13036346435547,
+      "t_ms": 3.9076810003280116,
+      "reason": ""
+    }
+  },
+  "transport.inv.multiangle": {
+    "VmapSweep + VmapAngles": {
+      "status": "ok",
+      "peak_mb": 3155.1902618408203,
+      "t_ms": 1384.0415089998714,
+      "reason": ""
+    },
+    "VmapSweep + WarpSequentialAngles": {
+      "status": "skip",
+      "peak_mb": null,
+      "t_ms": null,
+      "reason": "WarpSequentialAngles needs a single-angle operator with a WarpSequentialSweep inverse, got VmapSweep"
+    },
+    "VmapSweep + WarpLevelAngles": {
+      "status": "skip",
+      "peak_mb": null,
+      "t_ms": null,
+      "reason": "WarpLevelAngles needs a single-angle operator with a WarpLevelSweep inverse, got VmapSweep"
+    },
+    "BatchedSweep(1000) + VmapAngles": {
+      "status": "ok",
+      "peak_mb": 401.37569427490234,
+      "t_ms": 1376.9964690000052,
+      "reason": ""
+    },
+    "BatchedSweep(1000) + WarpSequentialAngles": {
+      "status": "skip",
+      "peak_mb": null,
+      "t_ms": null,
+      "reason": "WarpSequentialAngles needs a single-angle operator with a WarpSequentialSweep inverse, got BatchedSw"
+    },
+    "BatchedSweep(1000) + WarpLevelAngles": {
+      "status": "skip",
+      "peak_mb": null,
+      "t_ms": null,
+      "reason": "WarpLevelAngles needs a single-angle operator with a WarpLevelSweep inverse, got BatchedSweep"
+    },
+    "VmapPallasSweep + VmapAngles": {
+      "status": "ok",
+      "peak_mb": 3287.0261993408203,
+      "t_ms": 133.72813900059555,
+      "reason": ""
+    },
+    "VmapPallasSweep + WarpSequentialAngles": {
+      "status": "skip",
+      "peak_mb": null,
+      "t_ms": null,
+      "reason": "WarpSequentialAngles needs a single-angle operator with a WarpSequentialSweep inverse, got VmapPalla"
+    },
+    "VmapPallasSweep + WarpLevelAngles": {
+      "status": "skip",
+      "peak_mb": null,
+      "t_ms": null,
+      "reason": "WarpLevelAngles needs a single-angle operator with a WarpLevelSweep inverse, got VmapPallasSweep"
+    },
+    "BatchedPallasSweep(1000) + VmapAngles": {
+      "status": "ok",
+      "peak_mb": 403.5729522705078,
+      "t_ms": 135.0594089999504,
+      "reason": ""
+    },
+    "BatchedPallasSweep(1000) + WarpSequentialAngles": {
+      "status": "skip",
+      "peak_mb": null,
+      "t_ms": null,
+      "reason": "WarpSequentialAngles needs a single-angle operator with a WarpSequentialSweep inverse, got BatchedPa"
+    },
+    "BatchedPallasSweep(1000) + WarpLevelAngles": {
+      "status": "skip",
+      "peak_mb": null,
+      "t_ms": null,
+      "reason": "WarpLevelAngles needs a single-angle operator with a WarpLevelSweep inverse, got BatchedPallasSweep"
+    },
+    "WarpSequentialSweep + WarpSequentialAngles": {
+      "status": "ok",
+      "peak_mb": 354.1343536376953,
+      "t_ms": 739.6779410009913,
+      "reason": ""
+    },
+    "WarpSequentialSweep + WarpLevelAngles": {
+      "status": "skip",
+      "peak_mb": null,
+      "t_ms": null,
+      "reason": "WarpLevelAngles needs a single-angle operator with a WarpLevelSweep inverse, got WarpSequentialSweep"
+    },
+    "WarpLevelSweep + WarpSequentialAngles": {
+      "status": "skip",
+      "peak_mb": null,
+      "t_ms": null,
+      "reason": "WarpSequentialAngles needs a single-angle operator with a WarpSequentialSweep inverse, got WarpLevel"
+    },
+    "WarpLevelSweep + WarpLevelAngles": {
+      "status": "ok",
+      "peak_mb": 354.8429718017578,
+      "t_ms": 14.862796999295824,
+      "reason": ""
+    }
+  }
+}

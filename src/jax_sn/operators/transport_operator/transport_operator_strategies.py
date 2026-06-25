@@ -12,8 +12,9 @@ A new method is a single small class implementing one action method named after 
 pair (lifting). Forward and inversion strategies are independent fields on the operator, so any
 forward composes with any inversion (``F + I`` classes, not ``F x I`` operators).
 
-The pallas and warp strategies live next to their kernels (``transport_operator_pallas.py``,
-``transport_operator_warp.py``) so this module stays free of optional/heavy dependencies.
+This module holds only the *abstract* strategy bases. Each concrete implementation lives next to
+its kernel under ``implementations/`` (e.g. ``implementations/transport_operator_forward.py``,
+``transport_operator_pallas.py``, ``transport_operator_warp.py``).
 '''
 
 import equinox as eqx
@@ -21,11 +22,10 @@ from abc import abstractmethod
 from typing import TYPE_CHECKING, Type, ClassVar, Tuple
 
 from .sweep_data import BasicSweepData, SweepData
-from .transport_operator_imp import transport_inverse_sweep_batched, transport_inverse_sweep_complete_vmap
-from .transport_operator_forward import forward_transport_operator_vmap, forward_transport_operator_batch
+from .implementations.transport_operator_jax import transport_inverse_sweep_batched, transport_inverse_sweep_complete_vmap
 
 if TYPE_CHECKING:
-    from .transport_operator_base import TransportOperator
+    from .transport_operator_interface import TransportOperator
 
 
 # ---------------------------------------------------------------------------
@@ -37,22 +37,6 @@ class ForwardStrategy(eqx.Module):
     @abstractmethod
     def forward(self, operator: "TransportOperator", x):
         ...
-
-
-class VmapForward(ForwardStrategy):
-    '''Forward via vmap over all elements.'''
-
-    def forward(self, operator: "TransportOperator", x):
-        return forward_transport_operator_vmap(*operator._forward_data(), x)
-
-
-class BatchedForward(ForwardStrategy):
-    '''Forward via batched vmap + fori_loop. ``batch_size=None`` reproduces the non-batched version.'''
-
-    batch_size: int = None
-
-    def forward(self, operator: "TransportOperator", x):
-        return forward_transport_operator_batch(*operator._forward_data(), x, self.batch_size)
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +68,12 @@ class InversionStrategy(eqx.Module):
     '''Sweep-data capability interfaces this strategy requires (e.g. ``(ProvidesLevels,)``). Empty
     means any :class:`~jax_sn.operators.transport_operator.SweepData` is acceptable.'''
 
+    vmappable: ClassVar[bool] = True
+    '''Whether an outer ``vmap`` over this inversion vectorises. ``False`` for an opaque external
+    kernel (e.g. warp), where ``vmap`` cannot see into the call and falls back to a serial loop --
+    so a vmap-based lift (see :attr:`AngleLifting.vmaps_inner`) over it silently serialises. This is
+    a *performance* fact, kept separate from the *correctness* check in :meth:`check_compatible`.'''
+
     @abstractmethod
     def invert(self, operator: "TransportOperator", b):
         ...
@@ -93,6 +83,14 @@ class InversionStrategy(eqx.Module):
         '''The concrete, minimal sweep-data type a creation helper should build for this strategy.
         Default: the plain sort (provides no extra capability).'''
         return BasicSweepData
+
+    @classmethod
+    def default_angle_lifting(cls) -> "AngleLifting":
+        '''The multi-angle lift a creation helper should use by default for this inversion. Default:
+        the generic :class:`VmapAngles`. An opaque-kernel inversion (one with ``vmappable = False``)
+        overrides this to its matching *fused* lift, so the natural multi-angle path is chosen without
+        the caller having to know -- while any lift remains explicitly selectable.'''
+        return VmapAngles()
 
     def check_compatible(self, operator: "TransportOperator"):
         '''Assert the operator's sweep data provides every capability in :attr:`required_capabilities`.
@@ -131,6 +129,12 @@ class AngleLifting(eqx.Module):
     owns the lift, so the single-angle class stays ignorant of the multi-angle space.
     '''
 
+    vmaps_inner: ClassVar[bool] = False
+    '''Whether this lift works by ``vmap``-ing the wrapped single-angle op. ``True`` for the generic
+    :class:`VmapAngles`; ``False`` for a fused kernel that handles the angles itself. A ``True`` lift
+    over an inversion with ``vmappable = False`` serialises -- the one combination a benchmark should
+    not select (it is still constructible; this only flags it).'''
+
     @abstractmethod
     def forward(self, single_op: "TransportOperator", x):
         ...
@@ -152,6 +156,8 @@ class VmapAngles(AngleLifting):
     needs to know how to vmap.
     '''
 
+    vmaps_inner: ClassVar[bool] = True
+
     @staticmethod
     def _map_over_angles(single_op: "TransportOperator", leading, fn):
         def one_angle(angle_i, sweep_i, v_i):
@@ -164,3 +170,5 @@ class VmapAngles(AngleLifting):
 
     def invert(self, single_op: "TransportOperator", b):
         return self._map_over_angles(single_op, b, lambda op, v: op._invert_internal(v))
+
+

@@ -6,7 +6,8 @@ from .sweep_data import SweepData
 import equinox as eqx
 import lineax as lx
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
-from .transport_operator_strategies import ForwardStrategy, InversionStrategy, AngleLifting, VmapForward, VmapSweep, BatchedForward, BatchedSweep, VmapAngles
+from .transport_operator_strategies import ForwardStrategy, InversionStrategy, AngleLifting, VmapSweep, BatchedSweep, VmapAngles
+from .implementations.transport_operator_forward import VmapForward, BatchedForward
 
 class TransportOperatorSolver(lx.AbstractLinearSolver):
     '''
@@ -59,6 +60,8 @@ class TransportOperator(AbstractLinearOperator_sn):
     r'''
     Base class for transport operators.
     Since the implementation of the transport operator can vary (e.g., vmap-based, batched, Pallas, etc.), this is an abstract base class that defines the interface for transport operators.
+
+    This operator can be constructed on its own or through a :class:`TransportSpec` and a :class:`SolutionSetup`. The spec defines the strategies and energy group, while the setup provides the data.
 
     Mathematical description
     ---------------------------
@@ -217,24 +220,6 @@ def _(operator : TransportOperator):
 def _(operator : TransportOperator):
     return operator
 
-def TransportOperatorVmap(solution_domain_data : SolutionDomainData, sweep_data : SweepData, angle : jnp.ndarray, energy_group : int) -> TransportOperator:
-    r'''
-    Convenience constructor: a transport operator using vmap over all elements for both forward and
-    inverse (computes all :math:`G_{ij}^{-1}` / :math:`D_{e \gamma, ij}` via vmap). High memory for
-    large problems. Equivalent to ``TransportOperator(..., VmapForward(), VmapSweep())``.
-    '''
-    return TransportOperator(solution_domain_data, sweep_data, angle, energy_group, VmapForward(), VmapSweep())
-
-
-def TransportOperatorBatched(solution_domain_data : SolutionDomainData, sweep_data : SweepData, angle : jnp.ndarray, energy_group : int, batch_size : int = None) -> TransportOperator:
-    r'''
-    Convenience constructor: a transport operator using batched forward and inverse sweeps.
-    ``batch_size=None`` reproduces the non-batched version. Equivalent to
-    ``TransportOperator(..., BatchedForward(batch_size), BatchedSweep(batch_size))``.
-    '''
-    return TransportOperator(solution_domain_data, sweep_data, angle, energy_group, BatchedForward(batch_size), BatchedSweep(batch_size))
-
-
 #===============================================================================================================================================
 # Batching angles
 #===============================================================================================================================================
@@ -391,12 +376,3 @@ def _(operator : TransportOperator):
 @lx.linearise.register(TransportOperatorMultipleAngles)
 def _(operator : TransportOperator):
     return operator
-
-def TransportOperatorMultipleAnglesVmap(transport_operator : TransportOperator) -> TransportOperatorMultipleAngles:
-    '''
-    Convenience constructor: a multi-angle transport operator that lifts the single-angle operator by
-    vmapping over angles. Equivalent to ``TransportOperatorMultipleAngles(transport_operator, VmapAngles())``.
-    '''
-    return TransportOperatorMultipleAngles(transport_operator, VmapAngles())
-
-        

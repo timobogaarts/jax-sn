@@ -13,8 +13,13 @@ from jax_sn.operators.transport_operator import BasicSweepData
 from jax_sn.solution_domain import BasixLagrangianSimplex, SolutionDomain
 from jax_sn.domain.domain_generation import create_cartesian_setup
 
-from jax_sn.operators.transport_operator import TransportOperatorBatched, transport_inverse_sweep_batched, TransportOperatorVmap, TransportOperatorBatchedPallas, TransportOperatorVmapPallas
-from jax_sn.operators.transport_operator.transport_operator_base import TransportOperatorMultipleAnglesVmap
+from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, VmapForward, VmapSweep, BatchedForward, BatchedSweep, VmapAngles, TransportOperatorBatchedPallas, TransportOperatorVmapPallas
+
+def _vmap_op(*args):
+    return TransportOperator(*args, VmapForward(), VmapSweep())
+
+def _batched_op(*args, batch_size=None):
+    return TransportOperator(*args, BatchedForward(batch_size), BatchedSweep(batch_size))
 import pyvista as pv
 import equinox as eqx
 import numpy as onp
@@ -48,8 +53,8 @@ from jax_sn.parametrisation import TransportOperatorSigmaParametrised
 
 def _run_single_angle_operators(dim, degree):
     transportoperators_sa = {    
-        TransportOperatorVmap : {}, 
-        TransportOperatorBatched : {"batch_size" : 1000}, 
+        _vmap_op : {}, 
+        _batched_op : {"batch_size" : 1000}, 
         TransportOperatorVmapPallas : {},
         TransportOperatorBatchedPallas: {"batch_size" : 1000}, 
     }
@@ -79,7 +84,7 @@ def _run_single_angle_operators(dim, degree):
 
 def _run_multi_angle_operators(dim, degree):
     transportoperators_ma = {    
-        TransportOperatorBatched : {"batch_size" : 100},             
+        _batched_op : {"batch_size" : 100},             
         TransportOperatorBatchedPallas: {"batch_size" : 100}}
     
     solution_domain, sources = setup_base_case(3,2)    
@@ -89,7 +94,7 @@ def _run_multi_angle_operators(dim, degree):
     toposorts = [BasicSweepData.from_domain_angle(solution_domain.domain, angle_i.angles[i], 100) for i in range(n_angles)]
     total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
     for operator_cls in transportoperators_ma.keys():        
-        operator_instance = TransportOperatorMultipleAnglesVmap(operator_cls(solution_domain.solution_domain_data, total_toposorts, 0, **transportoperators_ma[operator_cls]))
+        operator_instance = TransportOperatorMultipleAngles(operator_cls(solution_domain.solution_domain_data, total_toposorts, 0, **transportoperators_ma[operator_cls]), VmapAngles())
         mem_mv, mem_mv_grad   = analyze_grad_memory(TransportOperatorSigmaParametrised, operator_instance, method="mv")    
         mem_inv, mem_inv_grad = analyze_grad_memory(TransportOperatorSigmaParametrised, operator_instance, method="inv")    
         print(f"{operator_cls.__name__} multi angle for a dimension {dim} degree {degree} operator with {solution_domain.domain.n_elements} elements and {n_angles} angles:")
@@ -98,7 +103,7 @@ def _run_multi_angle_operators(dim, degree):
         print(f"\tinv memory     : {mem_inv}")
         print(f"\tgrad inv memory: {mem_inv_grad}")           
     for operator_cls in transportoperators_ma.keys():        
-        operator_instance = TransportOperatorMultipleAnglesVmap(operator_cls(solution_domain.solution_domain_data, total_toposorts, 0, **transportoperators_ma[operator_cls]))
+        operator_instance = TransportOperatorMultipleAngles(operator_cls(solution_domain.solution_domain_data, total_toposorts, 0, **transportoperators_ma[operator_cls]), VmapAngles())
         time_mv, time_mv_grad   = analyze_grad_timing(TransportOperatorSigmaParametrised, operator_instance, method="mv", n_samples = 3, ignore_n = 1)    
         time_inv, time_inv_grad = analyze_grad_timing(TransportOperatorSigmaParametrised, operator_instance, method="inv", n_samples= 3,  ignore_n = 1)    
         print(f"{operator_cls.__name__} multi angle for a dimension {dim} degree {degree} operator with {solution_domain.domain.n_elements} elements and {n_angles} angles:")        

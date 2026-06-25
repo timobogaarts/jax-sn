@@ -13,3 +13,4 @@ Submodules
    :maxdepth: 2
 
    jax_sn.operators.mass_operator.mass_operator_base
+   jax_sn.operators.mass_operator.mass_operator_strategies

@@ -1,25 +1,8 @@
 r'''
 Sweep data: the precomputed structure required to *invert* (sweep) the transport operator.
 
-The transport operator's forward action is element-local, but its inverse is a directional sweep that
-must visit elements in upwind-dependency order. The data describing that traversal -- per angle, the
-topological order of elements -- is the :class:`SweepData` family. It is a *sibling* family (abstract
-base + final concrete leaves), not a subclass-with-optional-fields, so a half-initialised instance is
-never constructible:
-
-- :class:`SweepData`        -- abstract base: the per-angle topological order (``levels`` /
-  ``levels_argsort``).
-- :class:`BasicSweepData`   -- just the order. Cheap; serves every non-level sweep.
-- :class:`LeveledSweepData` -- the order *plus* the level-based-parallelism setup (a longest-path
-  layering of the same sweep DAG) for the fused warp kernels. Large -- O(n_elements x n_angles) -- so
-  it is built only when a level sweep is actually selected.
-
-This is **purely operator-agnostic** data: its *value* never changes the operator's result -- any valid
-topological order yields the identical inverse. In particular it does **not** carry the angle ``Ω``
-(which is operator-defining and lives in the angular setup). The angle is supplied alongside the sweep
-data where needed (``reverse`` / ``reconstruct`` take it, and the transport operator passes it to the
-sweep kernels) -- so the order and the angle it was computed for are kept consistent by construction
-without the sweep data storing a second copy of the angle.
+This exists to allow for different cabalities: a normal sweep does not require data on the 
+levels. Since this can be particularly large (on the same order as the base data), this is not given by default.
 
 Capabilities
 ------------
@@ -28,7 +11,7 @@ Richer structure that only *some* sweeps need is advertised as a *capability* --
 capabilities it requires (``required_capabilities``) and accepts *any* ``SweepData`` that provides
 them; this is what lets a future richer plan (e.g. levels + domain decomposition) satisfy a
 level-only strategy without an enumerated isinstance per combination. See
-:class:`ProvidesLevels`.
+:class:`ProvidesLevels` for an example that is used by level-based-parallelism.
 '''
 
 import jax
@@ -44,22 +27,7 @@ from jax_sn.tools.graph_tools import multiple_angle_level_bounds_safe
 
 class SweepData(eqx.Module):
     '''
-    Abstract base for the data required to invert (sweep) the transport operator. Holds the shared
-    state -- the element ``levels`` and the ``levels_argsort`` -- and declares the polymorphic
-    interface (``reverse``, ``__getitem__``, ``reconstruct``) as abstract. Concrete (final) leaves
-    decide what additional precomputed data, if any, rides along with the sort (see
-    :class:`BasicSweepData` and :class:`LeveledSweepData`).
-
-    The angle ``Ω`` is **not** stored here (it is operator-defining and lives in the angular setup);
-    it is supplied by the caller to :meth:`reverse` and :meth:`reconstruct` where the transform/rebuild
-    needs it.
-
-    ``reverse`` / ``__getitem__`` / ``reconstruct`` are abstract: each leaf provides its own final
-    implementation so that nothing is overridden (abstract-or-final, never "maybe"). The shared
-    mechanical part -- the transform of the base fields -- lives in the final, non-polymorphic
-    helpers :meth:`_reversed_base`, :meth:`_indexed_base` and :meth:`_rebuilt_sort`, which the leaves
-    compose with their own fields. All are written with :func:`equinox.tree_at`, so they preserve the
-    concrete type.
+    Abstract base for the data required to invert (sweep) the transport operator.     
     '''
 
     levels         : eqx.AbstractVar[jnp.ndarray] #[..., n_elements]
@@ -196,7 +164,7 @@ class BasicSweepData(SweepData):
         levels = compute_levels_domain_safe_jax(geometric_domain, angle, n_iterations_per_loop)
         levels_argsort = jnp.argsort(levels)
         return cls(levels=levels, levels_argsort=levels_argsort)
-
+    
     @classmethod
     def from_domain_quadrature_set(cls, geometric_domain : GeometricDomain, quadrature_set : QuadratureSetBase, n_iterations_per_loop : int = 100):
         '''
@@ -216,7 +184,8 @@ class BasicSweepData(SweepData):
         sweep_data : BasicSweepData
             The computed sweep data for all angles in the quadrature set. Batched over angles.
         '''
-        return cls(*_sweep_data_from_domain_quadrature_set_scan(geometric_domain, quadrature_set, n_iterations_per_loop))
+        levels, levels_argsort = _levels_argsort_from_domain_angles(geometric_domain, quadrature_set.angles, n_iterations_per_loop)
+        return cls(levels=levels, levels_argsort=levels_argsort)
 
     def __getitem__(self, idx : int) -> "BasicSweepData":
         return self._indexed_base(idx)
@@ -227,28 +196,6 @@ class BasicSweepData(SweepData):
 
     def reconstruct(self, geometric_domain : GeometricDomain, angle : jnp.ndarray, n_iterations_per_loop : int = 100) -> "BasicSweepData":
         return BasicSweepData(*self._rebuilt_sort(geometric_domain, angle, n_iterations_per_loop))
-
-
-@eqx.filter_jit
-def _sweep_data_from_domain_quadrature_set_scan(geometric_domain : GeometricDomain, quadrature_set : QuadratureSetBase, n_iterations_per_loop : int = 100):
-    '''
-    Jittable version of BasicSweepData.from_domain_quadrature_set.
-    Computes topological sorts for all angles in the given quadrature set and geometric domain.
-
-    Parameters
-    ----------
-    geometric_domain : GeometricDomain
-        The geometric domain for which to compute the topological sorts.
-    quadrature_set : QuadratureSetBase
-        The quadrature set containing the angles for which to compute the topological sorts.
-    n_iterations_per_loop : int, optional
-        The number of iterations per loop for the level computation. The default is 100.
-    Returns
-    -------
-    (levels, levels_argsort)
-        The computed sweep data fields for all angles in the quadrature set. Batched over angles.
-    '''
-    return _levels_argsort_from_domain_angles(geometric_domain, quadrature_set.angles, n_iterations_per_loop)
 
 
 @eqx.filter_jit

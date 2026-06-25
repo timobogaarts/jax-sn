@@ -1,6 +1,6 @@
 import jax 
 import jax.numpy as jnp
-from jax_sn.operators.transport_operator import transport_inverse_sweep_complete_vmap
+from jax_sn.operators.transport_operator.implementations.transport_operator_jax import transport_inverse_sweep_complete_vmap
 import jax_sn
 
 import numpy as onp
@@ -23,11 +23,12 @@ def check_transport_inverse_sweep_complete_vmap(element, degree,
     mapped_array = cross_sections.map_to_full_array(0)
 
     sweep_array = transport_inverse_sweep_complete_vmap(
-        domain, 
-        femmatrices,         
+        domain,
+        femmatrices,
         precomputed_data,
-        mapped_array, 
-        toposort,                
+        mapped_array,
+        angle,
+        toposort,
         source_mass_op
     )
     
@@ -207,11 +208,19 @@ def test_local_real_inversion(dimension):
 # Including adjoint property tests & forward-backward consistency tests
 # Optionally includes the Pallas implementations, --runpallas
 
+def _vmap_op(solution_domain_data, sweep_data, angle, energy_group):
+    _to = jax_sn.operators.transport_operator
+    return _to.TransportOperator(solution_domain_data, sweep_data, angle, energy_group, _to.VmapForward(), _to.VmapSweep())
+
+def _batched_op(solution_domain_data, sweep_data, angle, energy_group, batch_size=None):
+    _to = jax_sn.operators.transport_operator
+    return _to.TransportOperator(solution_domain_data, sweep_data, angle, energy_group, _to.BatchedForward(batch_size), _to.BatchedSweep(batch_size))
+
 def _all_transport_operators():
-    return {jax_sn.operators.transport_operator.TransportOperatorVmap : {}, jax_sn.operators.transport_operator.TransportOperatorBatched : {'batch_size' : 5} }
+    return {_vmap_op : {}, _batched_op : {'batch_size' : 5} }
 
 def _all_transport_operators_pallas():
-    return {jax_sn.operators.transport_operator.TransportOperatorVmap : {}, jax_sn.operators.transport_operator.TransportOperatorBatched : {'batch_size' : 5} , jax_sn.operators.transport_operator.TransportOperatorVmapPallas : {}, jax_sn.operators.transport_operator.TransportOperatorBatchedPallas : {'batch_size' : 5} }
+    return {_vmap_op : {}, _batched_op : {'batch_size' : 5} , jax_sn.operators.transport_operator.TransportOperatorVmapPallas : {}, jax_sn.operators.transport_operator.TransportOperatorBatchedPallas : {'batch_size' : 5} }
 
 
 @pytest.fixture(params=[1,2,3], scope='session')
@@ -224,7 +233,7 @@ def setup_all_transport_operators(request):
         operators.append(operator_class(solution_domain.solution_domain_data, toposort, angle, 0, **operator_kwargs))
 
     for operator_class, operator_kwargs in desired_ops.items():
-        operators.append(jax_sn.operators.transport_operator.transport_operator_base.TransportOperatorMultipleAnglesVmap(operator_class(solution_domain.solution_domain_data, total_toposorts, quad_set.angles, 0, **operator_kwargs)))
+        operators.append(jax_sn.operators.transport_operator.TransportOperatorMultipleAngles(operator_class(solution_domain.solution_domain_data, total_toposorts, quad_set.angles, 0, **operator_kwargs), jax_sn.operators.transport_operator.VmapAngles()))
     
     return operators
 
@@ -324,7 +333,7 @@ def test_transport_operator_batching(setup_all_transport_operators):
     tinv_singles = []    
     tinvt_singles = []
     for i in range(x_batch.shape[0]):
-        transport_operator_single = jax_sn.operators.transport_operator.TransportOperatorVmap(operators[0].solution_domain_data, operators[-1].transport_operator.sweep_data[i], operators[-1].transport_operator.angle[i], 0)
+        transport_operator_single = _vmap_op(operators[0].solution_domain_data, operators[-1].transport_operator.sweep_data[i], operators[-1].transport_operator.angle[i], 0)
         tx_singles.append(transport_operator_single.mv(x_batch[i]))
         ttx_singles.append(transport_operator_single.T.mv(x_batch[i]))
         tinv_singles.append(transport_operator_single.inv(x_batch[i]))

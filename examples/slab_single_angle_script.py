@@ -22,7 +22,7 @@ from jax_sn.solution_domain import BasixLagrangianSimplex, SolutionDomain
 from jax_sn.domain import CrossSectionData, Domain
 
 from jax_sn.operators.mass_operator import MassOperator
-from jax_sn.operators.transport_operator import TransportOperatorBatched
+from jax_sn.operators.transport_operator import TransportOperator, BatchedForward, BatchedSweep
 
 # %%
 def analytical_solution(x, sigma, q, x_max, angle):
@@ -78,7 +78,7 @@ sol_domain, source, buffer, toposort = setup_1d_slab(sigma = sigma, q = q, degre
 
 # %%
 mass_operator = MassOperator(sol_domain.fem_matrices, sol_domain.precomputed_geometric_data)
-transport_operator = TransportOperatorBatched(sol_domain.solution_domain_data, toposort, 0, batch_size = 10)
+transport_operator = TransportOperator(sol_domain.solution_domain_data, toposort, 0, BatchedForward(10), BatchedSweep(10))
 
 # %%
 solution = transport_operator.inv(mass_operator.mv(source.source_values))
@@ -96,7 +96,7 @@ def convergence_study(deg : int, n_cells_list : List[int]):
     for n_cells in n_cells_list:
         sol_domain, source, buffer, toposort = setup_1d_slab(sigma = sigma, q = q, degree = deg, n_cells = n_cells, angle = angle_norm)
         mass_operator = MassOperator(sol_domain.fem_matrices, sol_domain.precomputed_geometric_data)
-        transport_operator = TransportOperatorBatched(sol_domain.solution_domain_data, toposort, 0, batch_size = 10)
+        transport_operator = TransportOperator(sol_domain.solution_domain_data, toposort, 0, BatchedForward(10), BatchedSweep(10))
         solution = transport_operator.inv(mass_operator.mv(source.source_values) )
         L2_error = compute_L2_error(solution, analytical_solution_1D_slab, sol_domain, quad_order=8*(deg+1))
         L2_errors.append(L2_error)
@@ -156,7 +156,7 @@ xmax  = 1.0
 # %%
 sol_domain, source_map, buffer, toposort = setup_3d_slab(sigma, q, 3, 20, angle_norm)
 mass_op_3d = MassOperator(sol_domain.fem_matrices, sol_domain.precomputed_geometric_data)
-transport_op_3d = TransportOperatorBatched(sol_domain.solution_domain_data, toposort, 0, batch_size = 100)
+transport_op_3d = TransportOperator(sol_domain.solution_domain_data, toposort, 0, BatchedForward(100), BatchedSweep(100))
 
 result = transport_op_3d.inv(mass_op_3d.mv(source_map.source_values))
 

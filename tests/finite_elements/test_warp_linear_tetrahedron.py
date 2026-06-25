@@ -8,11 +8,6 @@ import lineax as lx
 import equinox as eqx
 import pytest
 
-from jax_sn.operators.transport_operator import (
-    TransportOperatorVmap,
-    TransportOperatorBatched,
-    TransportOperatorMultipleAnglesVmap,
-)
 from jax_sn.tools.setup_test_mgop import make_xs_test, setup_layered_slab_mgop
 
 # ---------------------------------------------------------------------------
@@ -38,7 +33,7 @@ def _build_base_mgop():
 # Add new single-angle or multi-angle operator classes here.
 # ---------------------------------------------------------------------------
 def make_sequential_warp_single_angle(base_mgop, angle_i):
-    from jax_sn.operators.transport_operator.transport_operator_warp import TransportOperatorSequentialWarpSingleAngle
+    from jax_sn.operators.transport_operator.implementations.transport_operator_warp import TransportOperatorSequentialWarpSingleAngle
     return TransportOperatorSequentialWarpSingleAngle(
         base_mgop.solution_domain_data,
         base_mgop.transport_operator[angle_i].sweep_data,
@@ -48,7 +43,7 @@ def make_sequential_warp_single_angle(base_mgop, angle_i):
     )
 
 def make_level_warp_single_angle(base_mgop, angle_i):
-    from jax_sn.operators.transport_operator.transport_operator_warp import TransportOperatorLevelsWarpSingleAngle
+    from jax_sn.operators.transport_operator.implementations.transport_operator_warp import TransportOperatorLevelsWarpSingleAngle
     from jax_sn.operators.transport_operator import LeveledSweepData
     level_toposort = LeveledSweepData.from_basic_sweep_data(base_mgop.transport_operator[angle_i].sweep_data)
     return TransportOperatorLevelsWarpSingleAngle(
@@ -60,7 +55,7 @@ def make_level_warp_single_angle(base_mgop, angle_i):
     )
 
 def make_level_warp_single_angle_pad(base_mgop, angle_i):
-    from jax_sn.operators.transport_operator.transport_operator_warp import TransportOperatorLevelsWarpSingleAngle
+    from jax_sn.operators.transport_operator.implementations.transport_operator_warp import TransportOperatorLevelsWarpSingleAngle
     from jax_sn.operators.transport_operator import LeveledSweepData
     level_toposort = LeveledSweepData.from_basic_sweep_data(base_mgop.transport_operator[angle_i].sweep_data, 400)
     return TransportOperatorLevelsWarpSingleAngle(
@@ -72,7 +67,7 @@ def make_level_warp_single_angle_pad(base_mgop, angle_i):
     )
 
 def make_sequential_warp_multi_angle(base_mgop):
-    from jax_sn.operators.transport_operator.transport_operator_warp import (
+    from jax_sn.operators.transport_operator.implementations.transport_operator_warp import (
         TransportOperatorSequentialWarpSingleAngle,
         TransportOperatorSequentialWarpMultipleAngles,
     )
@@ -87,7 +82,7 @@ def make_sequential_warp_multi_angle(base_mgop):
 
 
 def make_levels_warp_multi_angle(base_mgop):
-    from jax_sn.operators.transport_operator.transport_operator_warp import (
+    from jax_sn.operators.transport_operator.implementations.transport_operator_warp import (
         TransportOperatorLevelsWarpSingleAngle,
         TransportOperatorLevelsWarpMultipleAngles,
     )
@@ -103,7 +98,7 @@ def make_levels_warp_multi_angle(base_mgop):
     return TransportOperatorLevelsWarpMultipleAngles(top_sa)
 
 def make_levels_warp_multi_angle_pad(base_mgop):
-    from jax_sn.operators.transport_operator.transport_operator_warp import (
+    from jax_sn.operators.transport_operator.implementations.transport_operator_warp import (
         TransportOperatorLevelsWarpSingleAngle,
         TransportOperatorLevelsWarpMultipleAngles,
     )

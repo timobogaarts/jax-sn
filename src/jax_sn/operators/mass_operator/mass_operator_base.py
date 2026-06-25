@@ -10,7 +10,7 @@ from typing import Tuple
 from jax_sn.solution_domain import SolutionDomainData
 from typing import Union
 
-from jax_sn.operators.transport_operator.transport_operator_base import TransportOperator, TransportOperatorMultipleAngles
+from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles
 
 from .mass_operator_strategies import MassStrategy, VmapMass
 
