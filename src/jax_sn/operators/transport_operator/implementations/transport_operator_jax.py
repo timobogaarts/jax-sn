@@ -10,6 +10,36 @@ from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from jax_sn.solution_domain import FEMMatrices
 from functools import partial
 import numpy as onp
+from typing import TYPE_CHECKING
+from ..transport_operator_strategies import InversionStrategy
+from .angle_liftings import VmapAngles
+
+if TYPE_CHECKING:
+    from ..transport_operator_interface import TransportOperator
+
+class VmapSweep(InversionStrategy):
+    '''Inverse sweep with all per-element matrices computed via vmap (high memory).'''
+
+    def invert(self, operator: "TransportOperator", b):
+        return transport_inverse_sweep_complete_vmap(*operator._inversion_args(), b)
+
+    @classmethod
+    def default_angle_lifting(cls):
+        return VmapAngles()
+
+
+class BatchedSweep(InversionStrategy):
+    '''Inverse sweep over batches of elements. ``batch_size=None`` reproduces the non-batched version.'''
+
+    batch_size: int = None
+
+    def invert(self, operator: "TransportOperator", b):
+        return transport_inverse_sweep_batched(*operator._inversion_args(), b, self.batch_size)
+
+    @classmethod
+    def default_angle_lifting(cls):
+        return VmapAngles()
+
 
 
 #==============================================================================================================================================================================

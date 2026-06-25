@@ -22,7 +22,6 @@ from abc import abstractmethod
 from typing import TYPE_CHECKING, Type, ClassVar, Tuple
 
 from .sweep_data import BasicSweepData, SweepData
-from .implementations.transport_operator_jax import transport_inverse_sweep_batched, transport_inverse_sweep_complete_vmap
 
 if TYPE_CHECKING:
     from .transport_operator_interface import TransportOperator
@@ -85,12 +84,14 @@ class InversionStrategy(eqx.Module):
         return BasicSweepData
 
     @classmethod
+    @abstractmethod
     def default_angle_lifting(cls) -> "AngleLifting":
-        '''The multi-angle lift a creation helper should use by default for this inversion. Default:
-        the generic :class:`VmapAngles`. An opaque-kernel inversion (one with ``vmappable = False``)
-        overrides this to its matching *fused* lift, so the natural multi-angle path is chosen without
-        the caller having to know -- while any lift remains explicitly selectable.'''
-        return VmapAngles()
+        '''The multi-angle lift a creation helper uses by default for this inversion. Each strategy
+        declares its own: the generic inversions return :class:`VmapAngles`; an opaque-kernel inversion
+        (one with ``vmappable = False``, e.g. warp) returns its matching fused lift. Declared abstract
+        here -- not defaulted -- so this module stays free of the concrete lift classes that live under
+        ``implementations/``.'''
+        ...
 
     def check_compatible(self, operator: "TransportOperator"):
         '''Assert the operator's sweep data provides every capability in :attr:`required_capabilities`.
@@ -101,23 +102,6 @@ class InversionStrategy(eqx.Module):
                 f"{type(self).__name__} requires sweep data providing {capability.__name__}, " \
                 f"but got {type(operator.sweep_data).__name__}. Build it via " \
                 f"{type(self).__name__}.default_sweep_data_type().from_domain_quadrature_set(...)."
-
-
-class VmapSweep(InversionStrategy):
-    '''Inverse sweep with all per-element matrices computed via vmap (high memory).'''
-
-    def invert(self, operator: "TransportOperator", b):
-        return transport_inverse_sweep_complete_vmap(*operator._inversion_args(), b)
-
-
-class BatchedSweep(InversionStrategy):
-    '''Inverse sweep over batches of elements. ``batch_size=None`` reproduces the non-batched version.'''
-
-    batch_size: int = None
-
-    def invert(self, operator: "TransportOperator", b):
-        return transport_inverse_sweep_batched(*operator._inversion_args(), b, self.batch_size)
-
 
 # ---------------------------------------------------------------------------
 # Angle lifting
@@ -146,29 +130,4 @@ class AngleLifting(eqx.Module):
     def check_compatible(self, single_op: "TransportOperator"):
         '''Assert the wrapped single-angle operator satisfies this lift's precondition. Default: nothing to check.'''
         pass
-
-
-class VmapAngles(AngleLifting):
-    '''
-    Lift by vmapping the single-angle reduction over the angle axis. The angle axis lives in both the
-    ``angle`` and the sweep ordering, so we vmap over their leading axes together (and the leading axis
-    of the input), rebuilding a single-angle operator per angle. The base operator therefore never
-    needs to know how to vmap.
-    '''
-
-    vmaps_inner: ClassVar[bool] = True
-
-    @staticmethod
-    def _map_over_angles(single_op: "TransportOperator", leading, fn):
-        def one_angle(angle_i, sweep_i, v_i):
-            op_i = eqx.tree_at(lambda o: (o.angle, o.sweep_data), single_op, (angle_i, sweep_i))
-            return fn(op_i, v_i)
-        return eqx.filter_vmap(one_angle, in_axes=(0, 0, 0))(single_op.angle, single_op.sweep_data, leading)
-
-    def forward(self, single_op: "TransportOperator", x):
-        return self._map_over_angles(single_op, x, lambda op, v: op.mv(v))
-
-    def invert(self, single_op: "TransportOperator", b):
-        return self._map_over_angles(single_op, b, lambda op, v: op._invert_internal(v))
-
 

@@ -477,6 +477,7 @@ def transport_inverse_sweep_multiple_angles_complete_vmap_pallas(geometric_domai
 from ..sweep_data import SweepData
 from ..transport_operator_strategies import InversionStrategy
 from .transport_operator_forward import VmapForward, BatchedForward
+from .angle_liftings import VmapAngles
 
 
 class VmapPallasSweep(InversionStrategy):
@@ -484,6 +485,10 @@ class VmapPallasSweep(InversionStrategy):
 
     def invert(self, operator, b):
         return transport_inverse_sweep_complete_vmap_pallas(*operator._inversion_args(), b)
+
+    @classmethod
+    def default_angle_lifting(cls):
+        return VmapAngles()
 
 
 class BatchedPallasSweep(InversionStrategy):
@@ -493,6 +498,10 @@ class BatchedPallasSweep(InversionStrategy):
 
     def invert(self, operator, b):
         return transport_inverse_sweep_batched_pallas(*operator._inversion_args(), b, self.batch_size)
+
+    @classmethod
+    def default_angle_lifting(cls):
+        return VmapAngles()
 
 
 def TransportOperatorVmapPallas(solution_domain_data: SolutionDomainData, sweep_data: SweepData, angle: jnp.ndarray, energy_group: int) -> TransportOperator:

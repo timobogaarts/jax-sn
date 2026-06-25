@@ -6,8 +6,7 @@ from .sweep_data import SweepData
 import equinox as eqx
 import lineax as lx
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
-from .transport_operator_strategies import ForwardStrategy, InversionStrategy, AngleLifting, VmapSweep, BatchedSweep, VmapAngles
-from .implementations.transport_operator_forward import VmapForward, BatchedForward
+from .transport_operator_strategies import ForwardStrategy, InversionStrategy, AngleLifting
 
 class TransportOperatorSolver(lx.AbstractLinearSolver):
     '''

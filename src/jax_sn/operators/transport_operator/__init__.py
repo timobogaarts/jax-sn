@@ -4,9 +4,10 @@ from .solution_setup import SolutionSetup, AngularSetup
 from .transport_spec import TransportSpec
 from .transport_operator_strategies import (
     ForwardStrategy, InversionStrategy, AngleLifting,
-    VmapSweep, BatchedSweep, VmapAngles,
 )
 from .implementations.transport_operator_forward import VmapForward, BatchedForward
+from .implementations.transport_operator_jax import VmapSweep, BatchedSweep
+from .implementations.angle_liftings import VmapAngles
 
 
 from .implementations import transport_operator_pallas

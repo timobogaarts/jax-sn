@@ -3,8 +3,7 @@ import equinox as eqx
 from .solution_setup import SolutionSetup
 from .transport_operator_interface import TransportOperator, TransportOperatorMultipleAngles
 from .transport_operator_strategies import (
-    ForwardStrategy, InversionStrategy, AngleLifting,
-    VmapSweep, VmapAngles,
+    ForwardStrategy, InversionStrategy, AngleLifting,    
 )
 
 class TransportSpec(eqx.Module):

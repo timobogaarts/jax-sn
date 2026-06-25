@@ -21,7 +21,8 @@ from ..sweep_data import SweepData, LeveledSweepData, ProvidesLevels
 from jax_sn.solution_domain import SolutionDomainData
 
 from ..transport_operator_interface import TransportOperator, TransportOperatorMultipleAngles
-from ..transport_operator_strategies import InversionStrategy, AngleLifting, VmapAngles
+from ..transport_operator_strategies import InversionStrategy, AngleLifting
+from .angle_liftings import VmapAngles
 from .transport_operator_forward import BatchedForward
 from .linear_tetrahedron_warp_kernel import (
     single_angle_warp_sweep, multi_angle_warp_sweep,
