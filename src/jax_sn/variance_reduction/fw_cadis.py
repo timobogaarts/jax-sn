@@ -12,6 +12,22 @@ import equinox as eqx
 def fw_cadis_scalar_flux(operator : MultiGroupOperator, rhs : RightHandSide, solver : lx.AbstractLinearSolver, adjoint_operator_cls : Type[AdjointMultiGroupOperator] = AdjointMultiGroupOperatorScan) -> jnp.ndarray:
     r'''
     Runs the FW-CADIS algorithm to compute an importance map for variance reduction.
+
+    First the forward problem is solved to obtain the scalar flux:
+
+    .. math::
+        \phi = A^{-1} q
+
+    where :math:`A` is the multi-group operator and :math:`q` is the right-hand side.
+
+    Then, the importance map is computed as:
+
+    .. math::
+        \phi^\dagger = A^\dagger^{-1} \left( \frac{1}{\phi} \right)
+
+    For stability purposes, the scalar flux is first averaged over each element (due to the conservation property of DG, this cannot be zero, while the value at a particular 
+    basis function node can be extremely small).
+    
     
     Parameters
     ----------
