@@ -48,63 +48,11 @@ def setup_anisotropic(dim, degree, n_elem_regions, d_other_dim, n_other_dim, tn_
     return solution_domain, (sources_eg0, sources_eg1), create_tn_quadrature_set(tn_order)
 
 
-def _switch_element_type(dimension):
-    import StellBlanket as SB
-    if dimension == 1:
-        return SB.Lines.Line_Element
-    elif dimension == 2:
-        return SB.Triangles.Triangle_Element
-    elif dimension == 3:
-        return SB.Tetrahedrons.Tetrahedron_Element
-    else:
-        raise ValueError("Dimension must be 1, 2 or 3.")
-    
-    
-
-def _anisotropic_sb(dim, degree, n_elem_regions, d_other_dim, n_other_dim, tn_order):    
-    import StellBlanket as SB
-
-    water = SB.Generic_Elements.Material(SB.Generic_Elements.Multigroup_Cross_Section(onp.array([15.2090, 24.4140]), onp.array([[[5.5069, 0.0], 
-                                                                        [6.6227, 11.4080]], 
-                                                                        [[1.158567, 0.0],
-                                                                         [1.1234767, 2.4733]]])))   
-    iron = SB.Generic_Elements.Material(SB.Generic_Elements.Multigroup_Cross_Section(onp.array([30.3110, 26.8760]), onp.array([[[18.25, 0.0], 
-                                                                       [6.45294, 21.3570]], 
-                                                                      [[4.363, 0.0],
-                                                                       [-0.003508, 2.3457]]])))
-    
-    void  = SB.Generic_Elements.Material(SB.Generic_Elements.Constant_Cross_Section(1e-10))
-    
-    region_sizes = [0.2, 0.1,     0.5,   0.2,  0.1,  0.1,    0.1]
-    xs_regions   = [water, water, water, iron, void, water , void]
-
-    quad_set = SB.Generic_Elements.Quadrature_Set(*SB.Generic_Elements.create_TN(tn_order))
-    element = _switch_element_type(dim)
-    energy_set       = SB.Generic_Elements.Energy_Set([2,1,0])    
-    source_water = SB.Generic_Elements.Constant_Multigroup_Source(element, onp.array([9.7702e4, 4.5441e5]), energy_set)
-    source_void = SB.Generic_Elements.Zero_Source(element)
-    sources = [source_void, source_water, source_void, source_void, source_void, source_void, source_void]    
-    cartesian_domain, source = SB.Generic_Elements.Create_Slab(element, region_sizes, n_elem_regions, xs_regions, d_other_dim, n_other_dim, sources)            
-    matfreente       = SB.Generic_Elements.Create_RAM_Simulation(quad_set, energy_set, cartesian_domain, degree, 1)
-    return matfreente, source
-
-
-
-def _get_expected_values_sb(*args_ani):
-    import StellBlanket as SB
-    nte, sb_source = _anisotropic_sb(*args_ani)
-    solution_options = SB.Generic_Elements.Solution_Options(tolerance=1e-20)
-    nte.Solve(nte.energy_set[0], sb_source, solution_options.Return_Dictionary())
-
-    x = onp.array(_interp_x())
-    y = onp.zeros_like(x)
-    z = onp.zeros_like(x)
-
-    xyz = onp.stack([x, y, z], axis = -1)
-
-    phi = SB.Generic_Elements.Interpolate_Moments(xyz, nte.global_moment_solution, nte.energy_set[0], 0, 0)
-
-    return phi *  onp.sqrt(4 * onp.pi) # normalisation is different
+def _get_expected_values_reference(*args_ani):
+    # Frozen reference: interpolated scalar flux (see tests/reference_data/_generate.py)
+    from reference_data import load, key_anisotropic
+    dim = args_ani[0]
+    return load(key_anisotropic(dim))['phi']
 
 def _get_anisotropic_args(dim, degree):
     n_elem_regions = [4, 2, 10, 4, 2, 2, 2]
@@ -144,7 +92,7 @@ def _setup_anisotropic_scattering(request):
     ani_args = _get_anisotropic_args(dim, degree)
     return *_setup_anisotropic_scattering_args(*ani_args), ani_args
 
-def test_anisotropic_scattering_fixed_point(_setup_anisotropic_scattering, expected_value_function = _get_expected_values_sb):
+def test_anisotropic_scattering_fixed_point(_setup_anisotropic_scattering, expected_value_function = _get_expected_values_reference):
 
     Aop, source_total, solution_domain, ani_args = _setup_anisotropic_scattering
 
@@ -162,8 +110,8 @@ def test_anisotropic_scattering_fixed_point(_setup_anisotropic_scattering, expec
     xyz = jnp.stack([x] + [jnp.full_like(x, d_other / 2)] * (dim-1), axis = -1)
 
     phi_jsn = solution_domain.interpolate(xyz, xk[0]) 
-    phi_sb  = expected_value_function(*ani_args)
+    phi_reference  = expected_value_function(*ani_args)
 
     rtol = [1e-10, 1e-10, 3e-2][dim-1] # tetrahedral connectivity is different; so we cannot expected numerically same results in this non-converged regime!
 
-    onp.testing.assert_allclose(phi_jsn, phi_sb, rtol = rtol)
+    onp.testing.assert_allclose(phi_jsn, phi_reference, rtol = rtol)

@@ -4,7 +4,6 @@ from jax_sn.operators.transport_operator.implementations.transport_operator_jax 
 import jax_sn
 
 import numpy as onp
-from .test_finite_elements import create_permutation_dimension
 import pytest
 def check_transport_inverse_sweep_complete_vmap(element, degree, 
                                                 _vertices_conn_function, 
@@ -56,102 +55,41 @@ def _setup_all(element, degree, _vertices_conn_function, _angle_function, _expec
 
 
 #====================================================================================================================================================================================
-#                                      StellBlanket functions for testing & comparison [ugly but works]
+#   Reference-data providers  [load frozen reference arrays; see tests/reference_data/]
 #====================================================================================================================================================================================
-def _switch_element_type(dimension):
-    import StellBlanket as SB
-    if dimension == 1:
-        return SB.Lines.Line_Element
-    elif dimension == 2:
-        return SB.Triangles.Triangle_Element
-    elif dimension == 3:
-        return SB.Tetrahedrons.Tetrahedron_Element
-    else:
-        raise ValueError("Dimension must be 1, 2 or 3.")
-    
-def _test_domain_from_sb(dimension, degree):
-    import StellBlanket as SB
-    material_0 = SB.Generic_Elements.Material(SB.Generic_Elements.Constant_Cross_Section(0.673))
-    material_1 = SB.Generic_Elements.Material(SB.Generic_Elements.Constant_Cross_Section(2.5))
-    region_sizes=  [0.8, 0.2]
-    resolutions  = [4,3]
-    size_other_dim = 7.54
-    resolutions_other_dim = 3
-    element = _switch_element_type(dimension)
-    cartesian_domain = SB.Generic_Elements.Create_Slab(element, region_sizes, resolutions, [material_0, material_1], size_other_dim, resolutions_other_dim)    
-    return cartesian_domain
+# These load the frozen mesh / source / cross sections / single-angle sweep reference and rebuild
+# the jax-sn wrapper objects, so the suite needs no external solver. The moment test imports the
+# mesh/source/cross-section providers from here too.
+from reference_data import load as _load_ref, key_transport, key_transport_angle
 
-def _arbitrary_source_values(n_elements):
-    return onp.linspace(1.0, 10.0, n_elements)
+def _verts_conn_reference(dimension, degree):
+    b = _load_ref(key_transport(dimension, degree))
+    return jnp.array(b['verts']), jnp.array(b['conn'])
 
-def tn_order_index():
-    return 4, 3
+def _source_reference(dimension, degree):
+    b = _load_ref(key_transport(dimension, degree))
+    return jax_sn.source.Source(jnp.array(b['source']))
 
-def _angle_function_indexed(tn_order, index):
-    import StellBlanket as SB
-    quad_set = SB.Generic_Elements.TN_Quadrature_Set(tn_order)
-    return quad_set.Directions()[index:index+1,:]
-    
-def _matfree_nte_from_sb(dimension, degree, tn_order, angle_index):
-    import StellBlanket as SB
-    domain   = _test_domain_from_sb(dimension, degree)
-    quad_set = SB.Generic_Elements.Quadrature_Set(onp.array(_angle_function_indexed(tn_order, angle_index)), onp.array([1.0]))
-
-    energy_set = SB.Generic_Elements.Energy_Set([0,1])
-    matfreente = SB.Generic_Elements.Create_RAM_Simulation(quad_set, energy_set, domain, degree, 0)
-
-    source_values = _arbitrary_source_values(domain.connectivity.shape[0])
-    sources = [SB.Generic_Elements.Constant_Source(_switch_element_type(dimension), val, energy_set[0]) for val in source_values]
-    total_source = SB.Generic_Elements.Per_Element_Source(sources, domain)
-    return matfreente, total_source
-    
-def _verts_conn_from_sb(dimension, degree):
-    import StellBlanket as SB
-    domain   = _test_domain_from_sb(dimension, degree)
-    return jnp.array(domain.vertices), jnp.array(domain.connectivity)
-
-def _source_from_sb(dimension, degree):
-    nte, total_source = _matfree_nte_from_sb(dimension, degree, *tn_order_index()) # angle doesn't matter for this
-    source_values = _arbitrary_source_values(nte.geometric_domain.connectivity.shape[0])
-    n_values = int(nte.solution_domain.total_size / nte.geometric_domain.connectivity.shape[0])
-    return jax_sn.source.Source(jnp.stack([source_values] * n_values, axis=-1))
-
-def _cross_sections_from_sb(dimension, degree):
-    nte, total_source = _matfree_nte_from_sb(dimension, degree, *tn_order_index()) # angle doesn't matter for this
-    n_elements = nte.geometric_domain.connectivity.shape[0]
-    cross_sections = jnp.array([nte.geometric_domain[i].Material().Cross_Section().Value_Total(nte.energy_set[0]) for i in range(nte.geometric_domain.connectivity.shape[0])])
-
-    cross_sections = cross_sections.reshape((n_elements, 1)) # [n_elements, n_energy_groups]
-    
-    vals, inverse = jnp.unique(cross_sections[:,0], return_inverse=True)
-    
-    scattering = jnp.zeros((vals.shape[0], 1, 1,1)) # Scattering is irrelevant for transport operator test [n_elements, n_L, n_energy_groups, n_energy_groups]
-    total      = jnp.array(vals).reshape((vals.shape[0], 1))
-    xsdata =  jax_sn.domain.cross_sections.CrossSectionData(total, scattering)
+def _cross_sections_reference(dimension, degree):
+    b = _load_ref(key_transport(dimension, degree))
+    xsdata = jax_sn.domain.cross_sections.CrossSectionData(jnp.array(b['xs_total']), jnp.array(b['xs_scattering']))
     xsdata.assert_valid_batched()
-    
-    return jax_sn.domain.geometric_domain.CrossSectionsIndexed(inverse, xsdata)
+    return jax_sn.domain.geometric_domain.CrossSectionsIndexed(jnp.array(b['xs_indices']), xsdata)
 
 def _angle_function_tn():
-    return _angle_function_indexed(*tn_order_index())[0]
+    return jnp.array(_load_ref(key_transport_angle())['angle'])
 
-def _n_degree_old_code(dimension):
+def _max_test_degree(dimension):
     return [None, 3, 3, 2][dimension]
 
+def _expected_values_reference(dimension, degree):
+    return jnp.array(_load_ref(key_transport(dimension, degree))['expected'])
 
-def _expected_values_from_sb(dimension, degree):
-    import StellBlanket as SB
-    nte, total_source = _matfree_nte_from_sb(dimension, degree, *tn_order_index())    
-    nte.simulation.Sweep(nte.energy_set[0], nte.quadrature_set[0], total_source)
-    values = nte.global_solution.All_Solution_Values(nte.energy_set[0], nte.quadrature_set[0]).reshape(nte.geometric_domain.connectivity.shape[0], -1   )
-    permutation = create_permutation_dimension(dimension, degree)    
-    return values[:, permutation]
-
-def _int_setup_solution_domain_data_and_toposort_sb(request):
+def _int_setup_solution_domain_data_and_toposort(request):
     # If there is a better testing / ground truth, just replace this function.
     dimension = request.param
     degree = 2
-    lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values = _setup_all(dimension, degree, _verts_conn_from_sb, _angle_function_tn, _expected_values_from_sb, _source_from_sb, _cross_sections_from_sb)
+    lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values = _setup_all(dimension, degree, _verts_conn_reference, _angle_function_tn, _expected_values_reference, _source_reference, _cross_sections_reference)
     mapped_xs = cross_sections.map_to_full_array(0)
     solution_domain = jax_sn.solution_domain.SolutionDomain.from_element_and_domain(lagrangian_element, jax_sn.domain.Domain.from_geometric_domain_and_cross_sections(domain, cross_sections))
 
@@ -165,27 +103,20 @@ def _int_setup_solution_domain_data_and_toposort_sb(request):
     return solution_domain, angle, toposort, mapped_xs, source, expected_values, quad_set, total_toposorts, source_angle
 
 
-@pytest.fixture(params=[1,2,3], scope='session')
-def setup_solution_domain_data_and_toposort_sb(request):
-    return _int_setup_solution_domain_data_and_toposort_sb(request)
-
-#====================================================================================================================================================================================
-    
 @pytest.mark.slow
 @pytest.mark.parametrize("dimension", [1,2,3])
 def test_sweep_complete_vmap(dimension):
-    # This tests the basic complete vmap sweep against StellBlanket results
+    # This tests the basic complete vmap sweep against the frozen reference
     # Then, the other implementations are tested against the complete vmap sweep (transitive testing)
-    degree = _n_degree_old_code(dimension)
-    for i in range(degree + 1):
-        check_transport_inverse_sweep_complete_vmap(dimension, degree, _verts_conn_from_sb, _angle_function_tn, _expected_values_from_sb, _source_from_sb, _cross_sections_from_sb)
+    degree = _max_test_degree(dimension)
+    check_transport_inverse_sweep_complete_vmap(dimension, degree, _verts_conn_reference, _angle_function_tn, _expected_values_reference, _source_reference, _cross_sections_reference)
 
 
 @pytest.mark.slow
 @pytest.mark.parametrize("dimension", [1,2,3])
 def test_local_real_inversion(dimension):
     # Tests BVH containing & local/real coordinate conversion for simplexes
-    lagrangian_element, domain = _setup_domain(dimension, 1, _verts_conn_from_sb)
+    lagrangian_element, domain = _setup_domain(dimension, 1, _verts_conn_reference)
     aabb_min = jnp.min(domain.vertices, axis=0)
     aabb_max = jnp.max(domain.vertices, axis=0)
     points = jnp.linspace(aabb_min, aabb_max, 37)
@@ -233,7 +164,7 @@ def _all_transport_operators_pallas():
 
 @pytest.fixture(params=[1,2,3], scope='session')
 def setup_all_transport_operators(request):        
-    solution_domain, angle, toposort, mapped_xs, source, expected_values, quad_set, total_toposorts, source_angle = _int_setup_solution_domain_data_and_toposort_sb(request)
+    solution_domain, angle, toposort, mapped_xs, source, expected_values, quad_set, total_toposorts, source_angle = _int_setup_solution_domain_data_and_toposort(request)
 
     desired_ops = _all_transport_operators_pallas() if ( request.config.getoption("--runpallas")) else _all_transport_operators()
     operators = []

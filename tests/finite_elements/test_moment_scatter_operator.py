@@ -5,23 +5,9 @@ jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 
 import numpy as onp
-from .test_transport_operator import _test_domain_from_sb, _switch_element_type, _arbitrary_source_values, _setup_domain, _verts_conn_from_sb, _source_from_sb, _cross_sections_from_sb
+from .test_transport_operator import _setup_domain, _verts_conn_reference, _source_reference, _cross_sections_reference
 import jax_sn
 import pytest
-
-def _matfree_nte_from_sb(dimension, degree, lmax, tn_order):
-    import StellBlanket as SB
-
-    domain   = _test_domain_from_sb(dimension, degree)
-    quad_set = SB.Generic_Elements.TN_Quadrature_Set(tn_order)
-
-    energy_set = SB.Generic_Elements.Energy_Set([0,1])
-    matfreente = SB.Generic_Elements.Create_RAM_Simulation(quad_set, energy_set, domain, degree, lmax)
-
-    source_values = _arbitrary_source_values(domain.connectivity.shape[0])
-    sources = [SB.Generic_Elements.Constant_Source(_switch_element_type(dimension), val, energy_set[0]) for val in source_values]
-    total_source = SB.Generic_Elements.Per_Element_Source(sources, domain)
-    return matfreente, total_source
 
 def _setup_all(element, degree, tn_order, _vertices_conn_function, _source_function, _cross_section_function):
     lagrangian_element, geometric_domain = _setup_domain(element, degree, _vertices_conn_function)
@@ -44,41 +30,13 @@ def _setup_all(element, degree, tn_order, _vertices_conn_function, _source_funct
     
     return solution_domain, angles, total_toposorts,sweep_array, source_total
 
-def _setup_all_sb(dimension, degree, tn_order):
-    return _setup_all(dimension, degree, tn_order, _verts_conn_from_sb, _source_from_sb, _cross_sections_from_sb)
-# dim      = 2 
-# degree   = 2
-# tn_order = 3
-# lmax = 4
-# mfreente = _matfree_nte_from_sb(dim, degree, lmax, tn_order)
+def _setup_all_reference(dimension, degree, tn_order):
+    return _setup_all(dimension, degree, tn_order, _verts_conn_reference, _source_reference, _cross_sections_reference)
 
-def _lm_sb_to_norm(l : jnp.ndarray, m : jnp.ndarray) -> jnp.ndarray:
-    return jnp.where(m == 0, l**2, jnp.where(m < 0, l**2 + l + abs(m), l**2 + abs(m)))
-def _convert_expansion_values_sb_to_norm(sb_values):
-    lmax = int(onp.sqrt(sb_values.shape[-1])) - 1
-    
-    l,m = jax_sn.quadrature_set.quadrature_set_base._lm_real_expansion(lmax)    
-
-    permutation = _lm_sb_to_norm(l,m)
-    sb_values__perm = sb_values[..., permutation] # ..., n_moments
-
-    
-    return onp.moveaxis(onp.where(m !=0, sb_values__perm  * onp.sqrt(2), sb_values__perm)* onp.sqrt(4 * onp.pi), -1,0) # move n_moments to front
-
-
-def _expected_value_from_sb(dimension, degree, tn_order, lmax):
-
-    
-    from finite_elements.test_transport_operator import create_permutation_dimension
-
-    
-    mfreente, source = _matfree_nte_from_sb(dimension, degree, lmax, tn_order)
-    mfreente.simulation.Total_Sweep(mfreente.energy_set[0], source)
-
-    permutation = create_permutation_dimension(dimension, degree)
-    mfreente.global_moment_solution.Setup_Energy_Group(mfreente.energy_set[0])
-    sb_values = mfreente.global_moment_solution.Moment_Solution_Values(mfreente.energy_set[0]).reshape(-1, permutation.shape[0], (lmax+1)**2)[:, permutation, :]
-    return _convert_expansion_values_sb_to_norm(sb_values)
+def _expected_value_reference(dimension, degree, tn_order, lmax):
+    # Frozen moment reference (see tests/reference_data/_generate.py)
+    from reference_data import load, key_moment
+    return jnp.array(load(key_moment(dimension, degree, lmax, tn_order))['expected'])
 
 
 
@@ -109,7 +67,7 @@ def check_moment_operator(dimension, degree, tn_order, lmax, _verts_conn_functio
                            (2,3,5, 4),
                            (3,2,4, 3)])
 def test_moment_operator(dimension, degree, lmax, tn_order):
-    check_moment_operator(dimension, degree, tn_order, lmax, _verts_conn_from_sb, _source_from_sb, _cross_sections_from_sb, _expected_value_from_sb)
+    check_moment_operator(dimension, degree, tn_order, lmax, _verts_conn_reference, _source_reference, _cross_sections_reference, _expected_value_reference)
 
 def test_moment_operator_transpose():
     

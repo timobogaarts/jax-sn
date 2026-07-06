@@ -1,0 +1,72 @@
+'''
+Stored reference data for tests that used to call StellBlanket (SB) at test time.
+
+SB is now only needed to *regenerate* this data (see ``_generate.py``); the tests
+themselves load the frozen ``.npz`` bundles from this directory via :func:`load`.
+
+Each bundle is a dict of named arrays keyed by a canonical string (see the
+``key_*`` helpers). Regenerate everything (needs StellBlanket installed) with::
+
+    python tests/reference_data/_generate.py
+
+Bundles are committed (the global ``*.npz`` gitignore is overridden for this
+directory) so the suite runs with no SB dependency.
+'''
+import os
+import numpy as onp
+
+DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _path(name: str) -> str:
+    return os.path.join(DATA_DIR, name + '.npz')
+
+
+def save(name: str, **arrays) -> None:
+    '''Save a bundle of named arrays under ``name`` (called only by the generator).'''
+    onp.savez(_path(name), **{k: onp.asarray(v) for k, v in arrays.items()})
+
+
+def load(name: str) -> dict:
+    '''Load a stored bundle as a dict of numpy arrays.
+
+    Raises a clear error (pointing at the generator) if the bundle is missing,
+    which happens when a test requests a parameter combination that has not been
+    generated yet.
+    '''
+    path = _path(name)
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"Missing reference data bundle '{name}' ({path}). "
+            f"Regenerate with:  python -m tests.reference_data._generate"
+        )
+    with onp.load(path) as data:
+        return {k: data[k] for k in data.files}
+
+
+# --- canonical keys ---------------------------------------------------------
+
+def key_lm(tn_set: int, l_max: int) -> str:
+    return f'lm__tn{tn_set}_lmax{l_max}'
+
+
+def key_transport(dim: int, degree: int) -> str:
+    '''Mesh + source + cross sections + single-angle sweep reference for the transport test.'''
+    return f'transport__d{dim}_deg{degree}'
+
+
+def key_transport_angle() -> str:
+    '''The single sweep angle (independent of dim/degree).'''
+    return 'transport__angle'
+
+
+def key_moment(dim: int, degree: int, lmax: int, tn_order: int) -> str:
+    return f'moment__d{dim}_deg{degree}_lmax{lmax}_tn{tn_order}'
+
+
+def key_anisotropic(dim: int) -> str:
+    return f'anisotropic__d{dim}'
+
+
+def key_bb(dim: int) -> str:
+    return f'bb__d{dim}'

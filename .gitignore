@@ -108,6 +108,7 @@ dmypy.json
 Thumbs.db
 
 # JAX specific
+.jax_cache/
 *.npy
 *.npz
 *.h5
@@ -115,6 +116,10 @@ Thumbs.db
 *.pkl
 *.pickle
 *.vtk
+
+# ...but the committed test reference data (frozen StellBlanket outputs) is kept
+!tests/reference_data/
+!tests/reference_data/*.npz
 
 # Logs
 *.log

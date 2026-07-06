@@ -291,32 +291,6 @@ def _interp_x():
     '''1000 interpolation points spanning the full slab, slightly inset from the boundaries.'''
     return onp.linspace(0 + 1e-5, onp.sum(base_region_sizes()) - 1e-5, 1000)
 
-def _bb_sb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order):    
-    import StellBlanket as SB
-    from .test_anisotropic_scattering import _switch_element_type
-
-    xs_data_dict = bb_data_dict()
-    
-    region_sizes = base_region_sizes()
-
-    region_names = ['Plasma', 'TungstenArmor', 'FirstWall', 'BreedingZone','BackSupportingStructure', 'VVWallFront', 'VVShield', 'VVWallBack']
-    xs_regions   = [SB.Generic_Elements.Material(SB.Generic_Elements.Multigroup_Cross_Section(xs_data_dict[i][0], xs_data_dict[i][1]) ) for i in region_names]
-
-    quad_set     = SB.Generic_Elements.Quadrature_Set(*SB.Generic_Elements.create_TN(tn_order))
-    element      = _switch_element_type(dim)
-    energy_set   = SB.Generic_Elements.Energy_Set(onp.arange(xs_data_dict['Plasma'][0].shape[0] + 1))    
-    source_p = SB.Generic_Elements.Constant_Source(element, 1.0, energy_set[0])
-    source_0 = SB.Generic_Elements.Zero_Source(element)
-    
-    sources = [source_p if i ==0 else  source_0 for i in range(len(xs_regions))]
-    lmax = xs_data_dict['Plasma'][1].shape[0] -1
-    cartesian_domain, source = SB.Generic_Elements.Create_Slab(element, region_sizes, n_elem_regions, xs_regions, d_other_dim, n_other_dim, sources)            
-    matfreente       = SB.Generic_Elements.Create_RAM_Simulation(quad_set, energy_set, cartesian_domain, degree, lmax)
-    return matfreente, source
-
-
-
-
 
 def setup_bb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order):
     '''Build the jax-sn SolutionDomain, isotropic flat source, and TN quadrature set for the breeding blanket problem.'''
@@ -399,26 +373,10 @@ def _setup_bb(request):
     ani_args = _get_bb_args(dim, degree)
     return *_setup_bb_args(*ani_args), ani_args
 
-def _get_expected_values_sb_bb(dim, degree):
-    import StellBlanket as SB
-    dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order = _get_bb_args(dim, degree)
-        
-    nte, source = _bb_sb(dim,degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order)
-    
-    solution_options = SB.Generic_Elements.Solution_Options(tolerance=1e-20, maximum_iterations=200)
-
-    n_groups = nte.energy_set.Boundaries().shape[0] -1
-    SB.Generic_Elements.Run_Forward(nte, source, solution_options)
-        
-
-
-    x = onp.array(_interp_x())
-    y = onp.zeros_like(x)
-    z = onp.zeros_like(x)
-
-    xyz = onp.stack([x, y, z], axis = -1)
-    phisb = [SB.Generic_Elements.Interpolate_Moments(xyz, nte.global_moment_solution, nte.energy_set[i], 0, 0) * onp.sqrt(4 * onp.pi) for i in range(n_groups)]
-    return phisb
+def _get_expected_values_reference(dim, degree):
+    # Frozen reference: per-group interpolated scalar flux (see tests/reference_data/_generate.py)
+    from reference_data import load, key_bb
+    return load(key_bb(dim))['phi']
 
 def test_bb_right_hand_side(_setup_bb):
     '''
@@ -451,12 +409,12 @@ def test_bb_right_hand_side(_setup_bb):
 
     
 
-def test_bb(_setup_bb, expected_value_function = _get_expected_values_sb_bb):
+def test_bb(_setup_bb, expected_value_function = _get_expected_values_reference):
     '''
-    Accuracy test against a StellBlanket reference solution for a 4-group isotropic-source breeding blanket problem.
+    Accuracy test against a frozen reference solution for a 4-group isotropic-source breeding blanket problem.
 
     Checks both solve_lower_triangular and lx.linear_solve (global BiCGStab) against interpolated
-    scalar flux moments from StellBlanket along 1000 points spanning the slab.
+    scalar flux moments from the frozen reference along 1000 points spanning the slab.
 
     Tolerances: dim=1,2 use rtol=1e-10 (accuracy); dim=3 uses a coarser mesh so rtol~0.38 (regression only).
     '''
