@@ -313,29 +313,6 @@ def base_resolutions():
 def _interp_x():
     return onp.linspace(0 + 1e-5, onp.sum(base_region_sizes()) - 1e-5, 1000)
 
-def _bb_sb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order):    
-    import StellBlanket as SB
-    from .test_anisotropic_scattering import _switch_element_type
-
-    xs_data_dict = bb_data_dict()
-    
-    region_sizes = base_region_sizes()
-
-    region_names = ['Plasma', 'TungstenArmor', 'FirstWall', 'BreedingZone','BackSupportingStructure', 'VVWallFront', 'VVShield', 'VVWallBack']
-    xs_regions   = [SB.Generic_Elements.Material(SB.Generic_Elements.Multigroup_Cross_Section(xs_data_dict[i][0], xs_data_dict[i][1]) ) for i in region_names]
-
-    quad_set     = SB.Generic_Elements.Quadrature_Set(*SB.Generic_Elements.create_TN(tn_order))
-    element      = _switch_element_type(dim)
-    energy_set   = SB.Generic_Elements.Energy_Set(onp.arange(xs_data_dict['Plasma'][0].shape[0] + 1))    
-    source_p = SB.Generic_Elements.Constant_Source(element, 1.0, energy_set[0])
-    source_0 = SB.Generic_Elements.Zero_Source(element)
-    
-    sources = [source_p if i ==0 else  source_0 for i in range(len(xs_regions))]
-    lmax = xs_data_dict['Plasma'][1].shape[0] -1
-    cartesian_domain, source = SB.Generic_Elements.Create_Slab(element, region_sizes, n_elem_regions, xs_regions, d_other_dim, n_other_dim, sources)            
-    matfreente       = SB.Generic_Elements.Create_RAM_Simulation(quad_set, energy_set, cartesian_domain, degree, lmax)
-    return matfreente, source
-
 
 
 
