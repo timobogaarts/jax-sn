@@ -1,6 +1,5 @@
 
 from ..transport_operator_interface import TransportOperator, AngleLifting
-from typing import ClassVar
 import equinox as eqx
 
 
@@ -12,7 +11,9 @@ class VmapAngles(AngleLifting):
     needs to know how to vmap.
     '''
 
-    vmaps_inner: ClassVar[bool] = True
+    @classmethod
+    def vmaps_inner(cls):
+        return True   # lifts by vmapping the single-angle op
 
     @staticmethod
     def _map_over_angles(single_op: "TransportOperator", leading, fn):

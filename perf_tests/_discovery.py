@@ -116,12 +116,12 @@ def discover_variants(base: Type, overrides: Dict[Type, List[object]] = None,
 def serializes(lift, inv) -> bool:
     """True if benchmarking ``lift`` over ``inv`` would silently fall back to a serial loop.
 
-    A lift that vectorises by ``vmap``-ing the inner op (``vmaps_inner``) over an inversion whose
-    kernel is opaque to ``vmap`` (``vmappable == False``, e.g. warp) runs one angle at a time -- a
+    A lift that vectorises by ``vmap``-ing the inner op (``vmaps_inner()``) over an inversion whose
+    kernel is opaque to ``vmap`` (``vmappable() == False``, e.g. warp) runs one angle at a time -- a
     real but ~40x-slower config the package permits and the benchmark should not *select*. The facts
-    live on the strategy classes; this just reads them (defaults are the safe generic behaviour).
+    are abstract classmethods on the strategy classes; every concrete strategy declares them.
     """
-    return getattr(lift, "vmaps_inner", False) and not getattr(inv, "vmappable", True)
+    return lift.vmaps_inner() and not inv.vmappable()
 
 
 def compatible_pairs(

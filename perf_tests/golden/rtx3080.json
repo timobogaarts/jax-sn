@@ -3,7 +3,7 @@
     "BatchedDiscrete": {
       "status": "ok",
       "peak_mb": 201.77371215820312,
-      "t_ms": 8.069233500464179,
+      "t_ms": 8.044835999953648,
       "reason": ""
     }
   },
@@ -11,37 +11,37 @@
     "VmapSweep": {
       "status": "ok",
       "peak_mb": 3682.5738830566406,
-      "t_ms": 5633.220543999414,
+      "t_ms": 5717.593365000539,
       "reason": ""
     },
     "BatchedSweep(1000)": {
       "status": "ok",
       "peak_mb": 929.3085174560547,
-      "t_ms": 5737.009997999849,
+      "t_ms": 5782.194666999203,
       "reason": ""
     },
     "VmapPallasSweep": {
       "status": "ok",
       "peak_mb": 3682.5738677978516,
-      "t_ms": 652.1661529986886,
+      "t_ms": 632.334099000218,
       "reason": ""
     },
     "BatchedPallasSweep(1000)": {
       "status": "ok",
       "peak_mb": 931.5057678222656,
-      "t_ms": 652.8437180004403,
+      "t_ms": 644.4193759998598,
       "reason": ""
     },
     "WarpSequentialSweep": {
       "status": "ok",
       "peak_mb": 885.5178298950195,
-      "t_ms": 3147.620812000241,
+      "t_ms": 3049.756871999307,
       "reason": ""
     },
     "WarpLevelSweep": {
       "status": "ok",
       "peak_mb": 886.226448059082,
-      "t_ms": 169.61540400006925,
+      "t_ms": 163.45108299992717,
       "reason": ""
     }
   },
@@ -49,37 +49,37 @@
     "VmapSweep": {
       "status": "ok",
       "peak_mb": 3979.2064208984375,
-      "t_ms": 5699.105247000261,
+      "t_ms": 5663.346811999872,
       "reason": ""
     },
     "BatchedSweep(1000)": {
       "status": "ok",
       "peak_mb": 1225.9410552978516,
-      "t_ms": 5855.370385999777,
+      "t_ms": 5915.699080000195,
       "reason": ""
     },
     "VmapPallasSweep": {
       "status": "ok",
       "peak_mb": 3979.2064056396484,
-      "t_ms": 632.2173249991465,
+      "t_ms": 654.2078450002009,
       "reason": ""
     },
     "BatchedPallasSweep(1000)": {
       "status": "ok",
       "peak_mb": 1228.1383056640625,
-      "t_ms": 673.8579100001516,
+      "t_ms": 651.7867500006105,
       "reason": ""
     },
     "WarpSequentialSweep": {
       "status": "ok",
       "peak_mb": 1181.6925659179688,
-      "t_ms": 3279.6295400003146,
+      "t_ms": 3176.611185999718,
       "reason": ""
     },
     "WarpLevelSweep": {
       "status": "ok",
       "peak_mb": 1182.4011840820312,
-      "t_ms": 174.4210300003033,
+      "t_ms": 171.9170579999627,
       "reason": ""
     }
   },
@@ -87,37 +87,37 @@
     "VmapSweep": {
       "status": "ok",
       "peak_mb": 3258.106903076172,
-      "t_ms": 1413.5924059992249,
+      "t_ms": 1404.323075999855,
       "reason": ""
     },
     "BatchedSweep(1000)": {
       "status": "ok",
       "peak_mb": 507.9827651977539,
-      "t_ms": 1410.0215720009146,
+      "t_ms": 1417.3936880006295,
       "reason": ""
     },
     "VmapPallasSweep": {
       "status": "ok",
       "peak_mb": 3287.065887451172,
-      "t_ms": 151.3241829998151,
+      "t_ms": 152.28913700047997,
       "reason": ""
     },
     "BatchedPallasSweep(1000)": {
       "status": "ok",
       "peak_mb": 510.1800231933594,
-      "t_ms": 153.5840279993863,
+      "t_ms": 154.44739899976412,
       "reason": ""
     },
     "WarpSequentialSweep": {
       "status": "ok",
       "peak_mb": 486.0099792480469,
-      "t_ms": 755.1351490001252,
+      "t_ms": 755.7272179992651,
       "reason": ""
     },
     "WarpLevelSweep": {
       "status": "ok",
       "peak_mb": 486.7185974121094,
-      "t_ms": 34.521507999670575,
+      "t_ms": 35.08715599946299,
       "reason": ""
     }
   },
@@ -125,13 +125,13 @@
     "VmapMass": {
       "status": "ok",
       "peak_mb": 399.9657287597656,
-      "t_ms": 13.625716001115507,
+      "t_ms": 13.764086999799474,
       "reason": ""
     },
     "LaxMass": {
       "status": "ok",
       "peak_mb": 268.1297912597656,
-      "t_ms": 12.507724000897724,
+      "t_ms": 12.553013999422546,
       "reason": ""
     }
   },
@@ -139,13 +139,13 @@
     "BatchedMoment": {
       "status": "ok",
       "peak_mb": 201.77371215820312,
-      "t_ms": 5.880867667049945,
+      "t_ms": 5.876176333307133,
       "reason": ""
     },
     "StreamingMoment": {
       "status": "ok",
       "peak_mb": 199.6055908203125,
-      "t_ms": 21.295804999681422,
+      "t_ms": 22.086783000304422,
       "reason": ""
     }
   },
@@ -153,7 +153,7 @@
     "GatherScatterOperatorBroadcasted": {
       "status": "ok",
       "peak_mb": 330.5113983154297,
-      "t_ms": 1.4773084999433195,
+      "t_ms": 1.486407999967317,
       "reason": ""
     }
   },
@@ -161,13 +161,13 @@
     "VmapForward": {
       "status": "ok",
       "peak_mb": 32.97234344482422,
-      "t_ms": 1.497068166675793,
+      "t_ms": 1.5029298333502084,
       "reason": ""
     },
     "BatchedForward(1000)": {
       "status": "ok",
       "peak_mb": 22.654075622558594,
-      "t_ms": 2.8095374997671265,
+      "t_ms": 1.869701333311645,
       "reason": ""
     }
   },
@@ -175,37 +175,37 @@
     "VmapSweep": {
       "status": "ok",
       "peak_mb": 67.57267761230469,
-      "t_ms": 679.6811089989205,
+      "t_ms": 646.5659770001366,
       "reason": ""
     },
     "BatchedSweep(1000)": {
       "status": "ok",
       "peak_mb": 29.772972106933594,
-      "t_ms": 654.8688140010199,
+      "t_ms": 666.8676460003553,
       "reason": ""
     },
     "VmapPallasSweep": {
       "status": "ok",
       "peak_mb": 69.40372467041016,
-      "t_ms": 81.01362700108439,
+      "t_ms": 81.61406299950613,
       "reason": ""
     },
     "BatchedPallasSweep(1000)": {
       "status": "ok",
       "peak_mb": 29.80347442626953,
-      "t_ms": 72.53467099872069,
+      "t_ms": 74.2510919999404,
       "reason": ""
     },
     "WarpSequentialSweep": {
       "status": "ok",
       "peak_mb": 29.120521545410156,
-      "t_ms": 272.73923000029754,
+      "t_ms": 273.9419280005677,
       "reason": ""
     },
     "WarpLevelSweep": {
       "status": "ok",
       "peak_mb": 29.13036346435547,
-      "t_ms": 3.9076810003280116,
+      "t_ms": 4.130849999910424,
       "reason": ""
     }
   },
@@ -213,7 +213,7 @@
     "VmapSweep + VmapAngles": {
       "status": "ok",
       "peak_mb": 3155.1902618408203,
-      "t_ms": 1384.0415089998714,
+      "t_ms": 1514.7506299999804,
       "reason": ""
     },
     "VmapSweep + WarpSequentialAngles": {
@@ -231,7 +231,7 @@
     "BatchedSweep(1000) + VmapAngles": {
       "status": "ok",
       "peak_mb": 401.37569427490234,
-      "t_ms": 1376.9964690000052,
+      "t_ms": 1396.4458070004184,
       "reason": ""
     },
     "BatchedSweep(1000) + WarpSequentialAngles": {
@@ -249,7 +249,7 @@
     "VmapPallasSweep + VmapAngles": {
       "status": "ok",
       "peak_mb": 3287.0261993408203,
-      "t_ms": 133.72813900059555,
+      "t_ms": 133.8717500002531,
       "reason": ""
     },
     "VmapPallasSweep + WarpSequentialAngles": {
@@ -267,7 +267,7 @@
     "BatchedPallasSweep(1000) + VmapAngles": {
       "status": "ok",
       "peak_mb": 403.5729522705078,
-      "t_ms": 135.0594089999504,
+      "t_ms": 137.80403100008698,
       "reason": ""
     },
     "BatchedPallasSweep(1000) + WarpSequentialAngles": {
@@ -285,7 +285,7 @@
     "WarpSequentialSweep + WarpSequentialAngles": {
       "status": "ok",
       "peak_mb": 354.1343536376953,
-      "t_ms": 739.6779410009913,
+      "t_ms": 743.7708130000829,
       "reason": ""
     },
     "WarpSequentialSweep + WarpLevelAngles": {
@@ -303,7 +303,155 @@
     "WarpLevelSweep + WarpLevelAngles": {
       "status": "ok",
       "peak_mb": 354.8429718017578,
-      "t_ms": 14.862796999295824,
+      "t_ms": 15.030228000796342,
+      "reason": ""
+    }
+  },
+  "grad.solve.ltri": {
+    "VmapSweep": {
+      "status": "ok",
+      "peak_mb": 963.8003702163696,
+      "t_ms": 138104.5076350001,
+      "n_iter": 133,
+      "ms_per_iter": 1038.3797566541361,
+      "reason": ""
+    },
+    "BatchedSweep(1000)": {
+      "status": "ok",
+      "peak_mb": 825.4176254272461,
+      "t_ms": 141426.09720200015,
+      "n_iter": 133,
+      "ms_per_iter": 1063.354114300753,
+      "reason": ""
+    },
+    "VmapPallasSweep": {
+      "status": "ok",
+      "peak_mb": 963.8003244400024,
+      "t_ms": 16481.99607100014,
+      "n_iter": 133,
+      "ms_per_iter": 123.92478248872285,
+      "reason": ""
+    },
+    "BatchedPallasSweep(1000)": {
+      "status": "ok",
+      "peak_mb": 825.4175491333008,
+      "t_ms": 17686.079637999683,
+      "n_iter": 133,
+      "ms_per_iter": 132.97804239097505,
+      "reason": ""
+    },
+    "WarpSequentialSweep": {
+      "status": "ok",
+      "peak_mb": 827.1752014160156,
+      "t_ms": 47968.948587999876,
+      "n_iter": 133,
+      "ms_per_iter": 360.6687863759389,
+      "reason": ""
+    },
+    "WarpLevelSweep": {
+      "status": "ok",
+      "peak_mb": 827.2799530029297,
+      "t_ms": 10220.670398999573,
+      "n_iter": 133,
+      "ms_per_iter": 76.84714585713965,
+      "reason": ""
+    }
+  },
+  "solve": {
+    "VmapSweep / solve.iter": {
+      "status": "ok",
+      "peak_mb": 566.3949737548828,
+      "t_ms": 99410.76401999999,
+      "n_iter": 55,
+      "ms_per_iter": 1807.4684367272725,
+      "reason": ""
+    },
+    "VmapSweep / solve.ltri": {
+      "status": "ok",
+      "peak_mb": 387.58226776123047,
+      "t_ms": 61430.826861999776,
+      "n_iter": 133,
+      "ms_per_iter": 461.8859162556374,
+      "reason": ""
+    },
+    "BatchedSweep(1000) / solve.iter": {
+      "status": "ok",
+      "peak_mb": 430.4574203491211,
+      "t_ms": 103362.97035699955,
+      "n_iter": 55,
+      "ms_per_iter": 1879.3267337636282,
+      "reason": ""
+    },
+    "BatchedSweep(1000) / solve.ltri": {
+      "status": "ok",
+      "peak_mb": 197.5227279663086,
+      "t_ms": 64651.51262299969,
+      "n_iter": 133,
+      "ms_per_iter": 486.1015986691706,
+      "reason": ""
+    },
+    "VmapPallasSweep / solve.iter": {
+      "status": "ok",
+      "peak_mb": 566.3949508666992,
+      "t_ms": 8772.812946999693,
+      "n_iter": 55,
+      "ms_per_iter": 159.50568994544895,
+      "reason": ""
+    },
+    "VmapPallasSweep / solve.ltri": {
+      "status": "ok",
+      "peak_mb": 389.92601108551025,
+      "t_ms": 4242.643911999949,
+      "n_iter": 133,
+      "ms_per_iter": 31.8995782857139,
+      "reason": ""
+    },
+    "BatchedPallasSweep(1000) / solve.iter": {
+      "status": "ok",
+      "peak_mb": 430.4573974609375,
+      "t_ms": 9239.559313999962,
+      "n_iter": 55,
+      "ms_per_iter": 167.99198752727204,
+      "reason": ""
+    },
+    "BatchedPallasSweep(1000) / solve.ltri": {
+      "status": "ok",
+      "peak_mb": 198.49925994873047,
+      "t_ms": 4906.857447999755,
+      "n_iter": 133,
+      "ms_per_iter": 36.89366502255455,
+      "reason": ""
+    },
+    "WarpSequentialSweep / solve.iter": {
+      "status": "ok",
+      "peak_mb": 430.4572525024414,
+      "t_ms": 32616.2252539998,
+      "n_iter": 55,
+      "ms_per_iter": 593.0222773454509,
+      "reason": ""
+    },
+    "WarpSequentialSweep / solve.ltri": {
+      "status": "ok",
+      "peak_mb": 187.87901306152344,
+      "t_ms": 20526.61187600006,
+      "n_iter": 133,
+      "ms_per_iter": 154.3354276390982,
+      "reason": ""
+    },
+    "WarpLevelSweep / solve.iter": {
+      "status": "ok",
+      "peak_mb": 430.6667251586914,
+      "t_ms": 2924.922298000638,
+      "n_iter": 55,
+      "ms_per_iter": 53.180405418193416,
+      "reason": ""
+    },
+    "WarpLevelSweep / solve.ltri": {
+      "status": "ok",
+      "peak_mb": 188.08848571777344,
+      "t_ms": 1805.6134819998988,
+      "n_iter": 133,
+      "ms_per_iter": 13.576041218044352,
       "reason": ""
     }
   }

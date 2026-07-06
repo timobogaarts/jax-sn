@@ -19,7 +19,7 @@ its kernel under ``implementations/`` (e.g. ``implementations/transport_operator
 
 import equinox as eqx
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Type, ClassVar, Tuple
+from typing import TYPE_CHECKING, Type, Tuple
 
 from .sweep_data import BasicSweepData, SweepData
 
@@ -50,28 +50,39 @@ class InversionStrategy(eqx.Module):
     sweep needs the :class:`~jax_sn.operators.transport_operator.ProvidesLevels` capability). It answers two separate
     questions about that:
 
-    - :attr:`required_capabilities` -- the :class:`~jax_sn.operators.transport_operator.SweepData` *capabilities* the sweep
+    - :meth:`required_capabilities` -- the :class:`~jax_sn.operators.transport_operator.SweepData` *capabilities* the sweep
       data must provide (interfaces, not concrete types). :meth:`check_compatible` accepts *any*
       sweep data providing them, so a richer plan (more capabilities) is always acceptable -- this is
       the *acceptance* question, answered at construction / on every ``eqx.tree_at``.
-    - :meth:`default_sweep_data_type` (classmethod) -- the *concrete*, minimal sweep-data type a
+    - :meth:`default_sweep_data_type` -- the *concrete*, minimal sweep-data type a
       creation helper should build to satisfy those capabilities. This is the *build* question,
       answered *before* the operator exists (no instance data), so a helper can construct one.
 
     Building the sweep data is an explicit, visible step (the helper builds ``default_sweep_data_type``
     from the domain, the caller can build it by hand, and it is rebuilt via ``SweepData.reconstruct``)
     -- never hidden work inside operator construction.
+
+    Every fixed-per-class fact a subclass declares to self-classify is a ``classmethod`` (answerable
+    without an instance). Those with a fail-safe default are concrete (override only if special);
+    :meth:`vmappable` has no safe default -- forgetting it would silently re-arm a performance footgun
+    -- so it is ``@abstractmethod``, forcing each concrete strategy to state its value.
     '''
 
-    required_capabilities: ClassVar[Tuple[type, ...]] = ()
-    '''Sweep-data capability interfaces this strategy requires (e.g. ``(ProvidesLevels,)``). Empty
-    means any :class:`~jax_sn.operators.transport_operator.SweepData` is acceptable.'''
+    @classmethod
+    def required_capabilities(cls) -> Tuple[type, ...]:
+        '''Sweep-data capability interfaces this strategy requires (e.g. ``(ProvidesLevels,)``). Empty
+        (the default) means any :class:`~jax_sn.operators.transport_operator.SweepData` is acceptable.'''
+        return ()
 
-    vmappable: ClassVar[bool] = True
-    '''Whether an outer ``vmap`` over this inversion vectorises. ``False`` for an opaque external
-    kernel (e.g. warp), where ``vmap`` cannot see into the call and falls back to a serial loop --
-    so a vmap-based lift (see :attr:`AngleLifting.vmaps_inner`) over it silently serialises. This is
-    a *performance* fact, kept separate from the *correctness* check in :meth:`check_compatible`.'''
+    @classmethod
+    @abstractmethod
+    def vmappable(cls) -> bool:
+        '''Whether an outer ``vmap`` over this inversion vectorises. ``False`` for an opaque external
+        kernel (e.g. warp), where ``vmap`` cannot see into the call and falls back to a serial loop --
+        so a vmap-based lift (see :meth:`AngleLifting.vmaps_inner`) over it silently serialises. This is
+        a *performance* fact, kept separate from the *correctness* check in :meth:`check_compatible`.
+        Abstract (no safe default): each concrete inversion must declare it.'''
+        ...
 
     @abstractmethod
     def invert(self, operator: "TransportOperator", b):
@@ -94,10 +105,10 @@ class InversionStrategy(eqx.Module):
         ...
 
     def check_compatible(self, operator: "TransportOperator"):
-        '''Assert the operator's sweep data provides every capability in :attr:`required_capabilities`.
+        '''Assert the operator's sweep data provides every capability in :meth:`required_capabilities`.
         Permissive: a richer sweep data (more capabilities) passes. Run from
         ``TransportOperator.__check_init__``, so it fires at construction and on every ``eqx.tree_at``.'''
-        for capability in self.required_capabilities:
+        for capability in self.required_capabilities():
             assert isinstance(operator.sweep_data, capability), \
                 f"{type(self).__name__} requires sweep data providing {capability.__name__}, " \
                 f"but got {type(operator.sweep_data).__name__}. Build it via " \
@@ -113,11 +124,15 @@ class AngleLifting(eqx.Module):
     owns the lift, so the single-angle class stays ignorant of the multi-angle space.
     '''
 
-    vmaps_inner: ClassVar[bool] = False
-    '''Whether this lift works by ``vmap``-ing the wrapped single-angle op. ``True`` for the generic
-    :class:`VmapAngles`; ``False`` for a fused kernel that handles the angles itself. A ``True`` lift
-    over an inversion with ``vmappable = False`` serialises -- the one combination a benchmark should
-    not select (it is still constructible; this only flags it).'''
+    @classmethod
+    @abstractmethod
+    def vmaps_inner(cls) -> bool:
+        '''Whether this lift works by ``vmap``-ing the wrapped single-angle op. ``True`` for the generic
+        :class:`VmapAngles`; ``False`` for a fused kernel that handles the angles itself. A ``True`` lift
+        over an inversion with ``vmappable() == False`` serialises -- the one combination a benchmark
+        should not select (it is still constructible; this only flags it). Abstract (no safe default):
+        each concrete lift must declare it.'''
+        ...
 
     @abstractmethod
     def forward(self, single_op: "TransportOperator", x):

@@ -437,6 +437,10 @@ class VmapPallasSweep(InversionStrategy):
         return transport_inverse_sweep_complete_vmap_pallas(*operator._inversion_args(), b)
 
     @classmethod
+    def vmappable(cls):
+        return True
+
+    @classmethod
     def default_angle_lifting(cls):
         return VmapAngles()
 
@@ -448,6 +452,10 @@ class BatchedPallasSweep(InversionStrategy):
 
     def invert(self, operator, b):
         return transport_inverse_sweep_batched_pallas(*operator._inversion_args(), b, self.batch_size)
+
+    @classmethod
+    def vmappable(cls):
+        return True
 
     @classmethod
     def default_angle_lifting(cls):

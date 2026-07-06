@@ -13,8 +13,6 @@ subclass. The level-parallel variant carries its level setup inside a
 :class:`LeveledSweepData` toposort.
 '''
 
-from typing import ClassVar
-
 from ..sweep_data import LeveledSweepData, ProvidesLevels
 from jax_sn.solution_domain import SolutionDomainData
 
@@ -43,13 +41,15 @@ def _assert_warp_compatible(solution_domain_data: SolutionDomainData):
 class WarpSequentialSweep(InversionStrategy):
     '''Single-angle inverse via the sequential Warp sweep kernel (no batching).'''
 
-    vmappable: ClassVar[bool] = False   # opaque warp kernel: an outer vmap serialises
-
     def invert(self, operator, b):
         return single_angle_warp_sweep(*operator._inversion_args(), b)
 
     def check_compatible(self, operator):
         _assert_warp_compatible(operator.solution_domain_data)
+
+    @classmethod
+    def vmappable(cls):
+        return False   # opaque warp kernel: an outer vmap serialises
 
     @classmethod
     def default_angle_lifting(cls):
@@ -65,11 +65,16 @@ class WarpLevelSweep(InversionStrategy):
     :class:`~jax_sn.operators.transport_operator.LeveledSweepData`.
     '''
 
-    required_capabilities = (ProvidesLevels,)
-    vmappable: ClassVar[bool] = False   # opaque warp kernel: an outer vmap serialises
-
     def invert(self, operator, b):
         return level_single_angle_warp_sweep(*operator._inversion_args(), b, operator.sweep_data.level_fwd)
+
+    @classmethod
+    def required_capabilities(cls):
+        return (ProvidesLevels,)
+
+    @classmethod
+    def vmappable(cls):
+        return False   # opaque warp kernel: an outer vmap serialises
 
     @classmethod
     def default_sweep_data_type(cls):
@@ -90,6 +95,10 @@ class WarpLevelSweep(InversionStrategy):
 class WarpSequentialAngles(AngleLifting):
     '''Multi-angle lift: fused sequential Warp sweep for the inverse, vmap for the forward.'''
 
+    @classmethod
+    def vmaps_inner(cls):
+        return False   # fused kernel handles the angles itself
+
     def forward(self, single_op, x):
         return VmapAngles().forward(single_op, x)
 
@@ -103,6 +112,10 @@ class WarpSequentialAngles(AngleLifting):
 
 class WarpLevelAngles(AngleLifting):
     '''Multi-angle lift: fused level-based-parallelism Warp sweep for the inverse, vmap for the forward.'''
+
+    @classmethod
+    def vmaps_inner(cls):
+        return False   # fused kernel handles the angles itself
 
     def forward(self, single_op, x):
         return VmapAngles().forward(single_op, x)
