@@ -4,7 +4,7 @@ import numpy as onp
 import jax
 jax.config.update("jax_enable_x64", True)
 import jax.numpy as jnp
-# Old StellBlanket implementation for verification
+# Old reference implementation for verification
 def create_TN(N: int):
     import numpy as np
     def create_octants(N: int):

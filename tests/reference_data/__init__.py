@@ -1,16 +1,17 @@
 '''
-Stored reference data for tests that used to call StellBlanket (SB) at test time.
+Stored reference data for tests that need an external-solver ground truth.
 
-SB is now only needed to *regenerate* this data (see ``_generate.py``); the tests
-themselves load the frozen ``.npz`` bundles from this directory via :func:`load`.
+The tests load the frozen ``.npz`` bundles from this directory via :func:`load`;
+the working tree contains no reference generator (it depends on an external
+neutron-transport solver). To regenerate, ``regenerate.py`` checks out the pinned
+historical commit that still holds the generator, runs it, and copies the bundles
+back here::
+
+    python tests/reference_data/regenerate.py
 
 Each bundle is a dict of named arrays keyed by a canonical string (see the
-``key_*`` helpers). Regenerate everything (needs StellBlanket installed) with::
-
-    python tests/reference_data/_generate.py
-
-Bundles are committed (the global ``*.npz`` gitignore is overridden for this
-directory) so the suite runs with no SB dependency.
+``key_*`` helpers). Bundles are committed (the global ``*.npz`` gitignore is
+overridden for this directory) so the suite runs with no external dependency.
 '''
 import os
 import numpy as onp

@@ -8,7 +8,7 @@ def _pad_last_dimension(vertices):
 def _face_template(n_nodes_per_element: int) -> jnp.ndarray:
     '''
     Get the face template for a given element type. This defines which nodes belong to each face of the element.
-    This is a hardcodedfunction for simplicial elements (line, triangle, tetrahedron) that is equal to the definition in StellBlanket.
+    This is a hardcodedfunction for simplicial elements (line, triangle, tetrahedron) that is equal to the reference definition (from the original solver).
     However, this is not equal to the definition in Basix, which uses a different ordering for faces [they are sorted in Basix, while permuted here]
 
     Parameters

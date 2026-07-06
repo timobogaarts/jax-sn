@@ -2,7 +2,7 @@
 Self-contained problem builder for the perf-test suite: the breeding-blanket multigroup cross-section
 data (``bb_data_dict``) plus ``build_problem``. This is the *only* part of the old
 ``examples/breeding_blanket_setup.py`` the perf tests need -- copied here so ``perf_tests/`` carries no
-dependency on ``examples/`` (and none on the heavy ``mcbb`` / ``StellBlanket`` imports that file pulls in).
+dependency on ``examples/`` (and none on the heavy external-solver imports that file pulls in).
 The cross-section arrays are auto-extracted from that source; do not hand-edit.
 """
 import numpy as onp
