@@ -85,24 +85,6 @@ def _max_test_degree(dimension):
 def _expected_values_reference(dimension, degree):
     return jnp.array(_load_ref(key_transport(dimension, degree))['expected'])
 
-def _int_setup_solution_domain_data_and_toposort(request):
-    # If there is a better testing / ground truth, just replace this function.
-    dimension = request.param
-    degree = 2
-    lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values = _setup_all(dimension, degree, _verts_conn_reference, _angle_function_tn, _expected_values_reference, _source_reference, _cross_sections_reference)
-    mapped_xs = cross_sections.map_to_full_array(0)
-    solution_domain = jax_sn.solution_domain.SolutionDomain.from_element_and_domain(lagrangian_element, jax_sn.domain.Domain.from_geometric_domain_and_cross_sections(domain, cross_sections))
-
-    
-    quad_set = jax_sn.quadrature_set.create_tn_quadrature_set(2)
-    toposorts = [jax_sn.operators.transport_operator.BasicSweepData.from_domain_angle(domain, angle, 100) for angle in quad_set.angles]
-    total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
-
-    n_angles = quad_set.angles.shape[0]
-    source_angle = jax.tree.map(lambda ts : jnp.repeat(ts, n_angles, axis=0).reshape((n_angles,)+ts.shape), source)
-    return solution_domain, angle, toposort, mapped_xs, source, expected_values, quad_set, total_toposorts, source_angle
-
-
 @pytest.mark.slow
 @pytest.mark.parametrize("dimension", [1,2,3])
 def test_sweep_complete_vmap(dimension):
@@ -162,18 +144,25 @@ def _all_transport_operators_pallas():
     return {_vmap_op : {}, _batched_op : {'batch_size' : 5} , _vmap_pallas_op : {}, _batched_pallas_op : {'batch_size' : 5} }
 
 
-@pytest.fixture(params=[1,2,3], scope='session')
-def setup_all_transport_operators(request):        
-    solution_domain, angle, toposort, mapped_xs, source, expected_values, quad_set, total_toposorts, source_angle = _int_setup_solution_domain_data_and_toposort(request)
+@pytest.fixture(scope='session')
+def setup_all_transport_operators(bb_mgop, request):
+    # These tests are algebraic (adjoint, forward-backward, backend consistency, batching) and
+    # need no ground truth, so they reuse the shared BB domain/toposort/angles. Backend accuracy
+    # is anchored externally elsewhere (test_sweep_complete_vmap / test_moment_operator / test_bb).
+    MGOP                 = bb_mgop[0]
+    solution_domain_data = MGOP.solution_domain_data
+    top                  = MGOP.transport_operator
+    single_sweep_data, single_angle = top[0].sweep_data, top[0].angle
+    total_toposorts, angles         = top.sweep_data, top.angle
 
-    desired_ops = _all_transport_operators_pallas() if ( request.config.getoption("--runpallas")) else _all_transport_operators()
+    desired_ops = _all_transport_operators_pallas() if request.config.getoption("--runpallas") else _all_transport_operators()
     operators = []
     for operator_class, operator_kwargs in desired_ops.items():
-        operators.append(operator_class(solution_domain.solution_domain_data, toposort, angle, 0, **operator_kwargs))
+        operators.append(operator_class(solution_domain_data, single_sweep_data, single_angle, 0, **operator_kwargs))
 
     for operator_class, operator_kwargs in desired_ops.items():
-        operators.append(jax_sn.operators.transport_operator.TransportOperatorMultipleAngles(operator_class(solution_domain.solution_domain_data, total_toposorts, quad_set.angles, 0, **operator_kwargs), jax_sn.operators.transport_operator.VmapAngles()))
-    
+        operators.append(jax_sn.operators.transport_operator.TransportOperatorMultipleAngles(operator_class(solution_domain_data, total_toposorts, angles, 0, **operator_kwargs), jax_sn.operators.transport_operator.VmapAngles()))
+
     return operators
 
 @pytest.mark.slow
