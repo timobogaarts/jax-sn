@@ -14,25 +14,15 @@ def _setup_domain(element, degree, _vertices_conn_function):
 
 
 #====================================================================================================================================================================================
-#   Reference-data providers  [load frozen mesh / source / cross sections; see tests/reference_data/]
+#   Reference-data providers  [load frozen mesh; see tests/reference_data/]
 #====================================================================================================================================================================================
-# Rebuild the jax-sn wrapper objects from the frozen bundles. Used by test_local_real_inversion
-# below and imported by the moment test (which needs the same mesh/source/cross-section setup).
+# Rebuild the mesh from the frozen bundle for test_local_real_inversion (a filled simplex region
+# where a linspace across the AABB stays inside the mesh -- the BB slab geometry doesn't qualify).
 from reference_data import load as _load_ref, key_transport
 
 def _verts_conn_reference(dimension, degree):
     b = _load_ref(key_transport(dimension, degree))
     return jnp.array(b['verts']), jnp.array(b['conn'])
-
-def _source_reference(dimension, degree):
-    b = _load_ref(key_transport(dimension, degree))
-    return jax_sn.source.Source(jnp.array(b['source']))
-
-def _cross_sections_reference(dimension, degree):
-    b = _load_ref(key_transport(dimension, degree))
-    xsdata = jax_sn.domain.cross_sections.CrossSectionData(jnp.array(b['xs_total']), jnp.array(b['xs_scattering']))
-    xsdata.assert_valid_batched()
-    return jax_sn.domain.geometric_domain.CrossSectionsIndexed(jnp.array(b['xs_indices']), xsdata)
 
 
 def test_transport_sweep_pinned(bb_mgop):

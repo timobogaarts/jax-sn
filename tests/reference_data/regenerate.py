@@ -58,10 +58,11 @@ def main():
         # Bundles that must NOT be pulled from the external-solver generator: `bb__d3` is
         # self-pinned to jax-sn's own output (the external solver meshes 3D differently); the
         # `fem__*` bundles are frozen from the retired in-tree FEM oracle (old_generate_basis.py),
-        # not the external solver; and the `anisotropic__*` bundles were retired when that test
+        # not the external solver; `transport_sweep__*` and `moment__*` are self-pinned regression
+        # guards on the BB problem; and the `anisotropic__*` bundles were retired when that test
         # folded into the BB fixture.
         SKIP = {'bb__d3.npz'}
-        SKIP_PREFIXES = ('anisotropic__', 'fem__', 'transport_sweep__')
+        SKIP_PREFIXES = ('anisotropic__', 'fem__', 'transport_sweep__', 'moment__')
 
         produced = os.path.join(worktree, 'tests', 'reference_data')
         n = 0

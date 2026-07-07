@@ -293,53 +293,56 @@ def _interp_x():
     return onp.linspace(0 + 1e-5, onp.sum(base_region_sizes()) - 1e-5, 1000)
 
 
-def setup_bb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order):
-    '''Build the jax-sn SolutionDomain, isotropic flat source, and TN quadrature set for the breeding blanket problem.'''
-
+def bb_mesh(dim, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim):
+    '''The raw BB Cartesian mesh: vertices, connectivity, per-element cross sections and group-0
+    source, before an element degree is chosen. Split out so tests that perturb the geometry
+    (finite-difference derivative checks) can modify verts/xs here and rebuild from setup_bb_from_mesh.'''
     from jax_sn.domain.geometric_domain import CrossSectionData
     from jax_sn.domain.domain_generation import create_cartesian_setup
-    from jax_sn.domain import Domain
-    from jax_sn.solution_domain import SolutionDomain, BasixLagrangianSimplex    
-    from jax_sn.quadrature_set import create_tn_quadrature_set
 
     data_dictionary = bb_data_dict() # dictionary with matrices
-
     xs_data_dict = {name : CrossSectionData(total = jnp.array(data_dictionary[name][0]), scattering = jnp.array(data_dictionary[name][1])) for name in data_dictionary.keys()}
 
-    
     other_dims   = [[(d_other_dim, n_other_dim)]]*(dim - 1)
-
     region_names = ['Plasma', 'TungstenArmor', 'FirstWall', 'BreedingZone','BackSupportingStructure', 'VVWallFront', 'VVShield', 'VVWallBack']
-
     xs_regions = [xs_data_dict[i] for i in region_names]
-
-
     region_size_res = [(size, n_elem) for size, n_elem in zip(d_elem_regions, n_elem_regions)]
-
-    
     source_eg0 = [1 if i ==0 else 0 for i in range(len(region_names))]
-    
 
-    verts, conn, cross_sections, sources = create_cartesian_setup(dim, [region_size_res] + other_dims, xs_regions, source_eg0, 0)
-    element_type                         = BasixLagrangianSimplex(degree, dim)
-    domain                               = Domain.from_mesh_and_cross_sections((verts, conn), element_type.face_template, cross_sections)    
-    solution_domain                      = SolutionDomain.from_element_and_domain(element_type, domain)
+    return create_cartesian_setup(dim, [region_size_res] + other_dims, xs_regions, source_eg0, 0)
+
+
+def setup_bb_from_mesh(verts, conn, cross_sections, sources, degree, tn_order):
+    '''Build the SolutionDomain, isotropic flat source, and TN quadrature set from a (possibly
+    perturbed) BB mesh at the given element degree.'''
+    from jax_sn.domain import Domain
+    from jax_sn.solution_domain import SolutionDomain, BasixLagrangianSimplex
+    from jax_sn.quadrature_set import create_tn_quadrature_set
+
+    element_type    = BasixLagrangianSimplex(degree, verts.shape[-1])
+    domain          = Domain.from_mesh_and_cross_sections((verts, conn), element_type.face_template, cross_sections)
+    solution_domain = SolutionDomain.from_element_and_domain(element_type, domain)
     # isotropic flat source
     sources = jnp.repeat(sources, repeats = solution_domain.n_basis, axis = -1).reshape(-1, solution_domain.n_basis)
 
     return solution_domain, sources, create_tn_quadrature_set(tn_order)
 
-def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order):
-    '''Construct all operators (transport, mass, moment, scatter) and the MultiGroupOperatorScan for the breeding blanket problem.'''
+
+def setup_bb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order):
+    '''Build the jax-sn SolutionDomain, isotropic flat source, and TN quadrature set for the breeding blanket problem.'''
+    verts, conn, cross_sections, sources = bb_mesh(dim, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim)
+    return setup_bb_from_mesh(verts, conn, cross_sections, sources, degree, tn_order)
+
+
+def build_multigroup_operator(solution_domain, sources, quadrature_set):
+    '''Assemble the transport/mass/moment/discrete/scatter operators and the MultiGroupOperatorScan
+    for a BB solution domain. Returns (Aop, source_total_all_angles, solution_domain).'''
     from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
     from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, VmapForward, VmapSweep, VmapAngles
     from jax_sn.operators.mass_operator import MassOperator
     from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
     from jax_sn.operators.transport_operator import BasicSweepData
     from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan
-    
-
-    solution_domain, sources, quadrature_set = setup_bb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order) 
 
     n_energy_groups           = solution_domain.domain.cross_sections_indexed.n_energy_groups
     lmax                      = solution_domain.domain.cross_sections_indexed.l_max
@@ -347,16 +350,18 @@ def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_o
     sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
     transport_operator        = TransportOperatorMultipleAngles(TransportOperator(solution_domain.solution_domain_data, sweep_data, quadrature_set.angles, 0, VmapForward(), VmapSweep()), VmapAngles())
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
-    moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)    
-    
-    groups_elements_basis_shape = (n_energy_groups, ) + solution_domain.elements_basis_shape.shape 
-
-
+    moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
     discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
     gather_scatter_operator   = GatherScatterOperatorBroadcasted(cross_sections_indexed=solution_domain.domain.cross_sections_indexed)
     source_total              = jnp.broadcast_to(sources[None, :, :], (quadrature_set.angles.shape[0],) + sources.shape) # source for all angles
     Aop                       = MultiGroupOperatorScan.from_operators(moment_operator, discrete_operator, transport_operator, mass_operator, gather_scatter_operator, quadrature_set, n_energy_groups)
     return Aop, source_total, solution_domain
+
+
+def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order):
+    '''Construct all operators (transport, mass, moment, scatter) and the MultiGroupOperatorScan for the breeding blanket problem.'''
+    solution_domain, sources, quadrature_set = setup_bb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order)
+    return build_multigroup_operator(solution_domain, sources, quadrature_set)
 
 def _get_bb_args(dim, degree):
     d_elem_regions = base_region_sizes()

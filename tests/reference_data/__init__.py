@@ -17,9 +17,10 @@ Provenance note: most bundles are external-solver ground truth. The self-pinned 
 -- frozen to jax-sn's own current output, i.e. regression pins rather than independent-oracle
 accuracy tests -- are ``bb__d3`` (the external solver tetrahedralises the 3D slab differently,
 so a like-for-like comparison isn't possible), ``transport_sweep__*`` (a localized single-angle
-sweep guard; external accuracy of the sweep is anchored by ``bb__*``), and ``fem__*`` (frozen
-from the retired in-tree FEM oracle). These are excluded from ``regenerate.py`` so re-running it
-never overwrites them.
+sweep guard; external accuracy of the sweep is anchored by ``bb__*``), ``moment__*`` (the
+first-collision moment vector on the BB problem, guarding the higher-l projection that ``bb__*``'s
+scalar-flux oracle can't see), and ``fem__*`` (frozen from the retired in-tree FEM oracle). These
+are excluded from ``regenerate.py`` so re-running it never overwrites them.
 '''
 import os
 import numpy as onp
@@ -70,8 +71,11 @@ def key_transport_sweep(dim: int) -> str:
     return f'transport_sweep__d{dim}'
 
 
-def key_moment(dim: int, degree: int, lmax: int, tn_order: int) -> str:
-    return f'moment__d{dim}_deg{degree}_lmax{lmax}_tn{tn_order}'
+def key_moment(dim: int) -> str:
+    '''Full spherical-harmonic moment vector of the first-collision flux on the BB problem,
+    self-pinned to the current implementation (regression guard on the higher-l moment projection;
+    BB's own oracle key_bb only checks the scalar l=0 flux -- see the provenance note above).'''
+    return f'moment__d{dim}'
 
 
 def key_bb(dim: int) -> str:
@@ -79,9 +83,11 @@ def key_bb(dim: int) -> str:
 
 
 def key_fem(element: str, degree: int) -> str:
-    '''FEM volume (aij/ii/bij) + face (cij) matrices for a simplex element.
+    '''FEM volume (aij/ii/bij), face-outflow (cij) and face-inflow (dij) matrices for a simplex element.
 
-    Frozen from the retired in-tree reference implementation (old_generate_basis.py); an
-    independent oracle for the current basix-based matrices, not external ground truth.
+    aij/ii/bij/cij are frozen from the retired in-tree reference implementation (old_generate_basis.py),
+    an independent oracle for the current basix-based matrices. dij (the per-permutation face-connection
+    matrices) was never emitted by that oracle, so it is self-pinned to the current implementation
+    (regression guard); it is not external/independent ground truth.
     '''
     return f'fem__{element}_deg{degree}'

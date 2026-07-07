@@ -3,64 +3,17 @@ jax.config.update("jax_enable_x64", True)
 
 import jax.numpy as jnp
 import numpy as onp
-from typing import Tuple
 from functools import partial
 
-from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, VmapForward, VmapSweep, VmapAngles
-from jax_sn.domain import Domain
-from jax_sn.operators.transport_operator import BasicSweepData
-from jax_sn.domain.cross_sections import CrossSectionData
-from jax_sn.solution_domain.basix_fem import BasixLagrangianSimplex
-from jax_sn.operators.mass_operator import MassOperator
-from jax_sn.solution_domain.solution_domain import SolutionDomain
-from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
-from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
-from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan, MultiGroupLowerTriangularBlockSolver
-from jax_sn.parametrisation.multigroup_parametrisation import MultigroupOperatorParametrisedVerticesXS
-
 import equinox as eqx
-from jax_sn.domain.domain_generation import create_cartesian_setup
-
 import lineax as lx
-import jax_sn
+
+from jax_sn.operators.multi_group_operator import MultiGroupLowerTriangularBlockSolver
+from jax_sn.parametrisation.multigroup_parametrisation import MultigroupOperatorParametrisedVerticesXS
+from finite_elements.bb_setup import base_region_sizes, base_resolutions, bb_mesh, setup_bb_from_mesh, build_multigroup_operator
 
 onp.set_printoptions(linewidth = 200)
 
-def _get_bb_verts_conn_xs_sources(dim, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim):
-    from finite_elements.bb_setup import bb_data_dict
-    data_dictionary = bb_data_dict() # dictionary with matrices
-    xs_data_dict = {name : CrossSectionData(total = jnp.array(data_dictionary[name][0]), scattering = jnp.array(data_dictionary[name][1])) for name in data_dictionary.keys()}    
-    other_dims   = [[(d_other_dim, n_other_dim)]]*(dim - 1)
-    region_names = ['Plasma', 'TungstenArmor', 'FirstWall', 'BreedingZone','BackSupportingStructure', 'VVWallFront', 'VVShield', 'VVWallBack']
-    xs_regions = [xs_data_dict[i] for i in region_names]
-    region_size_res = [(size, n_elem) for size, n_elem in zip(d_elem_regions, n_elem_regions)]    
-    source_eg0 = [1 if i ==0 else 0 for i in range(len(region_names))]
-
-    verts, conn, cross_sections, sources = create_cartesian_setup(dim, [region_size_res] + other_dims, xs_regions, source_eg0, 0)
-    return verts, conn, cross_sections, sources
-
-def setup_from_verts(verts, conn, cross_sections, sources,  degree, tn_order):        
-    element_type                         = BasixLagrangianSimplex(degree, verts.shape[-1])
-    domain                               = Domain.from_mesh_and_cross_sections((verts, conn), element_type.face_template, cross_sections)    
-    solution_domain                      = SolutionDomain.from_element_and_domain(element_type, domain)
-    # isotropic flat source
-    sources = jnp.repeat(sources, repeats = solution_domain.n_basis, axis = -1).reshape(-1, solution_domain.n_basis)
-
-    return solution_domain, sources, jax_sn.quadrature_set.create_tn_quadrature_set(tn_order)
-
-def _setup_operators(solution_domain: SolutionDomain, sources: jnp.ndarray, quadrature_set: jax_sn.quadrature_set.QuadratureSet) -> Tuple[MultiGroupOperatorScan, jnp.ndarray, SolutionDomain]:
-    n_energy_groups           = solution_domain.domain.cross_sections_indexed.n_energy_groups
-    lmax                      = solution_domain.domain.cross_sections_indexed.l_max
-
-    sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
-    transport_operator        = TransportOperatorMultipleAngles(TransportOperator(solution_domain.solution_domain_data, sweep_data, quadrature_set.angles, 0, VmapForward(), VmapSweep()), VmapAngles())
-    mass_operator             = MassOperator.from_transport_operator(transport_operator)
-    moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)    
-    discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
-    gather_scatter_operator   = GatherScatterOperatorBroadcasted(cross_sections_indexed=solution_domain.domain.cross_sections_indexed)
-    source_total              = jnp.broadcast_to(sources[None, :, :], (quadrature_set.angles.shape[0],) + sources.shape) # source for all angles
-    Aop                       = MultiGroupOperatorScan.from_operators(moment_operator, discrete_operator, transport_operator, mass_operator, gather_scatter_operator, quadrature_set, n_energy_groups)
-    return Aop.convert_to_lower_block_triangular(), source_total, solution_domain
 
 @eqx.filter_jit
 def get_rhs(MGOP, source_eg0):
@@ -68,16 +21,18 @@ def get_rhs(MGOP, source_eg0):
 
     rhs_total = jnp.stack([rhs_eg0] + [jnp.zeros_like(rhs_eg0) for _ in range(MGOP.n_energy_groups -1)], axis=0)
     return rhs_total
-from finite_elements.bb_setup import bb_data_dict, base_region_sizes, base_resolutions,  _get_bb_args, _setup_bb_args, _get_bb_args
 
 
 def modify_setup_mgop(dim, degree, modify_verts_xs):
-    verts, conn, cross_sections, sources = _get_bb_verts_conn_xs_sources(dim, base_region_sizes(), base_resolutions(), 5.0, 1)
+    # Perturbing vertex positions changes the geometry, so (unlike the cross-section-only
+    # test_single_group_ad) we rebuild the operator from the perturbed mesh via the shared bb_setup
+    # seam. Solved lower-block-triangular to match the AD path in solve_result_everything.
+    verts, conn, cross_sections, sources = bb_mesh(dim, base_region_sizes(), base_resolutions(), 5.0, 1)
     verts, cross_sections = modify_verts_xs(verts, cross_sections)
 
-    solution_domain, sources, quadrature_set = setup_from_verts(verts, conn, cross_sections, sources, degree, 3)
-    
-    return _setup_operators(solution_domain, sources, quadrature_set)    
+    solution_domain, sources, quadrature_set = setup_bb_from_mesh(verts, conn, cross_sections, sources, degree, 3)
+    Aop, source_total, solution_domain = build_multigroup_operator(solution_domain, sources, quadrature_set)
+    return Aop.convert_to_lower_block_triangular(), source_total, solution_domain
 
 
 

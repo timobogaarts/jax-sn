@@ -1,14 +1,4 @@
 '''Session-scoped fixtures for the breeding-blanket problem.
-
-Building the SolutionDomain + MultiGroupOperatorScan is the dominant compile cost in this
-package, so we do it once per dimension and share it across every test that needs it:
-
-  * ``bb_mgop`` -- the full 4-group ``MultiGroupOperatorScan`` (params: dim 1/2/3).
-  * ``bb_sgop`` -- the group-0 ``SingleGroupOperator`` derived from it (source-iteration /
-    single-group adjoint tests).
-
-Tests that need *perturbed* operators (finite-difference derivative checks) can't share a
-frozen instance -- they import the builders from ``bb_setup`` and rebuild directly.
 '''
 import pytest
 

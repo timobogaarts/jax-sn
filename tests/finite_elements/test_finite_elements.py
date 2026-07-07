@@ -1,9 +1,4 @@
 '''Current basix-based FEM matrices vs. a frozen independent oracle.
-
-The reference volume (aij/ii/bij) and face (cij) matrices were produced by a second,
-independent FEM implementation (old_generate_basis.py) and frozen into
-tests/reference_data/fem__*.npz. The generator is retired -- the frozen arrays are the
-oracle now (see tests/reference_data/regenerate.py / __init__.py for provenance).
 '''
 import jax
 import numpy as onp
@@ -11,7 +6,7 @@ import pytest
 
 jax.config.update("jax_enable_x64", True)
 
-from jax_sn.solution_domain.base_fem import compute_volume_matrices_linear_jacobian, _compute_face_outflow_matrices
+from jax_sn.solution_domain.base_fem import compute_volume_matrices_linear_jacobian, _compute_face_outflow_matrices, _compute_face_inflow_matrices
 from jax_sn.solution_domain.basix_fem import BasixLagrangianSimplex
 
 from reference_data import load, key_fem
@@ -47,3 +42,16 @@ def test_area_matrix(element):
         ref = load(key_fem(element, n_degree))
 
         onp.testing.assert_allclose(cij_new, ref['cij'], atol=1e-12, rtol=1e-12)
+
+
+@pytest.mark.parametrize("element", ["interval", "triangle", "tetrahedron"])
+def test_face_inflow_matrix(element):
+    # Face inflow (connection) matrices over every (self-face, permutation, connected-face)
+    # combination -- pinning the exact per-permutation values so an orientation/permutation
+    # regression is caught (a row-sum check alone is permutation-invariant and would miss it).
+    for n_degree in range(0, n_degree_max() + 1):
+        element_jsn = _get_element_jsn(element, n_degree)
+        dij_new = _compute_face_inflow_matrices(element_jsn)  # [n_faces*n_perms*n_faces, n_basis, n_basis]
+        ref = load(key_fem(element, n_degree))
+
+        onp.testing.assert_allclose(dij_new, ref['dij'], atol=1e-12, rtol=1e-12)
