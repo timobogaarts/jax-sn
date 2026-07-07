@@ -74,3 +74,12 @@ def key_moment(dim: int, degree: int, lmax: int, tn_order: int) -> str:
 
 def key_bb(dim: int) -> str:
     return f'bb__d{dim}'
+
+
+def key_fem(element: str, degree: int) -> str:
+    '''FEM volume (aij/ii/bij) + face (cij) matrices for a simplex element.
+
+    Frozen from the retired in-tree reference implementation (old_generate_basis.py); an
+    independent oracle for the current basix-based matrices, not external ground truth.
+    '''
+    return f'fem__{element}_deg{degree}'

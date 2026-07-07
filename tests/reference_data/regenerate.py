@@ -56,10 +56,12 @@ def main():
         subprocess.check_call([sys.executable, generator])
 
         # Bundles that must NOT be pulled from the external-solver generator: `bb__d3` is
-        # self-pinned to jax-sn's own output (the external solver meshes 3D differently), and
-        # the `anisotropic__*` bundles were retired when that test folded into the BB fixture.
+        # self-pinned to jax-sn's own output (the external solver meshes 3D differently); the
+        # `fem__*` bundles are frozen from the retired in-tree FEM oracle (old_generate_basis.py),
+        # not the external solver; and the `anisotropic__*` bundles were retired when that test
+        # folded into the BB fixture.
         SKIP = {'bb__d3.npz'}
-        SKIP_PREFIXES = ('anisotropic__',)
+        SKIP_PREFIXES = ('anisotropic__', 'fem__')
 
         produced = os.path.join(worktree, 'tests', 'reference_data')
         n = 0
