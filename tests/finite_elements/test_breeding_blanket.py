@@ -56,9 +56,7 @@ def test_bb(bb_mgop, expected_value_function = _get_expected_values_reference):
     scalar flux moments from the frozen reference along 1000 points spanning the slab.
 
     Tolerances are uniform across dimensions (rtol=1e-10 for the lower-triangular solve, 6e-4 for
-    the global BiCGStab which only converges to its own tolerance). dim=1,2 are validated against
-    an external solver; dim=3 is self-pinned to the current implementation (the external solver
-    meshed the slab with a different tetrahedralisation) -- see tests/reference_data/__init__.py.
+    the global BiCGStab which only converges to its own tolerance [due to upscattering])
     '''
     import lineax as lx
     MGOP, source_eg0, solution_domain, bb_args = bb_mgop

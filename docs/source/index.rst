@@ -8,7 +8,7 @@ Welcome to jax-sn's documentation!
 This package uses a multigroup, discontinuous Galerkin (DG) discrete ordinates (SN) method to solve a linear Boltzmann transport equation in JAX (ax), enabling
 differentiable neutron transport simulations. 
 
-It is written in pure functional JAX primitives and uses linear operators to represent the discretised transport operator. 
+It is written in pure functional JAX primitives and uses linear operators to represent the discretised transport operator.
 
 Getting started
 ================

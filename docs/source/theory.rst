@@ -1,6 +1,10 @@
 Theory
 ==================
-The theory section contains an up-to-date overview of the derivation of the implemented model.
+The theory section contains an up-to-date overview of the derivation of the implemented model. See 
+
+.. [4] Bogaarts, T. J. (2026). Differentiable deterministic neutronics for fusion design. PhD Thesis, Eindhoven University of Technology.
+
+
 
 
 .. toctree::

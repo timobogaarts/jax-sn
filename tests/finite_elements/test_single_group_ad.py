@@ -10,13 +10,9 @@ from finite_elements.bb_setup import bb_data_dict, base_region_sizes, base_resol
 
 
 def setup_mgop(dim, degree):
-    from jax_sn.operators.transport_operator import BatchedForward, BatchedSweep
-    MGOP, source_eg0, solution_domain = _setup_bb_args(dim, degree, base_region_sizes(), base_resolutions(), 5.0, 10, 3)
-    # Swap the (default vmap) transport strategy for the batched one (batch_size 100) by editing the
-    # data-free transport_spec; the transport operator is derived from it.
-    new_spec                          = eqx.tree_at(lambda s : (s.forward_strategy, s.inversion_strategy), MGOP.transport_spec, (BatchedForward(100), BatchedSweep(100)))
-    MGOP                              = eqx.tree_at(lambda t : t.transport_spec, MGOP, new_spec)
-    return MGOP, source_eg0, solution_domain
+    # Vmap transport (the suite's default); backend equivalence is proven in test_transport_operator,
+    # so the derivative check is backend-agnostic.
+    return _setup_bb_args(dim, degree, base_region_sizes(), base_resolutions(), 5.0, 10, 3)
 
 def setup_mgop_mod_theta(dim, degree, xs_data_indices, dx):
     from jax_sn.domain.cross_sections import CrossSectionData
