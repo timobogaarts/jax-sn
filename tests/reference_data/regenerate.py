@@ -61,7 +61,7 @@ def main():
         # not the external solver; and the `anisotropic__*` bundles were retired when that test
         # folded into the BB fixture.
         SKIP = {'bb__d3.npz'}
-        SKIP_PREFIXES = ('anisotropic__', 'fem__')
+        SKIP_PREFIXES = ('anisotropic__', 'fem__', 'transport_sweep__')
 
         produced = os.path.join(worktree, 'tests', 'reference_data')
         n = 0

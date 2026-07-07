@@ -1,66 +1,24 @@
-import jax 
+import jax
 import jax.numpy as jnp
-from jax_sn.operators.transport_operator.implementations.transport_operator_jax import transport_inverse_sweep_complete_vmap
 import jax_sn
 
 import numpy as onp
 import pytest
-def check_transport_inverse_sweep_complete_vmap(element, degree, 
-                                                _vertices_conn_function, 
-                                                _angle_function,  
-                                                _expected_values_function, 
-                                                _source_function, 
-                                                _cross_section_function):
-    
-    
-    lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values = _setup_all(element, degree, _vertices_conn_function, _angle_function, _expected_values_function, _source_function, _cross_section_function)
 
-    mass_operator = jax_sn.operators.mass_operator.MassOperator(femmatrices, precomputed_data)
 
-    source_mass_op = mass_operator.mv(source.source_values)
-
-    mapped_array = cross_sections.map_to_full_array(0)
-
-    sweep_array = transport_inverse_sweep_complete_vmap(
-        domain,
-        femmatrices,
-        precomputed_data,
-        mapped_array,
-        angle,
-        toposort,
-        source_mass_op
-    )
-    
-    onp.testing.assert_allclose(sweep_array, expected_values, atol=1e-12)
-
-    
 def _setup_domain(element, degree, _vertices_conn_function):
     vertices, connectivity = _vertices_conn_function(element, degree)
-    lagrangian_element     = jax_sn.solution_domain.basix_fem.BasixLagrangianSimplex(degree=degree, dimension=element)    
+    lagrangian_element     = jax_sn.solution_domain.basix_fem.BasixLagrangianSimplex(degree=degree, dimension=element)
     domain           = jax_sn.domain.GeometricDomain.from_mesh((jnp.array(vertices)[..., :element], jnp.array(connectivity)), jnp.array(lagrangian_element.face_template))
     return lagrangian_element, domain
 
-def _setup_all(element, degree, _vertices_conn_function, _angle_function, _expected_values_function, _source_function, _cross_section_function):
-    lagrangian_element, domain = _setup_domain(element, degree, _vertices_conn_function)
-    angle                      = _angle_function()    
-    toposort         = jax_sn.operators.transport_operator.BasicSweepData.from_domain_angle(domain, angle)    
-    femmatrices      = jax_sn.solution_domain.FEMMatrices.from_element(lagrangian_element)    
-    precomputed_data = lagrangian_element.precompute_geometric_data(domain)    
-    sweep_array      = jnp.zeros((domain.n_elements, lagrangian_element.n_basis))
-    cross_sections   = _cross_section_function(element, degree)
-    source           = _source_function(element, degree)
-    expected_values  = _expected_values_function(element, degree)
-    
-    return lagrangian_element, domain, angle, toposort, femmatrices, precomputed_data, sweep_array, cross_sections, source, expected_values
-
 
 #====================================================================================================================================================================================
-#   Reference-data providers  [load frozen reference arrays; see tests/reference_data/]
+#   Reference-data providers  [load frozen mesh / source / cross sections; see tests/reference_data/]
 #====================================================================================================================================================================================
-# These load the frozen mesh / source / cross sections / single-angle sweep reference and rebuild
-# the jax-sn wrapper objects, so the suite needs no external solver. The moment test imports the
-# mesh/source/cross-section providers from here too.
-from reference_data import load as _load_ref, key_transport, key_transport_angle
+# Rebuild the jax-sn wrapper objects from the frozen bundles. Used by test_local_real_inversion
+# below and imported by the moment test (which needs the same mesh/source/cross-section setup).
+from reference_data import load as _load_ref, key_transport
 
 def _verts_conn_reference(dimension, degree):
     b = _load_ref(key_transport(dimension, degree))
@@ -76,22 +34,19 @@ def _cross_sections_reference(dimension, degree):
     xsdata.assert_valid_batched()
     return jax_sn.domain.geometric_domain.CrossSectionsIndexed(jnp.array(b['xs_indices']), xsdata)
 
-def _angle_function_tn():
-    return jnp.array(_load_ref(key_transport_angle())['angle'])
 
-def _max_test_degree(dimension):
-    return [None, 3, 3, 2][dimension]
-
-def _expected_values_reference(dimension, degree):
-    return jnp.array(_load_ref(key_transport(dimension, degree))['expected'])
-
-@pytest.mark.slow
-@pytest.mark.parametrize("dimension", [1,2,3])
-def test_sweep_complete_vmap(dimension):
-    # This tests the basic complete vmap sweep against the frozen reference
-    # Then, the other implementations are tested against the complete vmap sweep (transitive testing)
-    degree = _max_test_degree(dimension)
-    check_transport_inverse_sweep_complete_vmap(dimension, degree, _verts_conn_reference, _angle_function_tn, _expected_values_reference, _source_reference, _cross_sections_reference)
+def test_transport_sweep_pinned(bb_mgop):
+    # Regression pin of the single-angle vmap sweep on the shared BB domain, frozen from the current
+    # implementation (guards against silent numerical drift). External accuracy of this sweep is
+    # anchored by test_bb, since VmapSweep is transport_inverse_sweep_complete_vmap.
+    from reference_data import key_transport_sweep
+    MGOP, _, _, bb_args = bb_mgop
+    top0 = MGOP.transport_operator[0]                       # single-angle TransportOperator
+    onp.random.seed(7072026)
+    b = jnp.array(onp.random.rand(*top0.in_structure().shape))
+    sweep = top0.inv(b)
+    expected = _load_ref(key_transport_sweep(bb_args[0]))['sweep']
+    onp.testing.assert_allclose(onp.array(sweep), expected, rtol=1e-10, atol=1e-12)
 
 
 @pytest.mark.slow

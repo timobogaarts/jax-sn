@@ -13,12 +13,13 @@ Each bundle is a dict of named arrays keyed by a canonical string (see the
 ``key_*`` helpers). Bundles are committed (the global ``*.npz`` gitignore is
 overridden for this directory) so the suite runs with no external dependency.
 
-Provenance note: most bundles are external-solver ground truth. The exception is
-``bb__d3`` (the 3D breeding-blanket flux), which is *self-pinned* to jax-sn's own
-current output: the external solver tetrahedralises the slab differently in 3D, so a
-like-for-like comparison isn't possible there. It is therefore a regression pin (tight
-tolerance vs. the frozen implementation), not an independent-oracle accuracy test. It is
-excluded from ``regenerate.py`` so re-running that never overwrites it.
+Provenance note: most bundles are external-solver ground truth. The self-pinned exceptions
+-- frozen to jax-sn's own current output, i.e. regression pins rather than independent-oracle
+accuracy tests -- are ``bb__d3`` (the external solver tetrahedralises the 3D slab differently,
+so a like-for-like comparison isn't possible), ``transport_sweep__*`` (a localized single-angle
+sweep guard; external accuracy of the sweep is anchored by ``bb__*``), and ``fem__*`` (frozen
+from the retired in-tree FEM oracle). These are excluded from ``regenerate.py`` so re-running it
+never overwrites them.
 '''
 import os
 import numpy as onp
@@ -59,13 +60,14 @@ def key_lm(tn_set: int, l_max: int) -> str:
 
 
 def key_transport(dim: int, degree: int) -> str:
-    '''Mesh + source + cross sections + single-angle sweep reference for the transport test.'''
+    '''Mesh + source + cross sections for the moment test and test_local_real_inversion.'''
     return f'transport__d{dim}_deg{degree}'
 
 
-def key_transport_angle() -> str:
-    '''The single sweep angle (independent of dim/degree).'''
-    return 'transport__angle'
+def key_transport_sweep(dim: int) -> str:
+    '''Single-angle vmap sweep on the BB domain, self-pinned to the current implementation
+    (regression guard, not external truth -- see the provenance note above).'''
+    return f'transport_sweep__d{dim}'
 
 
 def key_moment(dim: int, degree: int, lmax: int, tn_order: int) -> str:
