@@ -27,7 +27,7 @@ import jax_sn
 onp.set_printoptions(linewidth = 200)
 
 def _get_bb_verts_conn_xs_sources(dim, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim):
-    from finite_elements.test_breeding_blanket import bb_data_dict
+    from finite_elements.bb_setup import bb_data_dict
     data_dictionary = bb_data_dict() # dictionary with matrices
     xs_data_dict = {name : CrossSectionData(total = jnp.array(data_dictionary[name][0]), scattering = jnp.array(data_dictionary[name][1])) for name in data_dictionary.keys()}    
     other_dims   = [[(d_other_dim, n_other_dim)]]*(dim - 1)
@@ -68,7 +68,7 @@ def get_rhs(MGOP, source_eg0):
 
     rhs_total = jnp.stack([rhs_eg0] + [jnp.zeros_like(rhs_eg0) for _ in range(MGOP.n_energy_groups -1)], axis=0)
     return rhs_total
-from finite_elements.test_breeding_blanket import bb_data_dict, base_region_sizes, base_resolutions,  _get_bb_args, _setup_bb_args, _get_bb_args
+from finite_elements.bb_setup import bb_data_dict, base_region_sizes, base_resolutions,  _get_bb_args, _setup_bb_args, _get_bb_args
 
 
 def modify_setup_mgop(dim, degree, modify_verts_xs):

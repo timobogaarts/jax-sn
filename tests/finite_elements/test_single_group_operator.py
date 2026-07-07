@@ -1,21 +1,11 @@
 
-import jax 
+import jax
 jax.config.update("jax_enable_x64", True)
-import jax.numpy as jnp
-import numpy as onp
-import pytest
 
-from .test_anisotropic_scattering import _get_anisotropic_args, _setup_anisotropic_scattering_args
-from jax_sn.operators.single_group_operator import SingleGroupOperator
+from finite_elements.operator_util import _check_adjoint_of_operator
 
 
-def test_transpose_single_group_operator():
-    ani_args = _get_anisotropic_args(2,3)
-
-
-
-    Aop, source_total, solution_domain = _setup_anisotropic_scattering_args(*ani_args)
-
-    from finite_elements.operator_util import _check_adjoint_of_operator
-
-    _check_adjoint_of_operator(Aop)
+def test_transpose_single_group_operator(bb_sgop):
+    # Euclidean adjointness of the assembled single-group operator (group 0 of the BB problem).
+    sgop, *_ = bb_sgop
+    _check_adjoint_of_operator(sgop)

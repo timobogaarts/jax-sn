@@ -55,12 +55,22 @@ def main():
             )
         subprocess.check_call([sys.executable, generator])
 
+        # Bundles that must NOT be pulled from the external-solver generator: `bb__d3` is
+        # self-pinned to jax-sn's own output (the external solver meshes 3D differently), and
+        # the `anisotropic__*` bundles were retired when that test folded into the BB fixture.
+        SKIP = {'bb__d3.npz'}
+        SKIP_PREFIXES = ('anisotropic__',)
+
         produced = os.path.join(worktree, 'tests', 'reference_data')
         n = 0
         for fname in os.listdir(produced):
-            if fname.endswith('.npz'):
-                shutil.copy2(os.path.join(produced, fname), os.path.join(HERE, fname))
-                n += 1
+            if not fname.endswith('.npz'):
+                continue
+            if fname in SKIP or fname.startswith(SKIP_PREFIXES):
+                print(f"Skipping {fname} (self-pinned / retired; not overwritten from generator)")
+                continue
+            shutil.copy2(os.path.join(produced, fname), os.path.join(HERE, fname))
+            n += 1
         print(f"Copied {n} regenerated .npz bundles into {HERE}")
     finally:
         subprocess.call(['git', '-C', REPO, 'worktree', 'remove', '--force', worktree])

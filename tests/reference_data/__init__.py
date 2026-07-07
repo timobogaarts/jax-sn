@@ -12,6 +12,13 @@ back here::
 Each bundle is a dict of named arrays keyed by a canonical string (see the
 ``key_*`` helpers). Bundles are committed (the global ``*.npz`` gitignore is
 overridden for this directory) so the suite runs with no external dependency.
+
+Provenance note: most bundles are external-solver ground truth. The exception is
+``bb__d3`` (the 3D breeding-blanket flux), which is *self-pinned* to jax-sn's own
+current output: the external solver tetrahedralises the slab differently in 3D, so a
+like-for-like comparison isn't possible there. It is therefore a regression pin (tight
+tolerance vs. the frozen implementation), not an independent-oracle accuracy test. It is
+excluded from ``regenerate.py`` so re-running that never overwrites it.
 '''
 import os
 import numpy as onp
@@ -63,10 +70,6 @@ def key_transport_angle() -> str:
 
 def key_moment(dim: int, degree: int, lmax: int, tn_order: int) -> str:
     return f'moment__d{dim}_deg{degree}_lmax{lmax}_tn{tn_order}'
-
-
-def key_anisotropic(dim: int) -> str:
-    return f'anisotropic__d{dim}'
 
 
 def key_bb(dim: int) -> str:

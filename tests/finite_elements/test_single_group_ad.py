@@ -6,7 +6,7 @@ import equinox as eqx
 import lineax as lx
 
 jax.config.update("jax_enable_x64", True)
-from finite_elements.test_breeding_blanket import bb_data_dict, base_region_sizes, base_resolutions,  _get_bb_args, _setup_bb_args, _get_bb_args
+from finite_elements.bb_setup import bb_data_dict, base_region_sizes, base_resolutions,  _get_bb_args, _setup_bb_args, _get_bb_args
 
 
 def setup_mgop(dim, degree):
