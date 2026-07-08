@@ -12,3 +12,4 @@ The theory section contains an up-to-date overview of the derivation of the impl
    theory/linear_system_solving.rst
    theory/multigroup.rst
    theory/angular_discretisation.rst
+   theory/spatial_discretisation.rst

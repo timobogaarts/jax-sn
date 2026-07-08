@@ -12,7 +12,7 @@ where :math:`\mathbf{A}` is a linear operator, :math:`x` is the unknown solution
 :math:`x` is a very large vector (since it contains the solution at all discretised points in six-dimensional phase space, often billions of DOF). Therefore, 
 assembling the full representation of the linear operator :math:`\mathbf{A}` will be extremely memory intensive (most likely impossible).
 
-Direct solvers will require assembly of the full matrix representation of :math:`\mathbf{A}`, which will not be feasible in most cases. 
+Direct solvers will require assembly of the full matrix representation of :math:`\mathbf{A}`, which will not be feasible in most cases, even using a sparse representation. 
 Luckily, an efficient class of solvers exist, namely, materix-free-iterative solvers (e.g. GMRES or BiCGSTAB) exist, that only require matrix-vector products (i.e. :math:`\mathbf{A} x`). These do not 
 require assembly of the full matrix, and thus lend itself well to the solution of large linear systems such as the one obtained from discretisation of the neutron transport equation.
 
@@ -160,9 +160,11 @@ For a particular function :math:`f: \mathbb{R}^n \to \mathbb{R}^m`, the JVP is d
     \text{JVP}_f(x, v) = J_f(x) \cdot v
 
 where :math:`J_f` is the :math:`(m \times n)` Jacobian of :math:`f`. These are very cheap to compute: generally comparable to a single function application (the cheap gradient principle). 
-For a linear function,this is exactly the same as a function appliction. 
+For a linear function, this is exactly the same as a function appliction. 
 In fact, this has the meaning of applying the *linearisation* of the function :math:`f` at :math:`x` to the vector :math:`v`. 
-The Jacobian at the point :math:`x` can be reconstructed by applying the JVP to each of the :math:`n` basis vectors, requiring again :math:`n` function applications (similar to the direct method).
+
+The full Jacobian at the point :math:`x` can be reconstructed by applying the JVP to each of the :math:`n` basis vectors, requiring again :math:`n` function applications (similar to the direct method).
+
 Similarly, the VJP is defined as the transpose:
 
 .. math::

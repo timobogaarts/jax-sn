@@ -30,33 +30,14 @@ def _build_base_mgop():
 
 # ---------------------------------------------------------------------------
 # Operator factories
-# Add new single-angle or multi-angle operator classes here.
+#
+# NOTE: the non-padded Warp operators (sequential + level, single + multi angle) and their solve /
+# transpose / grad checks are now generated automatically over every discovered InversionStrategy by the
+# discovery-driven harness in test_operator_strategies.py. What this file keeps is the coverage that
+# harness does NOT provide: the *level-padded* sweep (LeveledSweepData with a fixed level cap), a
+# sweep-data build parameter orthogonal to the strategy axis, whose fixed-size level padding exercises the
+# kernel's out-of-bounds guard. Add a new operator class here only if it carries such extra build state.
 # ---------------------------------------------------------------------------
-def make_sequential_warp_single_angle(base_mgop, angle_i):
-    from jax_sn.operators.transport_operator import TransportOperator, BatchedForward
-    from jax_sn.operators.transport_operator.implementations.transport_operator_warp import WarpSequentialSweep
-    return TransportOperator(
-        base_mgop.solution_domain_data,
-        base_mgop.transport_operator[angle_i].sweep_data,
-        base_mgop.transport_operator[angle_i].angle,
-        0,
-        BatchedForward(100),
-        WarpSequentialSweep(),
-    )
-
-def make_level_warp_single_angle(base_mgop, angle_i):
-    from jax_sn.operators.transport_operator import TransportOperator, BatchedForward, LeveledSweepData
-    from jax_sn.operators.transport_operator.implementations.transport_operator_warp import WarpLevelSweep
-    level_toposort = LeveledSweepData.from_basic_sweep_data(base_mgop.transport_operator[angle_i].sweep_data)
-    return TransportOperator(
-        base_mgop.solution_domain_data,
-        level_toposort,
-        base_mgop.transport_operator[angle_i].angle,
-        0,
-        BatchedForward(100),
-        WarpLevelSweep(),
-    )
-
 def make_level_warp_single_angle_pad(base_mgop, angle_i):
     from jax_sn.operators.transport_operator import TransportOperator, BatchedForward, LeveledSweepData
     from jax_sn.operators.transport_operator.implementations.transport_operator_warp import WarpLevelSweep
@@ -69,34 +50,6 @@ def make_level_warp_single_angle_pad(base_mgop, angle_i):
         BatchedForward(100),
         WarpLevelSweep(),
     )
-
-def make_sequential_warp_multi_angle(base_mgop):
-    from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, BatchedForward
-    from jax_sn.operators.transport_operator.implementations.transport_operator_warp import WarpSequentialSweep, WarpSequentialAngles
-    top_sa = TransportOperator(
-        base_mgop.solution_domain_data,
-        base_mgop.transport_operator.sweep_data,
-        base_mgop.transport_operator.angle,
-        0,
-        BatchedForward(100),
-        WarpSequentialSweep(),
-    )
-    return TransportOperatorMultipleAngles(top_sa, WarpSequentialAngles())
-
-
-def make_levels_warp_multi_angle(base_mgop):
-    from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, BatchedForward, LeveledSweepData
-    from jax_sn.operators.transport_operator.implementations.transport_operator_warp import WarpLevelSweep, WarpLevelAngles
-    level_toposort = LeveledSweepData.from_basic_sweep_data(base_mgop.transport_operator.sweep_data)
-    top_sa = TransportOperator(
-        base_mgop.solution_domain_data,
-        level_toposort,
-        base_mgop.transport_operator.angle,
-        0,
-        BatchedForward(100),
-        WarpLevelSweep(),
-    )
-    return TransportOperatorMultipleAngles(top_sa, WarpLevelAngles())
 
 def make_levels_warp_multi_angle_pad(base_mgop):
     from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, BatchedForward, LeveledSweepData
@@ -112,16 +65,12 @@ def make_levels_warp_multi_angle_pad(base_mgop):
     )
     return TransportOperatorMultipleAngles(top_sa, WarpLevelAngles())
 
-# Parametrise over these factories to add more operator classes to test.
+# Only the level-*padded* operators remain (the non-padded ones are covered by the discovery harness).
 SINGLE_ANGLE_OP_FACTORIES = [
-    pytest.param(make_sequential_warp_single_angle, id="SequentialWarpSingleAngle"),
-    pytest.param(make_level_warp_single_angle, id="LevelsWarpSingleAngle"),
     pytest.param(make_level_warp_single_angle_pad, id="LevelsWarpSingleAnglePadded"),
 ]
 
 MULTI_ANGLE_OP_FACTORIES = [
-    pytest.param(make_sequential_warp_multi_angle, id="SequentialWarpMultipleAngles"),
-    pytest.param(make_levels_warp_multi_angle, id="LevelsWarpMultipleAngles"),
     pytest.param(make_levels_warp_multi_angle_pad, id="LevelsWarpMultipleAnglesPadded"),
 ]
 

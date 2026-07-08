@@ -83,8 +83,10 @@ def _adjoint_multi_group_operator_scan(n_energy_groups : int, moment_operator   
 
     assert x.shape == in_structure_shape, f"Input x shape {x.shape} does not match expected in_structure shape {in_structure_shape}."
         
-    def _single_energy_group(_, g_i):        
-        y_g = (x[g_i] - moment_operator.mv(transport_operator_t.to_energy_group(g_i).inv(mass_operator.mv(discrete_operator.mv(gather_scatter_operator.gather_backward(x, g_i))))))
+    def _single_energy_group(_, g_i):
+        # Mass before discrete (moment space): mass and discrete commute (independent tensor factors),
+        # mirrors MultiGroupOperator's forward scan.
+        y_g = (x[g_i] - moment_operator.mv(transport_operator_t.to_energy_group(g_i).inv(discrete_operator.mv(mass_operator.mv(gather_scatter_operator.gather_backward(x, g_i))))))
         return None, y_g
     
     f_seg = jax.checkpoint(_single_energy_group) if checkpoint else _single_energy_group
@@ -129,8 +131,9 @@ def solve_multigroup_operator_rhs_adjoint(operator : AdjointMultiGroupOperator, 
     assert not isinstance(solver, MultiGroupLowerTriangularBlockSolver), "MultiGroupLowerTriangularBlockSolver is not compatible with the adjoint operator. Please use a different solver, e.g. GMRES or BiCGSTAB from lineax."
     
     transport_operator_t = operator.transport_operator.transpose()
-    def body_fn(_, g_i):        
-        return None, operator.moment_operator.mv(transport_operator_t.to_energy_group(g_i).inv(operator.mass_operator.mv(operator.discrete_operator.mv(rhs[g_i]))))
+    def body_fn(_, g_i):
+        # Mass before discrete (moment space): see _adjoint_multi_group_operator_scan.
+        return None, operator.moment_operator.mv(transport_operator_t.to_energy_group(g_i).inv(operator.discrete_operator.mv(operator.mass_operator.mv(rhs[g_i]))))
 
     rhs_mtinvh = jax.lax.scan(body_fn, None, jnp.arange(operator.n_energy_groups))[1]
     return lx.linear_solve(operator, rhs_mtinvh, solver)

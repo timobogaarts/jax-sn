@@ -111,7 +111,9 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinear
         solution, n_steps = state
         sgop = mgop.to_single_group_operator(i)        
         
-        rhs_i = rhs[i] + mgop.moment_operator.mv(sgop.transport_operator.inv(mgop.mass_operator.mv(mgop.discrete_operator.mv(mgop.gather_scatter_operator.gather_forward(solution, i)))))
+        # Mass before discrete (moment space): mass and discrete commute (independent tensor factors),
+        # mirrors MultiGroupOperator's forward scan.
+        rhs_i = rhs[i] + mgop.moment_operator.mv(sgop.transport_operator.inv(mgop.discrete_operator.mv(mgop.mass_operator.mv(mgop.gather_scatter_operator.gather_forward(solution, i)))))
         lxsolve = lx.linear_solve(sgop, rhs_i, solver, throw = False, options = {"y0" : rhs_i}) # Solve single group system
 
         if diagnostic.print_single_group:
@@ -239,7 +241,9 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver : lx.Abst
         
         lxsolvevalue, nsteps = jax.lax.cond(jnp.all(rhs_i == 0.0), zero_rhs, nonzero_rhs,  operand = rhs_i)
         
-        xi_new       = xi_g.at[g_i].set(dop_t.mv(hop_t.mv(top_t.to_energy_group(g_i).inv(mop_t.mv(lxsolvevalue))))) # D^T H^T (T_g^{-1})^T M^T [phi_g]
+        # Discrete-transpose before mass (moment space): mirrors the forward scan's mass-before-discrete
+        # ordering, since mass and discrete^T also act on independent tensor factors and commute.
+        xi_new       = xi_g.at[g_i].set(hop_t.mv(dop_t.mv(top_t.to_energy_group(g_i).inv(mop_t.mv(lxsolvevalue))))) # D^T H^T (T_g^{-1})^T M^T [phi_g]
         solution_new = solution.at[g_i].set(lxsolvevalue)        
         if diagnostic.print_single_group:
             jax.debug.print("Solved energy group {eg} in {n_steps} steps", eg = g_i, n_steps = nsteps)

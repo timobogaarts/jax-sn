@@ -152,8 +152,10 @@ def solve_multigroup_operator_rhs(operator : MultiGroupOperator, rhs : RightHand
     assert _to_struct(rhs) == operator.out_structure(), f"RHS structure {_to_struct(rhs)} does not match expected operator structure [n_energy_groups, n_angles, n_elements, n_basis]: \
                                                         {operator.out_structure()}."
     
-    def body_fn(_, g_i):        
-        return None, operator.moment_operator.mv(operator.transport_operator.to_energy_group(g_i).inv(operator.mass_operator.mv(operator.discrete_operator.mv(rhs[g_i]))))
+    def body_fn(_, g_i):
+        # Mass before discrete (moment space): mass and discrete commute (independent tensor factors),
+        # mirrors MultiGroupOperator's forward scan.
+        return None, operator.moment_operator.mv(operator.transport_operator.to_energy_group(g_i).inv(operator.discrete_operator.mv(operator.mass_operator.mv(rhs[g_i]))))
 
     rhs_mtinvh = jax.lax.scan(jax.checkpoint(body_fn), None, jnp.arange(operator.n_energy_groups))[1]
     return lx.linear_solve(operator, rhs_mtinvh, solver)

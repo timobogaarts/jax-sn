@@ -412,8 +412,11 @@ def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : Momen
 
     assert x.shape == in_structure_shape, f"Input x shape {x.shape} does not match expected in_structure shape {in_structure_shape}."
         
-    def _single_energy_group(_, g_i):        
-        y_g = (x[g_i] - moment_operator.mv(transport_operator.to_energy_group(g_i).inv(mass_operator.mv(discrete_operator.mv(gather_scatter_operator.gather_forward(x, g_i))))))
+    def _single_energy_group(_, g_i):
+        # Mass before discrete (moment space, not discrete/angle space): mass and discrete act on
+        # independent tensor factors (elements/basis vs. moments/angles) so they commute, and moment
+        # space is the smaller of the two -- mirrors SingleGroupOperator's forward mv.
+        y_g = (x[g_i] - moment_operator.mv(transport_operator.to_energy_group(g_i).inv(discrete_operator.mv(mass_operator.mv(gather_scatter_operator.gather_forward(x, g_i))))))
         return None, y_g
     
     f_seg = jax.checkpoint(_single_energy_group) if checkpoint else _single_energy_group
@@ -457,8 +460,10 @@ def _multi_group_operator_transpose_scan(n_energy_groups : int, moment_operator 
     in_structure_shape   = (n_energy_groups,) + moment_operator_t.in_structure().shape
     assert x.shape == in_structure_shape, f"Input x shape {x.shape} does not match expected in_structure shape {in_structure_shape}."
     
-    def _single_energy_group_zeta(_, g_i):        
-        return None, discrete_operator_t.mv(mass_operator_t.mv(transport_operator_t.to_energy_group(g_i).inv(moment_operator_t.mv(x[g_i]))))
+    def _single_energy_group_zeta(_, g_i):
+        # Discrete-transpose before mass (moment space): mirrors the forward scan's mass-before-discrete
+        # ordering, since mass and discrete^T also act on independent tensor factors and commute.
+        return None, mass_operator_t.mv(discrete_operator_t.mv(transport_operator_t.to_energy_group(g_i).inv(moment_operator_t.mv(x[g_i]))))
 
     f_seg = jax.checkpoint(_single_energy_group_zeta) if checkpoint else _single_energy_group_zeta
     

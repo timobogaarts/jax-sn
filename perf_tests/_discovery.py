@@ -35,6 +35,7 @@ def ensure_optional_backends() -> None:
     for mod in (
         "jax_sn.operators.transport_operator.implementations.transport_operator_pallas",
         "jax_sn.operators.transport_operator.implementations.transport_operator_warp",
+        "jax_sn.operators.mass_operator.mass_operator_warp",
     ):
         try:
             __import__(mod)

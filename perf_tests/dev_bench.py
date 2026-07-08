@@ -71,9 +71,9 @@ def main():
     p.add_argument("--problem", default="", help="use a named preset from problems.PROBLEMS instead of the --dim/etc flags")
     p.add_argument("--dim", type=int, default=3)
     p.add_argument("--degree", type=int, default=1)
-    p.add_argument("--n-other", type=int, default=3)
+    p.add_argument("--n-other", type=int, default=20)
     p.add_argument("--res-mult", type=int, default=1)
-    p.add_argument("--tn-order", type=int, default=2)
+    p.add_argument("--tn-order", type=int, default=3)
     args = p.parse_args()
 
     benches = {b.name: b for b in discover_benches() if hasattr(b, "base")}

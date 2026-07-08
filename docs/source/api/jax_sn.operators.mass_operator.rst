@@ -14,3 +14,4 @@ Submodules
 
    jax_sn.operators.mass_operator.mass_operator_base
    jax_sn.operators.mass_operator.mass_operator_strategies
+   jax_sn.operators.mass_operator.mass_operator_warp

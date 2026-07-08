@@ -279,6 +279,12 @@ def _mv_single_group_operator_transpose(moment_operator, transport_operator, mas
 
     Since the transposes are trivial (we only point to a different function), this does not add any overhead.
 
+    Mass is applied after ``discrete_operator.transpose()`` (moment space) rather than directly after
+    ``transport_operator.transpose().inv()`` (discrete space), mirroring the forward direction's
+    mass-before-discrete ordering (see :func:`_mv_single_group_operator`): mass and discrete act on
+    independent tensor factors (elements/basis vs. moments/angles) so they commute, and moment space is
+    the smaller of the two.
+
     Parameters
     ----------
     moment_operator : MomentOperator
@@ -299,7 +305,7 @@ def _mv_single_group_operator_transpose(moment_operator, transport_operator, mas
     jnp.ndarray
         The result of the multiplication.
     '''
-    return x -inscatter_operator.transpose().mv( discrete_operator.transpose().mv(mass_operator.transpose().mv(transport_operator.transpose().inv(moment_operator.transpose().mv(x)))))
+    return x -inscatter_operator.transpose().mv( mass_operator.transpose().mv(discrete_operator.transpose().mv(transport_operator.transpose().inv(moment_operator.transpose().mv(x)))))
 
 
 # For the solve, we have as memory analysis:
