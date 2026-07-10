@@ -110,3 +110,23 @@ or if the source is defined in moment space:
     \left(\mathbf{I} -\mathbf{M} \mathbf{T}^{-1} \mathbf{H} \mathbf{D}\mathbf{S} \right)[\phi_{g\ell ei}] = \mathbf{M}\mathbf{T}^{-1}\mathbf{H}\mathbf{D}[q_{g\ell ei}]
 
 This is the version that can be efficiently solved with any iterative solver.
+
+Transport operator inversion
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The transport operator is always diagonal in the :math:`g,k` indices; it does not couple these. Obtaining an inverse is thus equal to  inverting each 
+:math:`g,k` index separately. For brevity, we just drop the indices in this section.
+
+.. math::
+    T[\psi_{ei}] = \sum_{i}\psi_{\epsilon i}\int_{\epsilon} H_{\epsilon i}\left[ \sigma H_{\epsilon j} - \Omega \cdot \nabla   H_{\epsilon j}\right]\, d V +  \int_{\partial \epsilon} H_{\epsilon j }\hat{\psi} \Omega \cdot \mathbf{n}\, d A
+
+The upwind flux is used as the numerical flux and is defined as:
+
+.. math::
+    \hat{\psi} = \begin{cases}
+        \sum_{i} \psi_{\epsilon i} H_{\epsilon i}  & \Omega \cdot \mathbf{n}(\mathbf{s}) \geq 0 \\
+        \sum_{i} \psi_{\epsilon(\mathbf{s}) i} H_{\epsilon(\mathbf{s}) i } & \Omega \cdot \mathbf{n}(\mathbf{s}) < 0
+    \end{cases}
+
+where :math:`\epsilon(\mathbf{s})` is the element connected to :math:`\epsilon` through the boundary point :math:`\mathbf{s}`.
+
