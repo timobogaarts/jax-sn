@@ -26,10 +26,10 @@ def pytest_addoption(parser):
         "--reference-mode",
         action="store",
         default=None,
-        choices=["live", "auto", "frozen", "freeze"],
+        choices=["live", "frozen", "freeze"],
         help="Source for operator-property reference values (see operator_util reference-values block): "
-             "live=compute from the pivot; auto=frozen bundle if present else live (default); "
-             "frozen=frozen only; freeze=compute and (re)write the bundles. Sets JAXSN_REFERENCE.",
+             "frozen=frozen bundle only, error if missing (default); live=compute from the pivot; "
+             "freeze=compute and (re)write the bundles. Sets JAXSN_REFERENCE.",
     )
 
 def pytest_configure(config):
@@ -72,8 +72,7 @@ def pytest_runtest_setup(item):
 import pytest
 
 from bb_setup import _setup_bb_args, _get_bb_args
-from operator_tests.operator_util import DIM_DEGREES
-
+DIM_DEGREES = [(1, 1), (1, 2), (1, 3), (2, 1), (2, 2), (3, 1), (3, 2)]
 
 @pytest.fixture(params=DIM_DEGREES, scope="session")
 def bb_mgop_dim_degree(request):

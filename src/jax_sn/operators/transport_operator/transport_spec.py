@@ -3,7 +3,7 @@ import equinox as eqx
 from .solution_setup import SolutionSetup
 from .transport_operator_interface import TransportOperator, TransportOperatorMultipleAngles
 from .transport_operator_strategies import (
-    ForwardStrategy, InversionStrategy, AngleLifting,    
+    ForwardStrategy, InversionStrategy, ForwardAngleLifting, InversionAngleLifting,
 )
 
 class TransportSpec(eqx.Module):
@@ -18,8 +18,11 @@ class TransportSpec(eqx.Module):
     inversion_strategy : InversionStrategy
     '''How to sweep-invert the single-angle operator.'''
 
-    angle_lifting      : AngleLifting
-    '''How to lift the single-angle operator over the angle axis.'''
+    forward_lifting    : ForwardAngleLifting
+    '''How to lift the single-angle forward over the angle axis.'''
+
+    inversion_lifting  : InversionAngleLifting
+    '''How to lift the single-angle inverse over the angle axis.'''
 
     energy_group       : int = 0
     '''Energy group index for which the transport operator is defined.'''
@@ -37,7 +40,7 @@ class TransportSpec(eqx.Module):
             self.forward_strategy,
             self.inversion_strategy,
         )
-        return TransportOperatorMultipleAngles(single_angle, self.angle_lifting)
+        return TransportOperatorMultipleAngles(single_angle, self.forward_lifting, self.inversion_lifting)
 
     @classmethod
     def from_transport_operator(cls, transport_operator : TransportOperatorMultipleAngles, energy_group : int = None) -> "TransportSpec":
@@ -46,7 +49,8 @@ class TransportSpec(eqx.Module):
         return cls(
             single_angle.forward_strategy,
             single_angle.inversion_strategy,
-            transport_operator.angle_lifting,
+            transport_operator.forward_lifting,
+            transport_operator.inversion_lifting,
             single_angle.energy_group if energy_group is None else energy_group,
         )
 

@@ -3,11 +3,11 @@ from .transport_operator_interface import TransportOperator, TransportOperatorMu
 from .solution_setup import SolutionSetup, AngularSetup
 from .transport_spec import TransportSpec
 from .transport_operator_strategies import (
-    ForwardStrategy, InversionStrategy, AngleLifting,
+    ForwardStrategy, InversionStrategy, ForwardAngleLifting, InversionAngleLifting,
 )
 from .implementations.transport_operator_forward import VmapForward, BatchedForward
 from .implementations.transport_operator_jax import VmapSweep, BatchedSweep
-from .implementations.angle_liftings import VmapAngles
+from .implementations.angle_liftings import VmapForwardAngles, VmapInversionAngles
 
 
 from .implementations.transport_operator_pallas import (
@@ -33,12 +33,14 @@ __all__ = [
     'TransportSpec',
     'ForwardStrategy',
     'InversionStrategy',
-    'AngleLifting',
+    'ForwardAngleLifting',
+    'InversionAngleLifting',
     'VmapForward',
     'BatchedForward',
     'VmapSweep',
     'BatchedSweep',
-    'VmapAngles',
+    'VmapForwardAngles',
+    'VmapInversionAngles',
     'VmapPallasSweep',
     'BatchedPallasSweep',    
 ]

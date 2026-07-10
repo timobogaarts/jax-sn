@@ -3,14 +3,18 @@ Strategy objects for the transport operator.
 
 The transport operator is parameterized by composable strategy objects rather than by subclassing:
 
-- :class:`ForwardStrategy`   -- how to apply the (single-angle) forward operator ``mv``.
-- :class:`InversionStrategy` -- how to sweep-invert the (single-angle) operator ``_invert_internal``.
-- :class:`AngleLifting`      -- how to lift a single-angle operator to multiple angles.
+- :class:`ForwardStrategy`         -- how to apply the (single-angle) forward operator ``mv``.
+- :class:`InversionStrategy`       -- how to sweep-invert the (single-angle) operator ``_invert_internal``.
+- :class:`ForwardAngleLifting`     -- how to lift the single-angle *forward* to multiple angles.
+- :class:`InversionAngleLifting`   -- how to lift the single-angle *inverse* to multiple angles.
 
 A new method is a single small class implementing one action method named after that action:
-``forward`` (forward strategies), ``invert`` (inversion strategies), or the ``forward``/``invert``
-pair (lifting). Forward and inversion strategies are independent fields on the operator, so any
-forward composes with any inversion (``F + I`` classes, not ``F x I`` operators).
+``forward`` (forward strategies / forward lifts) or ``invert`` (inversion strategies / inversion
+lifts). The two axes are independent fields on the operator, so any forward composes with any
+inversion (``F + I`` classes, not ``F x I`` operators) -- at the single-angle level *and* over the
+angle lift. The lift is split the same way: the forward lift has a single implementation (vmap),
+while the inversion lift carries the fused-kernel variants, so bundling them would force every fused
+inversion lift to re-declare the same vmap forward.
 
 This module holds only the *abstract* strategy bases. Each concrete implementation lives next to
 its kernel under ``implementations/`` (e.g. ``implementations/transport_operator_forward.py``,
@@ -79,7 +83,7 @@ class InversionStrategy(eqx.Module):
     def vmappable(cls) -> bool:
         '''Whether an outer ``vmap`` over this inversion vectorises. ``False`` for an opaque external
         kernel (e.g. warp), where ``vmap`` cannot see into the call and falls back to a serial loop --
-        so a vmap-based lift (see :meth:`AngleLifting.vmaps_inner`) over it silently serialises. This is
+        so a vmap-based lift (see :meth:`InversionAngleLifting.vmaps_inner`) over it silently serialises. This is
         a *performance* fact, kept separate from the *correctness* check in :meth:`check_compatible`.
         Abstract (no safe default): each concrete inversion must declare it.'''
         ...
@@ -96,12 +100,13 @@ class InversionStrategy(eqx.Module):
 
     @classmethod
     @abstractmethod
-    def default_angle_lifting(cls) -> "AngleLifting":
-        '''The multi-angle lift a creation helper uses by default for this inversion. Each strategy
-        declares its own: the generic inversions return :class:`VmapAngles`; an opaque-kernel inversion
-        (one with ``vmappable = False``, e.g. warp) returns its matching fused lift. Declared abstract
-        here -- not defaulted -- so this module stays free of the concrete lift classes that live under
-        ``implementations/``.'''
+    def default_inversion_lifting(cls) -> "InversionAngleLifting":
+        '''The multi-angle inverse lift a creation helper uses by default for this inversion. Each
+        strategy declares its own: the generic inversions return :class:`VmapInversionAngles`; an
+        opaque-kernel inversion (one with ``vmappable = False``, e.g. warp) returns its matching fused
+        lift. Declared abstract here -- not defaulted -- so this module stays free of the concrete lift
+        classes that live under ``implementations/``. (The *forward* lift has a single implementation,
+        :class:`VmapForwardAngles`, so it needs no per-strategy default.)'''
         ...
 
     def check_compatible(self, operator: "TransportOperator"):
@@ -117,25 +122,35 @@ class InversionStrategy(eqx.Module):
 # ---------------------------------------------------------------------------
 # Angle lifting
 # ---------------------------------------------------------------------------
-class AngleLifting(eqx.Module):
-    '''
-    How to lift a single-angle operator to multiple angles. The single-angle operator is used
-    strictly as a black-box F-morphism (via ``mv`` / ``_invert_internal``); the multi-angle operator
-    owns the lift, so the single-angle class stays ignorant of the multi-angle space.
-    '''
+# The lift is split into a *forward* lift and an *inversion* lift -- two independent fields on the
+# multi-angle operator, mirroring the single-angle ``ForwardStrategy`` + ``InversionStrategy`` split.
+# The single-angle operator is used strictly as a black-box F-morphism (via ``mv`` / ``_invert_internal``);
+# the multi-angle operator owns the lift, so the single-angle class stays ignorant of the multi-angle
+# space. The forward lift has a single implementation (:class:`VmapForwardAngles`); all the variation --
+# fused warp kernels -- lives on the inversion lift, which is why the two are separate axes.
+class ForwardAngleLifting(eqx.Module):
+    '''How to lift the single-angle *forward* (``mv``) over the angle axis.'''
+
+    @abstractmethod
+    def forward(self, single_op: "TransportOperator", x):
+        ...
+
+    def check_compatible(self, single_op: "TransportOperator"):
+        '''Assert the wrapped single-angle operator satisfies this lift's precondition. Default: nothing to check.'''
+        pass
+
+
+class InversionAngleLifting(eqx.Module):
+    '''How to lift the single-angle *inverse* (``_invert_internal``) over the angle axis.'''
 
     @classmethod
     @abstractmethod
     def vmaps_inner(cls) -> bool:
-        '''Whether this lift works by ``vmap``-ing the wrapped single-angle op. ``True`` for the generic
-        :class:`VmapAngles`; ``False`` for a fused kernel that handles the angles itself. A ``True`` lift
-        over an inversion with ``vmappable() == False`` serialises -- the one combination a benchmark
-        should not select (it is still constructible; this only flags it). Abstract (no safe default):
-        each concrete lift must declare it.'''
-        ...
-
-    @abstractmethod
-    def forward(self, single_op: "TransportOperator", x):
+        '''Whether this lift works by ``vmap``-ing the wrapped single-angle inverse. ``True`` for the
+        generic :class:`VmapInversionAngles`; ``False`` for a fused kernel that handles the angles
+        itself. A ``True`` lift over an inversion with ``vmappable() == False`` serialises -- the one
+        combination a benchmark should not select (it is still constructible; this only flags it).
+        Abstract (no safe default): each concrete lift must declare it.'''
         ...
 
     @abstractmethod

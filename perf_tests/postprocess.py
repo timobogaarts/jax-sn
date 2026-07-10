@@ -23,8 +23,8 @@ sum the matching rows of a golden JSON. It needs no jax/GPU: it is pure post-pro
 
 Two facts are not recorded in the golden JSON itself and have to be hard-coded here:
 
-- the ``InversionStrategy -> default AngleLifting`` pairing that ``transport.inv.multiangle`` is keyed
-  by (mirrors each strategy's ``default_angle_lifting()``; see ``operators/transport_operator/
+- the ``InversionStrategy -> default InversionAngleLifting`` pairing that ``transport.inv.multiangle``
+  is keyed by (mirrors each strategy's ``default_inversion_lifting()``; see ``operators/transport_operator/
   implementations/*.py``);
 - the number of energy groups the default MV problem is built with -- the breeding-blanket
   cross-section set is always 4-group (see ``_create_problem.bb_data_dict``), independent of
@@ -62,13 +62,13 @@ DEFAULT_STRATEGY_LABEL = dict(
 
 MASS_BENCH = "mass.mv.moment"  # moment-space sizing -- see bench_mass.py; matches actual SGOp/MGOp usage
 
-# InversionStrategy label (as it appears in SGOp.mv/MGOp.mv) -> its default_angle_lifting(), i.e. the
+# InversionStrategy label (as it appears in SGOp.mv/MGOp.mv) -> its default_inversion_lifting(), i.e. the
 # other half of the "<inv> + <lift>" label transport.inv.multiangle uses for the same combination.
 DEFAULT_LIFT = {
-    "VmapSweep": "VmapAngles",
-    "BatchedSweep(1000)": "VmapAngles",
-    "VmapPallasSweep": "VmapAngles",
-    "BatchedPallasSweep(1000)": "VmapAngles",
+    "VmapSweep": "VmapInversionAngles",
+    "BatchedSweep(1000)": "VmapInversionAngles",
+    "VmapPallasSweep": "VmapInversionAngles",
+    "BatchedPallasSweep(1000)": "VmapInversionAngles",
     "WarpSequentialSweep": "WarpSequentialAngles",
     "WarpLevelSweep": "WarpLevelAngles",
 }

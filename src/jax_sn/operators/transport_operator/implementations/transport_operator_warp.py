@@ -3,9 +3,9 @@ Warp strategies and convenience constructors for the transport operator.
 
 Warp provides two inverse-sweep families -- a sequential sweep and a level-based-parallelism sweep --
 each with a single-angle kernel (an :class:`InversionStrategy`) and a *fused* multi-angle kernel (an
-:class:`AngleLifting`). The fused multi-angle inverse is not a vmap of the single-angle one; it is a
-dedicated kernel tied to the warp data layout, so it lives in an ``AngleLifting`` whose ``forward``
-still defers to the generic :class:`VmapAngles`.
+:class:`InversionAngleLifting`). The fused multi-angle inverse is not a vmap of the single-angle one;
+it is a dedicated kernel tied to the warp data layout. There is no warp *forward* lift -- the forward
+always uses the generic :class:`VmapForwardAngles` -- so these are inversion lifts only.
 
 The warp forward is the batched forward (``BatchedForward``), so warp single-angle operators are just
 ``TransportOperator`` with a batched forward strategy + a warp inversion strategy -- no special
@@ -16,8 +16,7 @@ subclass. The level-parallel variant carries its level setup inside a
 from ..sweep_data import LeveledSweepData, ProvidesLevels
 from jax_sn.solution_domain import SolutionDomainData
 
-from ..transport_operator_strategies import InversionStrategy, AngleLifting
-from .angle_liftings import VmapAngles
+from ..transport_operator_strategies import InversionStrategy, InversionAngleLifting
 from .linear_tetrahedron_warp_kernel import (
     single_angle_warp_sweep, multi_angle_warp_sweep,
     level_single_angle_warp_sweep, level_multi_angle_warp_sweep,
@@ -52,7 +51,7 @@ class WarpSequentialSweep(InversionStrategy):
         return False   # opaque warp kernel: an outer vmap serialises
 
     @classmethod
-    def default_angle_lifting(cls):
+    def default_inversion_lifting(cls):
         return WarpSequentialAngles()   # the fused multi-angle kernel, not a vmap of this one
 
 
@@ -81,7 +80,7 @@ class WarpLevelSweep(InversionStrategy):
         return LeveledSweepData
 
     @classmethod
-    def default_angle_lifting(cls):
+    def default_inversion_lifting(cls):
         return WarpLevelAngles()   # the fused multi-angle kernel, not a vmap of this one
 
     def check_compatible(self, operator):
@@ -90,17 +89,14 @@ class WarpLevelSweep(InversionStrategy):
 
 
 # ---------------------------------------------------------------------------
-# Angle lifting (fused multi-angle warp kernels; forward stays vmap)
+# Inversion angle lifting (fused multi-angle warp kernels; forward stays VmapForwardAngles)
 # ---------------------------------------------------------------------------
-class WarpSequentialAngles(AngleLifting):
-    '''Multi-angle lift: fused sequential Warp sweep for the inverse, vmap for the forward.'''
+class WarpSequentialAngles(InversionAngleLifting):
+    '''Multi-angle inverse lift: fused sequential Warp sweep.'''
 
     @classmethod
     def vmaps_inner(cls):
         return False   # fused kernel handles the angles itself
-
-    def forward(self, single_op, x):
-        return VmapAngles().forward(single_op, x)
 
     def invert(self, single_op, b):
         return multi_angle_warp_sweep(*single_op._inversion_args(), b)
@@ -110,15 +106,12 @@ class WarpSequentialAngles(AngleLifting):
             f"WarpSequentialAngles needs a single-angle operator with a WarpSequentialSweep inverse, got {type(single_op.inversion_strategy).__name__}"
 
 
-class WarpLevelAngles(AngleLifting):
-    '''Multi-angle lift: fused level-based-parallelism Warp sweep for the inverse, vmap for the forward.'''
+class WarpLevelAngles(InversionAngleLifting):
+    '''Multi-angle inverse lift: fused level-based-parallelism Warp sweep.'''
 
     @classmethod
     def vmaps_inner(cls):
         return False   # fused kernel handles the angles itself
-
-    def forward(self, single_op, x):
-        return VmapAngles().forward(single_op, x)
 
     def invert(self, single_op, b):
         return level_multi_angle_warp_sweep(*single_op._inversion_args(), b, single_op.sweep_data.level_fwd)

@@ -9,9 +9,6 @@ _ANGLE_I = 0   # single-angle transport tests pick this angle from the multi-ang
 
 _DEFAULT_FORWARD = VmapForward   # pure-JAX reference (pivot) every variant is compared against
 
-# Forward strategies only differ in the forward apply (mv). They all run on the shared BasicSweepData the
-# BB operator is built with, so the variant is a cheap strategy swap on the single-angle operator (no
-# sweep-data rebuild) -- exactly the mass/moment pattern. The batched variant is checked at a batch size.
 FORWARD_STRATEGIES = {VmapForward:   Spec(),
                       BatchedForward: Spec(kwargs=dict(batch_size=64))}
 

@@ -1,4 +1,4 @@
-from jax_sn.operators.transport_operator import ForwardStrategy, InversionStrategy, AngleLifting, VmapForward, VmapSweep, VmapAngles
+from jax_sn.operators.transport_operator import ForwardStrategy, InversionStrategy, ForwardAngleLifting, InversionAngleLifting, VmapForward, VmapSweep, VmapForwardAngles
 from jax_sn.operators.transport_operator import TransportSpec, SolutionSetup, AngularSetup
 from jax_sn.operators.mass_operator import MassStrategy, VmapMass
 from jax_sn.operators.moment_operator import MomentStrategy, DiscreteStrategy, BatchedMoment, BatchedDiscrete
@@ -11,7 +11,8 @@ from jax_sn.solution_domain import SolutionDomain
 def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set : QuadratureSetBase,
                                 forward_strategy : ForwardStrategy = VmapForward(),
                                 inversion_strategy : InversionStrategy = VmapSweep(),
-                                angle_lifting : AngleLifting = None,
+                                forward_lifting : ForwardAngleLifting = VmapForwardAngles(),
+                                inversion_lifting : InversionAngleLifting = None,
                                 sweep_data_kwargs : Dict = {},
                                 moment_strategy : MomentStrategy = BatchedMoment(),
                                 discrete_strategy : DiscreteStrategy = BatchedDiscrete(),
@@ -40,11 +41,14 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
     inversion_strategy : InversionStrategy, optional
         How the (single-angle) transport operator sweep-inverts, by default :class:`VmapSweep`. Also
         determines the toposort type that gets built (via ``default_sweep_data_type``).
-    angle_lifting : AngleLifting, optional
-        How the single-angle operator is lifted over the angle axis. ``None`` (default) resolves to
-        ``inversion_strategy.default_angle_lifting()`` -- the generic :class:`VmapAngles` for an
-        ordinary inversion, or the matching fused lift for an opaque-kernel inversion (warp), so the
-        natural multi-angle path is chosen without the caller having to know. Pass one to override.
+    forward_lifting : ForwardAngleLifting, optional
+        How the single-angle forward is lifted over the angle axis, by default :class:`VmapForwardAngles`
+        (the only forward lift -- forward always vmaps).
+    inversion_lifting : InversionAngleLifting, optional
+        How the single-angle inverse is lifted over the angle axis. ``None`` (default) resolves to
+        ``inversion_strategy.default_inversion_lifting()`` -- the generic :class:`VmapInversionAngles`
+        for an ordinary inversion, or the matching fused lift for an opaque-kernel inversion (warp), so
+        the natural multi-angle path is chosen without the caller having to know. Pass one to override.
     sweep_data_kwargs : Dict, optional
         Build kwargs forwarded to ``default_sweep_data_type().from_domain_quadrature_set`` (e.g.
         ``{"maximum_number_of_levels": ...}`` for a level-parallel toposort), by default {}.
@@ -61,8 +65,8 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
         The created multi group operator.
     '''
 
-    if angle_lifting is None:
-        angle_lifting = inversion_strategy.default_angle_lifting()
+    if inversion_lifting is None:
+        inversion_lifting = inversion_strategy.default_inversion_lifting()
 
     n_energy_groups           = solution_domain.domain.cross_sections_indexed.n_energy_groups
     lmax                      = solution_domain.domain.cross_sections_indexed.l_max
@@ -72,7 +76,7 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
 
     angular_setup             = AngularSetup.from_quadrature_set(quadrature_set, lmax)
     setup                     = SolutionSetup(solution_domain.solution_domain_data, angular_setup, sweep_data)
-    transport_spec            = TransportSpec(forward_strategy, inversion_strategy, angle_lifting, energy_group=0)
+    transport_spec            = TransportSpec(forward_strategy, inversion_strategy, forward_lifting, inversion_lifting, energy_group=0)
 
     return multi_group_operator_cls(setup, transport_spec, n_energy_groups, moment_strategy, discrete_strategy, mass_strategy, gather_scatter_operator_cls, **multi_group_operator_cls_kwargs)
     

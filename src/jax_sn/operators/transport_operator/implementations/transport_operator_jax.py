@@ -10,7 +10,7 @@ from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from functools import partial
 from typing import TYPE_CHECKING
 from ..transport_operator_strategies import InversionStrategy
-from .angle_liftings import VmapAngles
+from .angle_liftings import VmapInversionAngles
 
 if TYPE_CHECKING:
     from ..transport_operator_interface import TransportOperator
@@ -26,8 +26,8 @@ class VmapSweep(InversionStrategy):
         return True
 
     @classmethod
-    def default_angle_lifting(cls):
-        return VmapAngles()
+    def default_inversion_lifting(cls):
+        return VmapInversionAngles()
 
 
 class BatchedSweep(InversionStrategy):
@@ -43,8 +43,8 @@ class BatchedSweep(InversionStrategy):
         return True
 
     @classmethod
-    def default_angle_lifting(cls):
-        return VmapAngles()
+    def default_inversion_lifting(cls):
+        return VmapInversionAngles()
 
 
 

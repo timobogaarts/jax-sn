@@ -7,7 +7,7 @@ from jax_sn.operators.transport_operator.implementations.transport_operator_warp
 from jax_sn.operators.multi_group_operator.multi_group_operator_creation import create_multi_group_operator
 
 from .operator_util import (
-    BaseOperatorProperties, Spec, parametrize_strategies, linear_tet_only, _rand, _inexact_leaves,
+    BaseOperatorProperties, Spec, parametrize_strategies, linear_tet_only, _rand,
 )
 
 _ANGLE_I = 0   # single-angle inversion tests pick this angle from the multi-angle operator
@@ -15,8 +15,8 @@ _ANGLE_I = 0   # single-angle inversion tests pick this angle from the multi-ang
 _DEFAULT_INVERSION = VmapSweep   # pure-JAX reference (pivot) every variant is compared against
 
 # Unlike the mass/moment/forward axes, an inversion strategy also fixes the *sweep-data toposort* it needs
-# (WarpLevelSweep -> LeveledSweepData, everything else -> BasicSweepData) and the multi-angle *lifting*
-# (fused warp lifts vs VmapAngles). create_multi_group_operator resolves both from the strategy, so the
+# (WarpLevelSweep -> LeveledSweepData, everything else -> BasicSweepData) and the multi-angle *inversion
+# lifting* (fused warp lifts vs VmapInversionAngles). create_multi_group_operator resolves both from the strategy, so the
 # variant is built through the factory rather than a bare tree_at swap. The warp kernels are the 3-D
 # linear tetrahedron only (linear_tet_only). The level-*padded* sweep (a build-parameter, orthogonal to
 # the strategy axis) stays in test_warp_linear_tetrahedron.py.
@@ -66,10 +66,11 @@ def _pivot_mgop(bb_mgop):
 
 class _TransportInversionBase(BaseOperatorProperties):
     '''Shared config for the transport inversion axis: the battery runs against ``op.inv`` (via the
-    ``apply`` override), tolerances are relaxed to the iterative sweep's accuracy, and the gradient
-    comparison is projected onto ``solution_domain_data`` because a WarpLevelSweep variant carries a
-    different ``sweep_data`` type than the BasicSweepData pivot (so a full-tree leaf compare would not
-    even line up).'''
+    ``apply`` override) and tolerances are relaxed to the iterative sweep's accuracy. The VJP / JVP are
+    taken w.r.t. the whole operator like every other axis: a WarpLevelSweep variant carries a differently
+    typed ``sweep_data`` than the BasicSweepData pivot, but every ``sweep_data`` field is an integer index
+    array, so ``_inexact_leaves`` drops them and op and reference line up regardless (the forward-JVP
+    likewise perturbs only the shared inexact leaves, exercising forward-mode through the sweep kernel).'''
 
     rtol_exact, atol_exact = 1e-9, 1e-9
     rtol, atol = 1e-9, 1e-9
@@ -77,9 +78,6 @@ class _TransportInversionBase(BaseOperatorProperties):
 
     def apply(self, operator, x):
         return operator.inv(x)
-
-    def _grad_compare_leaves(self, grad_tree):
-        return _inexact_leaves(grad_tree.solution_domain_data)
 
 
 @parametrize_strategies(INVERSION_STRATEGIES)
@@ -103,9 +101,9 @@ class TestTransportInversionSingleAngle(_TransportInversionBase):
 
 @parametrize_strategies(INVERSION_STRATEGIES)
 class TestTransportInversionMultiAngle(_TransportInversionBase):
-    '''The multi-angle inverse: each inversion uses its own default angle lifting (a fused warp lift for
-    the warp kernels, VmapAngles otherwise), so the consistency check is exactly the fused-vs-stacked
-    batching-correctness test.'''
+    '''The multi-angle inverse: each inversion uses its own default inversion lifting (a fused warp lift
+    for the warp kernels, VmapInversionAngles otherwise), so the consistency check is exactly the
+    fused-vs-stacked batching-correctness test.'''
 
     @pytest.fixture
     def operator(self, bb_mgop, strategy_cls, kwargs):

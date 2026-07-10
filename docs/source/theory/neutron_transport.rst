@@ -23,9 +23,30 @@ It is therefore often more convenient to work with the angular neutron flux, def
     \psi(\mathbf{r}, \Omega, E) = v(E) N(\mathbf{r}, \Omega, E).
 
 
+Assumptions
+===============
+Several assumptions are made about the nature of the neutral particle behaviour.
+
+- Particle size is small relative to problem length scales and are classical. They are described by a position :math:`\mathbf{r}` and momentum :math:`\mathbf{p}`. 
+
+- Between collisions, particles travel in straight lines.
+
+- Collisions between neutral particles do not happen at appreciable levels compared to background-neutral collisions and are ignored.
+
+- Collisions are instant in time.
+
+- Background collisions are isotropic: the probability of a collision is solely determined by the change in angle (before and after).
+
+- Fixed materials: they do not change as a result of the neutron flux (linearity).
+
+- The timescales of neutron transport are much smaller than the timescales of macroscopic changes in the background medium.
+
+- Multiplying neutron reactions are assumed not to lead to criticality.
+
+
 Neutron transport equation
 ---------------------------
-It can then be shown, that the behavior of neutrons in a medium is governed by the neutron transport equation (here in steady-state):
+Using these assumptions, it can then be shown, that the behavior of neutrons in a medium is governed by the neutron transport equation (here in steady-state):
 
 .. math::
     \Omega \cdot \nabla \psi(\mathbf{r}, \Omega, E) + &\sigma(\mathbf{r}, \Omega) \psi(\mathbf{r}, \Omega, E) \\

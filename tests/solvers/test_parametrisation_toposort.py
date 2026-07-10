@@ -33,7 +33,7 @@ from jax_sn.solution_domain.basix_fem import BasixLagrangianSimplex
 from jax_sn.solution_domain.solution_domain import SolutionDomain
 from jax_sn.quadrature_set.quadrature_set_base import QuadratureSet
 from jax_sn.operators.transport_operator import (
-    TransportOperator, TransportOperatorMultipleAngles, BatchedForward, BatchedSweep, VmapAngles, BasicSweepData,
+    TransportOperator, TransportOperatorMultipleAngles, BatchedForward, BatchedSweep, VmapForwardAngles, VmapInversionAngles, BasicSweepData,
 )
 from jax_sn.operators.mass_operator import MassOperator
 from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
@@ -112,7 +112,7 @@ def _build_mgop(solution_domain, quad, batch_size=4):
     lmax = solution_domain.domain.cross_sections_indexed.l_max
     sweep    = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quad, 100)
     top      = TransportOperatorMultipleAngles(
-        TransportOperator(solution_domain.solution_domain_data, sweep, quad.angles, 0, BatchedForward(batch_size), BatchedSweep(batch_size)), VmapAngles())
+        TransportOperator(solution_domain.solution_domain_data, sweep, quad.angles, 0, BatchedForward(batch_size), BatchedSweep(batch_size)), VmapForwardAngles(), VmapInversionAngles())
     mass     = MassOperator.from_transport_operator(top)
     moment   = MomentOperator.from_quadrature_set(quad, l_max=lmax, elements_basis_shape=solution_domain.elements_basis_shape)
     discrete = DiscreteOperator.from_quadrature_set(quad, l_max=lmax, elements_basis_shape=solution_domain.elements_basis_shape)

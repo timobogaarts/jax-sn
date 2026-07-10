@@ -28,7 +28,7 @@ class TestMultiGroupOperator(BaseOperatorProperties):
 
     @pytest.fixture
     def build_reference(self, bb_mgop):
-        return _DEFAULT_MG.from_multigroup_operator(bb_mgop[0])
+        return lambda : _DEFAULT_MG.from_multigroup_operator(bb_mgop[0])
 
 
 # # --- solver-equivalence / self-consistency properties (no external reference) ---------------

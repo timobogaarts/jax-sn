@@ -6,7 +6,7 @@ from .sweep_data import SweepData
 import equinox as eqx
 import lineax as lx
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
-from .transport_operator_strategies import ForwardStrategy, InversionStrategy, AngleLifting
+from .transport_operator_strategies import ForwardStrategy, InversionStrategy, ForwardAngleLifting, InversionAngleLifting
 
 class TransportOperatorSolver(lx.AbstractLinearSolver):
     '''
@@ -261,23 +261,27 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
     transport_operator : TransportOperator
     '''Single-angle transport operator that is extended to multiple angles.'''
 
-    angle_lifting : AngleLifting
-    '''How to lift the single-angle operator over the angle axis (e.g. vmap, or a fused warp kernel). See :mod:`.transport_operator_strategies`.'''
+    forward_lifting : ForwardAngleLifting
+    '''How to lift the single-angle forward over the angle axis (vmap). See :mod:`.transport_operator_strategies`.'''
+
+    inversion_lifting : InversionAngleLifting
+    '''How to lift the single-angle inverse over the angle axis (e.g. vmap, or a fused warp kernel). See :mod:`.transport_operator_strategies`.'''
 
     def __check_init__(self):
-        # The lift owns its precondition on the wrapped single-angle operator (e.g. a fused warp lift
-        # requires a warp single-angle operator). Validating here catches a mispaired lift/operator at
-        # construction instead of failing inside a kernel.
-        self.angle_lifting.check_compatible(self.transport_operator)
+        # Each lift owns its precondition on the wrapped single-angle operator (e.g. a fused warp
+        # inversion lift requires a warp single-angle operator). Validating here catches a mispaired
+        # lift/operator at construction instead of failing inside a kernel.
+        self.forward_lifting.check_compatible(self.transport_operator)
+        self.inversion_lifting.check_compatible(self.transport_operator)
 
     def _assert_shape_base(self):
         assert self.transport_operator.angle.ndim==2, "angle must be 2D [n_angles, n_dim] for base TransportOperatorMultipleAngles"
 
     def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        return self.angle_lifting.forward(self.transport_operator, x)
+        return self.forward_lifting.forward(self.transport_operator, x)
 
     def _invert_internal(self, b : jnp.ndarray) -> jnp.ndarray:
-        return self.angle_lifting.invert(self.transport_operator, b)
+        return self.inversion_lifting.invert(self.transport_operator, b)
 
     def _inversion_args(self):
         '''Delegates to the wrapped single-angle operator (used by the warp flatten helper).'''

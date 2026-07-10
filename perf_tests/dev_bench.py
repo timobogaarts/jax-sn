@@ -24,7 +24,7 @@ Examples
     python dev_bench.py --bench transport.forward --problem tiny-d1
 
     # one (inversion, angle-lifting) pair from the multiangle product
-    python dev_bench.py --bench transport.inv.multiangle --strategy MySweep --lifting VmapAngles
+    python dev_bench.py --bench transport.inv.multiangle --strategy MySweep --lifting VmapInversionAngles
 
     # Warp example
     python dev_bench.py --bench transport.inv.multiangle \
@@ -66,7 +66,7 @@ def main():
                     help="restrict to discovered strategy class(es): name/substring, or a comma list for several "
                          "(e.g. 'BatchedSweep,VmapSweep'); default: sweep all")
     p.add_argument("--lifting", default="",
-                    help="transport.inv.multiangle only: restrict to discovered AngleLifting(s), same comma-list "
+                    help="transport.inv.multiangle only: restrict to discovered InversionAngleLifting(s), same comma-list "
                          "syntax as --strategy")
     p.add_argument("--problem", default="", help="use a named preset from problems.PROBLEMS instead of the --dim/etc flags")
     p.add_argument("--dim", type=int, default=3)
@@ -117,11 +117,11 @@ def main():
 
 
 def _run_multiangle(args):
-    """``transport.inv`` swept over the (InversionStrategy x AngleLifting) product -- mirrors
+    """``transport.inv`` swept over the (InversionStrategy x InversionAngleLifting) product -- mirrors
     ``MultiAngleInvBench.run`` in ``bench_transport_multiangle.py``, but filterable to one pair via
     ``--strategy``/``--lifting`` and buildable at a custom resolution."""
     from bench_transport import _INV_OVERRIDES
-    from jax_sn.operators.transport_operator import InversionStrategy, AngleLifting, BatchedForward
+    from jax_sn.operators.transport_operator import InversionStrategy, InversionAngleLifting, BatchedForward
     from jax_sn.operators.multi_group_operator.multi_group_operator_creation import create_multi_group_operator
     from _bench import inv_call
 
@@ -129,7 +129,7 @@ def _run_multiangle(args):
     print(f">>> {info}", flush=True)
 
     invs = [v for v in discover_variants(InversionStrategy, _INV_OVERRIDES) if v.instance is not None]
-    lifts = [v for v in discover_variants(AngleLifting) if v.instance is not None]
+    lifts = [v for v in discover_variants(InversionAngleLifting) if v.instance is not None]
     if args.strategy:
         invs = _filter_by(invs, args.strategy)
         if not invs:
@@ -137,7 +137,7 @@ def _run_multiangle(args):
     if args.lifting:
         lifts = _filter_by(lifts, args.lifting)
         if not lifts:
-            raise SystemExit(f"no discovered AngleLifting matches --lifting {args.lifting!r}")
+            raise SystemExit(f"no discovered InversionAngleLifting matches --lifting {args.lifting!r}")
 
     pairs = [(i, l) for i in invs for l in lifts if not serializes(l.instance, i.instance)]
     if not pairs:
@@ -151,7 +151,7 @@ def _run_multiangle(args):
         def build_fn(i=inv.instance, l=lift.instance):
             mgop = create_multi_group_operator(
                 sd, qs, forward_strategy=BatchedForward(1000),
-                inversion_strategy=i, angle_lifting=l)
+                inversion_strategy=i, inversion_lifting=l)
             return inv_call(mgop.transport_operator)
 
         m = measure(build_fn)

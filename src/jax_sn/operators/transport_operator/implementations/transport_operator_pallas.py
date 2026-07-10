@@ -427,7 +427,7 @@ def transport_inverse_sweep_multiple_angles_batched_pallas(geometric_domain    :
 # Pallas strategies + convenience constructors
 # ---------------------------------------------------------------------------
 from ..transport_operator_strategies import InversionStrategy
-from .angle_liftings import VmapAngles
+from .angle_liftings import VmapInversionAngles
 
 
 class VmapPallasSweep(InversionStrategy):
@@ -441,8 +441,8 @@ class VmapPallasSweep(InversionStrategy):
         return True
 
     @classmethod
-    def default_angle_lifting(cls):
-        return VmapAngles()
+    def default_inversion_lifting(cls):
+        return VmapInversionAngles()
 
 
 class BatchedPallasSweep(InversionStrategy):
@@ -458,5 +458,5 @@ class BatchedPallasSweep(InversionStrategy):
         return True
 
     @classmethod
-    def default_angle_lifting(cls):
-        return VmapAngles()
+    def default_inversion_lifting(cls):
+        return VmapInversionAngles()

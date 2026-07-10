@@ -1,4 +1,17 @@
+'''
+Operator utilities.
 
+Each operator has a set of properties it should *always* satisfy:
+
+1. Adjoint identity  <Ax, y> = <x, A^Ty>            
+2. Transpose idempotence  A^T^T = A                 
+
+Furthermore, it should be consistent for all implementations, including jvp & vjp.
+
+These are all tested using the framework in this file: each operator subclasses the BaseOperatorProperties
+and provides a way to construct the operator (for a number of different implementations/strategies) and a way 
+to construct a reference operator.
+'''
 import os
 
 import jax
@@ -9,21 +22,9 @@ import pytest
 import equinox as eqx
 
 from math import comb
-from functools import lru_cache
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Type
-
-
-# ---------------------------------------------------------------------------
-# Strategy registry + (dim, degree) matrix for the operator-property test classes.
-#
-# Each operator test class declares a ``{StrategyClass: Spec}`` registry. ``valid_combos`` crosses it with
-# the (dim, degree) matrix but *drops* combinations a strategy does not support -- so an unsupported combo
-# is never generated (no skip, no green: the test simply does not exist). The (dim, degree) axis is fed
-# through the cached ``bb_mgop_dim_degree`` fixture by indirect parametrisation, so builds stay shared.
-# ---------------------------------------------------------------------------
-DIM_DEGREES = [(1, 1), (1, 2), (1, 3), (2, 1), (2, 2), (3, 1), (3, 2)]
-'''The (dim, FEM degree) matrix the BB problem is exercised at (single source; conftest imports this).'''
+from conftest import DIM_DEGREES
 
 
 def simplex_n_basis(dim: int, degree: int) -> int:
@@ -36,22 +37,19 @@ def linear_tet_only(dim: int, degree: int) -> bool:
 
 @dataclass
 class Spec:
-    '''How to build + when to test one strategy variant.
-
-    ``kwargs``   -- constructor kwargs for the strategy (e.g. a batch size).
-    ``supports`` -- ``supports(dim, degree) -> bool``; a combo where this is False is not generated at all.
-    ``marks``    -- pytest marks applied to every generated combo for this strategy (e.g.
-                    ``pytest.mark.pallas`` so the Pallas variants skip unless ``--runpallas`` is given).
+    '''How to build + when to test one strategy variant.    
     '''
     kwargs: Dict = field(default_factory=dict)
-    supports: Callable[[int, int], bool] = lambda dim, degree: True
-    marks: tuple = ()
+    '''Constructor kwargs for the strategy (e.g. a batch size).'''
 
+    supports: Callable[[int, int], bool] = lambda dim, degree: True
+    '''Predicate for whether this strategy supports the given (dim, degree).'''
+
+    marks: tuple = ()
+    '''pytest marks to apply to the strategy's tests (e.g. skip/xfail/pallas)'''
 
 def valid_combos(strategies: Dict[Type, Spec], dim_degrees=DIM_DEGREES):
-    '''``pytest.param`` list of ``((dim, degree), strategy_cls, kwargs)`` over the supported combos only.
-
-    Consumed by :func:`parametrize_strategies`; the (dim, degree) drives the cached ``bb_mgop`` fixture.'''
+    '''((dim, degree), strategy_cls, kwargs) over the supported combos only.'''
     return [
         pytest.param((dim, degree), cls, spec.kwargs, id=f"dim{dim}-deg{degree}-{cls.__name__}", marks=spec.marks)
         for (dim, degree) in dim_degrees
@@ -61,8 +59,7 @@ def valid_combos(strategies: Dict[Type, Spec], dim_degrees=DIM_DEGREES):
 
 
 def parametrize_strategies(strategies: Dict[Type, Spec], dim_degrees=DIM_DEGREES):
-    '''Class/function decorator applying the standard strategy x (dim, degree) parametrisation.
-    '''
+    '''Class/function decorator applying the standard strategy x (dim, degree) parametrisation.'''
 
     return pytest.mark.parametrize(
         "bb_mgop_dim_degree, strategy_cls, kwargs",
@@ -72,74 +69,82 @@ def parametrize_strategies(strategies: Dict[Type, Spec], dim_degrees=DIM_DEGREES
 
 
 def _rand(shape, seed):
+    '''Random array of the given shape, seeded for reproducibility.'''
     return jnp.array(onp.random.default_rng(seed).random(shape))
-
-
-@lru_cache
-def _grad_of_sum(apply):
-    '''``grad_wrt_operator( sum(apply(op, x)) )``, jitted once per distinct ``apply`` (forward vs inverse)
-    so the compile is shared across every parametrised variant. ``apply`` is a plain function (hashable),
-    so the cache key is stable.'''
-    return eqx.filter_jit(eqx.filter_grad(lambda op, x: jnp.sum(apply(op, x))))
-
 
 def _inexact_leaves(tree):
     '''The inexact-array leaves of a pytree, discarding its structure.
-
-    Two operators that differ only in their (non-differentiated) strategy field produce gradients whose
-    *tree structure* differs -- the strategy node has a different type per variant (e.g. LaxMass vs
-    VmapMass) and trips a structural pytree compare -- even though it carries no gradient. Comparing the
-    inexact-array leaves directly sidesteps that: the empty strategy modules contribute no leaves, so the
-    gradient arrays line up regardless of which strategy produced them.'''
+    Exact leaves don't contribute differentiability but prohibit direct pytree comparison so they are filtered out here.
+    '''
     return jax.tree_util.tree_leaves(eqx.filter(tree, eqx.is_inexact_array))
 
 
+def _rand_tangent(tree, base_seed):
+    '''Random tangent for a pytree. Exact leaves (containing solution setup which cannot be differentiated anyway) are dropped,
+    such that operators with different solution setup still can be compared directly.'''
+    leaves, treedef = jax.tree_util.tree_flatten(tree)
+    tangents, j = [], 0
+    for a in leaves:
+        if eqx.is_inexact_array(a):
+            tangents.append(_rand(a.shape, base_seed + j))
+            j += 1
+        else:
+            tangents.append(None)
+    return jax.tree_util.tree_unflatten(treedef, tangents)
+
+
+def _operator_jvp(operator, apply):    
+    x = _rand(operator.in_structure().shape, 6)
+    tangent = _rand_tangent(operator, base_seed=8)
+    _, jv = eqx.filter_jvp(lambda op: apply(op, x), (operator,), (tangent,))
+    return jv
+
+
+def _operator_vjp(operator, apply):
+    '''VJP of the operator. Only inexact leaves are returned to compare different operators with different solution setup (exact leafs)'''
+    x = _rand(operator.in_structure().shape, 5)
+    out, vjp_fn = eqx.filter_vjp(lambda op: apply(op, x), operator)
+    (cot,) = vjp_fn(_rand(out.shape, 9))
+    return _inexact_leaves(cot)
+
 # ---------------------------------------------------------------------------
-# Reference values: the pivot (default-strategy) operator's forward / transpose / grad / jvp, which every
+# Reference values: the pivot (default-strategy) operator's forward / transpose / vjp / jvp, which every
 # variant of an axis is compared against. Sourced per JAXSN_REFERENCE (or --reference-mode):
-#   live   -- compute from the live pivot (classic same-run cross-strategy consistency)
-#   auto   -- frozen bundle if present, else live (default)
-#   frozen -- frozen only; error if missing (reference strategy need not exist; pins the pivot itself)
-#   freeze -- compute live and (re)write the bundle
-# Keyed by reference_id = (test-class name, dim, degree): strategy-independent, so the default strategy is
-# checked against the same stored truth as every variant -- turning a pivot regression into a real failure.
-# Memoised on the pytest session (see the ``reference_values`` fixture), not a module global.
+#   frozen -- frozen bundle only; error if missing (DEFAULT).
+#   live   -- compute from the live pivot (same-run cross-strategy consistency; no stored data needed)
+#   freeze -- compute live and (re)write the bundle 
 # ---------------------------------------------------------------------------
 _REF_CACHE = pytest.StashKey[dict]()
 
 
 def reference_mode() -> str:
-    return os.environ.get("JAXSN_REFERENCE", "auto")
+    return os.environ.get("JAXSN_REFERENCE", "frozen")
 
 
-def _reference_values(reference_id, build_reference, apply, grad_leaves) -> Dict:
-    '''Load (auto/frozen) or compute (live/freeze) the {forward, transpose, grad, jvp} for one reference_id.
-    ``build_reference`` (zero-arg thunk -> pivot operator) is invoked only when a live value is needed. The
-    grad is a variable-shape list of inexact leaves, flattened into ``grad_i`` in the flat npz namespace.'''
+def _reference_values(reference_id, build_reference, apply) -> Dict:
+    '''Load (frozen) or compute (live/freeze) the {forward, transpose, vjp, jvp} for one reference_id.
+    '''
     from reference_data import save, load
     (cls, (dim, degree)) = reference_id
     name, mode = f"opref__{cls}__d{dim}_deg{degree}", reference_mode()
 
-    if mode in ("auto", "frozen"):
+    if mode == "frozen":
         try:
             b = load(name)
         except FileNotFoundError:
-            if mode == "frozen":
-                raise RuntimeError(f"reference mode 'frozen' but no bundle '{name}'; freeze it first")
-        else:
-            grad = [b[k] for k in sorted((k for k in b if k.startswith("grad_") and k[5:].isdigit()), key=lambda k: int(k[5:]))]
-            return {"forward": b["forward"], "transpose": b["transpose"], "jvp": b["jvp"], "grad": grad}
+            raise RuntimeError(f"reference mode 'frozen' but no bundle '{name}'; freeze it first (--reference-mode freeze)")
+        vjp = [b[k] for k in sorted((k for k in b if k.startswith("vjp_") and k[4:].isdigit()), key=lambda k: int(k[4:]))]
+        return {"forward": b["forward"], "transpose": b["transpose"], "jvp": b["jvp"], "vjp": vjp}
 
     ref = build_reference()
     si, so = ref.in_structure().shape, ref.out_structure().shape
-    _, jvp = jax.jvp(lambda v: apply(ref, v), (_rand(si, 6),), (_rand(si, 7),))
     vals = {"forward":   onp.asarray(apply(ref, _rand(si, 3))),
             "transpose": onp.asarray(apply(ref.transpose(), _rand(so, 4))),
-            "jvp":       onp.asarray(jvp),
-            "grad":      [onp.asarray(g) for g in grad_leaves(_grad_of_sum(apply)(ref, _rand(si, 5)))]}
+            "jvp":       onp.asarray(_operator_jvp(ref, apply)),
+            "vjp":       [onp.asarray(g) for g in _operator_vjp(ref, apply)]}
     if mode == "freeze":
         save(name, forward=vals["forward"], transpose=vals["transpose"], jvp=vals["jvp"],
-             **{f"grad_{i}": g for i, g in enumerate(vals["grad"])})
+             **{f"vjp_{i}": g for i, g in enumerate(vals["vjp"])})
     return vals
 
 
@@ -154,12 +159,12 @@ class BaseOperatorProperties:
     1. Adjoint identity  <Ax, y> = <x, A^Ty>            -- self-contained (operator only)
     2. Transpose idempotence  A^T^T = A                 -- self-contained (operator only)
     3. Forward / transpose consistency with the reference
-    4. Gradient / jvp consistency with the reference
+    4. VJP / JVP (w.r.t. operator) consistency with the reference
 
     Subclass provides two fixtures:
       * ``operator``         -- the variant under test.
       * ``build_reference``  -- returning the reference operator.
-    Override :meth:`apply` to test ``op.inv`` instead of ``op.mv`` (the transport-inversion classes do).
+    Override :meth:`apply` to test ``op.inv`` instead of ``op.mv`` 
     '''
     rtol_exact, atol_exact = 1e-12, 1e-12
     rtol, atol = 1e-12, 1e-12
@@ -194,16 +199,8 @@ class BaseOperatorProperties:
         and build_reference, so keying on it alone is safe.)'''
         cache = request.session.stash.setdefault(_REF_CACHE, {})
         if reference_id not in cache:
-            cache[reference_id] = _reference_values(reference_id, build_reference, self.apply, self._grad_compare_leaves)
+            cache[reference_id] = _reference_values(reference_id, build_reference, self.apply)
         return cache[reference_id]
-
-    def _grad_compare_leaves(self, grad_tree):
-        '''Which gradient leaves are compared/frozen. Default: every inexact-array leaf (the empty strategy
-        modules contribute none, so op and reference line up regardless of variant). Override where op and
-        reference carry structurally different auxiliary data -- e.g. a level-parallel vs a basic
-        ``sweep_data`` -- so only the shared (solution-domain) gradient, which all variants agree on, is
-        compared.'''
-        return _inexact_leaves(grad_tree)
 
     def test_adjoint_identity(self, operator):
         x = _rand(operator.in_structure().shape,  0)
@@ -226,19 +223,14 @@ class BaseOperatorProperties:
         
         onp.testing.assert_allclose(self.apply(operator.transpose(), y), reference_values["transpose"], rtol=self.rtol, atol=self.atol)
 
-    def test_grad_wrt_input_consistency(self, operator, reference_values):
-        x = _rand(operator.in_structure().shape, 5)
-        
-        g_op  = self._grad_compare_leaves(_grad_of_sum(self.apply)(operator, x))
-        g_ref = reference_values["grad"]
+    def test_vjp_wrt_operator_consistency(self, operator, reference_values):        
+        g_op  = _operator_vjp(operator, self.apply)
+        g_ref = reference_values["vjp"]
         assert len(g_op) == len(g_ref)
         for a, b in zip(g_op, g_ref):
             onp.testing.assert_allclose(a, b, rtol=self.rtol_grad, atol=self.atol_grad)
 
-    def test_jvp_wrt_input_consistency(self, operator, reference_values):
-        
-        x = _rand(operator.in_structure().shape, 6)
-        t = _rand(operator.in_structure().shape, 7)
-        _, jv = jax.jvp(lambda v: self.apply(operator, v), (x,), (t,))
-        onp.testing.assert_allclose(jv, reference_values["jvp"], rtol=self.rtol, atol=self.atol)
+    def test_jvp_wrt_operator_consistency(self, operator, reference_values):        
+        jv = _operator_jvp(operator, self.apply)
+        onp.testing.assert_allclose(jv, reference_values["jvp"], rtol=self.rtol_grad, atol=self.atol_grad)
 
