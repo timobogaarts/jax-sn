@@ -3,7 +3,7 @@ Autodiscovery engine for the perf-test suite.
 
 The benchmarked set of strategies is **never hand-listed as a matrix**. It is derived from the package:
 
-  1. every *concrete* subclass of a strategy base (``MassStrategy``, ``InversionStrategy``, ...) that is
+  1. every *concrete* subclass of a strategy base (``MassStrategy``, ``SingleAngleInversionStrategy``, ...) that is
      importable on this machine is a candidate -- so optional backends (pallas, warp) appear only when
      their module imports (no GPU/warp -> the subclass simply never registers);
   2. a candidate that builds but is *incompatible* with the current problem (e.g. a warp tetrahedron
@@ -112,17 +112,6 @@ def discover_variants(base: Type, overrides: Dict[Type, List[object]] = None,
             continue
         variants.append(Variant(label(inst), inst))
     return variants
-
-
-def serializes(lift, inv) -> bool:
-    """True if benchmarking ``lift`` over ``inv`` would silently fall back to a serial loop.
-
-    A lift that vectorises by ``vmap``-ing the inner op (``vmaps_inner()``) over an inversion whose
-    kernel is opaque to ``vmap`` (``vmappable() == False``, e.g. warp) runs one angle at a time -- a
-    real but ~40x-slower config the package permits and the benchmark should not *select*. The facts
-    are abstract classmethods on the strategy classes; every concrete strategy declares them.
-    """
-    return lift.vmaps_inner() and not inv.vmappable()
 
 
 def compatible_pairs(

@@ -1,6 +1,6 @@
 """
 EXPENSIVE (opt-in) -- gradient through the lower-triangular solve, swept over the transport
-``InversionStrategy``. This is the heaviest op and the one that actually exercises the parametrisation
+``SingleAngleInversionStrategy``. This is the heaviest op and the one that actually exercises the parametrisation
 module (reconstruct-operator + reverse-mode through the block solve). Records peak memory, wall time and
 the underlying solve's iteration count.
 """
@@ -12,7 +12,7 @@ from _common import peak_mb, time_ms, short_exc, Measurement, LiveTable
 from _discovery import discover_variants
 from bench_transport import _INV_OVERRIDES
 from bench_solve import _bicgstab, _n_iter
-from jax_sn.operators.transport_operator import InversionStrategy
+from jax_sn.operators.transport_operator import SingleAngleInversionStrategy
 from jax_sn.operators.multi_group_operator import MultiGroupLowerTriangularBlockSolver
 from jax_sn.operators.multi_group_operator.multi_group_operator_creation import create_multi_group_operator
 from jax_sn.parametrisation import MultigroupOperatorParametrisedVerticesXS
@@ -24,7 +24,7 @@ class GradSolveBench:
 
     def run(self, sd, qs):
         out = {}
-        variants = discover_variants(InversionStrategy, _INV_OVERRIDES)
+        variants = discover_variants(SingleAngleInversionStrategy, _INV_OVERRIDES)
         table = LiveTable(self.name, [v.label for v in variants], extra_header=" / n_iter")
         for v in variants:
             table.start(v.label)

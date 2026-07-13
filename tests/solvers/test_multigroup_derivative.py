@@ -103,7 +103,7 @@ onp.set_printoptions(linewidth = 200)
 #     for modify_f, check_f in zip(*f_cases(dx)):
 #         if print_f:
 #             print("Testing case:", modify_f, check_f)
-#         #print(" with ", modify_f(MGOP.transport_operator.transport_operator.solution_domain_data.domain.vertices, MGOP.transport_operator.transport_operator.solution_domain_data.domain.cross_sections_indexed))
+#         #print(" with ", modify_f(MGOP.transport_operator.transport_operator.spatial_data.domain.vertices, MGOP.transport_operator.transport_operator.spatial_data.domain.cross_sections_indexed))
         
 #         MGOP_mod, _, _ = modify_setup_mgop(dim, degree, modify_f)        
 

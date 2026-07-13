@@ -1,12 +1,12 @@
 """
 Whole-machinery aggregate matvecs -- ``MGOp.mv`` / ``MGOp.Tmv`` / ``SGOp.mv`` -- swept over the
-transport-affecting axis (``InversionStrategy``, the dominant cost of a full apply). These are the
+transport-affecting axis (``SingleAngleInversionStrategy``, the dominant cost of a full apply). These are the
 per-iteration reference costs a solve is implicitly built from, kept as their own bench so the
 whole-operator numbers from the old suite are preserved.
 """
 from _bench import Bench, mv_call, ones_in
 from bench_transport import _INV_OVERRIDES
-from jax_sn.operators.transport_operator import InversionStrategy
+from jax_sn.operators.transport_operator import SingleAngleInversionStrategy
 
 
 def tmv_call(mgop):
@@ -14,11 +14,11 @@ def tmv_call(mgop):
 
 
 BENCHES = [
-    Bench(name="MGOp.mv", base=InversionStrategy, kwarg="inversion_strategy",
+    Bench(name="MGOp.mv", base=SingleAngleInversionStrategy, kwarg="inversion_strategy",
           extract=lambda m: m, overrides=_INV_OVERRIDES),
-    Bench(name="MGOp.Tmv", base=InversionStrategy, kwarg="inversion_strategy",
+    Bench(name="MGOp.Tmv", base=SingleAngleInversionStrategy, kwarg="inversion_strategy",
           extract=lambda m: m, make_call=tmv_call, overrides=_INV_OVERRIDES),
-    Bench(name="SGOp.mv", base=InversionStrategy, kwarg="inversion_strategy",
+    Bench(name="SGOp.mv", base=SingleAngleInversionStrategy, kwarg="inversion_strategy",
           extract=lambda m: m.to_single_group_operator(0), overrides=_INV_OVERRIDES),
 ]
 

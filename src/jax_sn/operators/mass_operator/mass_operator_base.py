@@ -7,10 +7,10 @@ import equinox as eqx
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 
 from typing import Tuple
-from jax_sn.solution_domain import SolutionDomainData
+from jax_sn.solution_domain import SpatialData
 from typing import Union
 
-from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles
+from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle
 
 from .mass_operator_strategies import MassStrategy, VmapMass
 
@@ -93,7 +93,7 @@ class MassOperator(AbstractLinearOperator_sn):
     @classmethod
     def from_solution_domain_data(
         cls,
-        solution_domain_data : SolutionDomainData,
+        spatial_data : SpatialData,
         additional_shape     : Tuple[int] = (),
         strategy             : MassStrategy = VmapMass()
     ) -> "MassOperator":
@@ -102,7 +102,7 @@ class MassOperator(AbstractLinearOperator_sn):
 
         Parameters
         ----------
-        solution_domain_data : SolutionDomainData
+        spatial_data : SpatialData
             The solution domain data to use.
         additional_shape : Tuple[int]
             Additional leading shape to batch over.
@@ -115,20 +115,20 @@ class MassOperator(AbstractLinearOperator_sn):
             The constructed MassOperator.
         '''
         return cls(
-            solution_domain_data.fem_matrices,
-            solution_domain_data.precomputed_geometric_data,
+            spatial_data.fem_matrices,
+            spatial_data.precomputed_geometric_data,
             additional_shape,
             strategy
         )
 
     @classmethod
-    def from_transport_operator(cls, transport_operator : Union[TransportOperator, TransportOperatorMultipleAngles], strategy : MassStrategy = VmapMass()) -> "MassOperator":
+    def from_transport_operator(cls, transport_operator : Union[TransportOperatorSingleAngle, TransportOperatorMultiAngle], strategy : MassStrategy = VmapMass()) -> "MassOperator":
         r'''
         Construct a MassOperator from a transport operator.
 
         Parameters
         ----------
-        transport_operator : Union[TransportOperator, TransportOperatorMultipleAngles]
+        transport_operator : Union[TransportOperatorSingleAngle, TransportOperatorMultiAngle]
             The transport operator to use.
         strategy : MassStrategy
             The contraction strategy to use (default :class:`~.mass_operator_strategies.VmapMass`).
@@ -138,10 +138,10 @@ class MassOperator(AbstractLinearOperator_sn):
             The constructed MassOperator.
         '''
         in_structure = transport_operator.in_structure()
-        solution_domain_data = transport_operator.solution_domain_data
+        spatial_data = transport_operator.spatial_data
 
-        return cls(solution_domain_data.fem_matrices,
-                   solution_domain_data.precomputed_geometric_data,
+        return cls(spatial_data.fem_matrices,
+                   spatial_data.precomputed_geometric_data,
                    in_structure.shape[:-2],
                    strategy)
 

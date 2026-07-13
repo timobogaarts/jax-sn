@@ -10,19 +10,19 @@ import jax
 import numpy as onp
 from functools import partial
 jax.config.update("jax_enable_x64", True)
-from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, VmapForward, VmapSweep, BatchedForward, BatchedSweep, VmapAngles, VmapPallasSweep, BatchedPallasSweep
+from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle, VmapForward, VmapSweep, BatchedForward, BatchedSweep, VmapAngles, VmapPallasSweep, BatchedPallasSweep
 
 def _vmap_op(*args):
-    return TransportOperator(*args, VmapForward(), VmapSweep())
+    return TransportOperatorSingleAngle(*args, VmapForward(), VmapSweep())
 
 def _batched_op(*args, batch_size=None):
-    return TransportOperator(*args, BatchedForward(batch_size), BatchedSweep(batch_size))
+    return TransportOperatorSingleAngle(*args, BatchedForward(batch_size), BatchedSweep(batch_size))
 
 def _vmap_pallas_op(*args):
-    return TransportOperator(*args, VmapForward(), VmapPallasSweep())
+    return TransportOperatorSingleAngle(*args, VmapForward(), VmapPallasSweep())
 
 def _batched_pallas_op(*args, batch_size=None):
-    return TransportOperator(*args, BatchedForward(batch_size), BatchedPallasSweep(batch_size))
+    return TransportOperatorSingleAngle(*args, BatchedForward(batch_size), BatchedPallasSweep(batch_size))
 import equinox as eqx
 from typing import List
 from jax_sn.tools.mesh_tools import _pad_last_dimension
@@ -58,7 +58,7 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
 
     def setup_mgop(dim, degree):
         MGOP, source_eg0, solution_domain = _setup_bb_args(dim,degree, base_region_sizes(), base_resolutions(), 5.0, 10, 3)
-        transport_operator                = TransportOperatorMultipleAngles(operator_cls(MGOP.transport_operator.solution_domain_data, MGOP.transport_operator.sweep_data, 0, **kwargs), VmapAngles())
+        transport_operator                = TransportOperatorMultiAngle(operator_cls(MGOP.transport_operator.spatial_data, MGOP.transport_operator.sweep_data, 0, **kwargs), VmapAngles())
         MGOP                              = eqx.tree_at(lambda t : t.transport_operator, MGOP, transport_operator)
         return MGOP, source_eg0, solution_domain
 
@@ -94,7 +94,7 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
 
     # %%
     def analyse_operators(MGOP):
-        print("TransportOperator")
+        print("TransportOperatorSingleAngle")
         _pprint_memory_analysis(OperatorAnalysis.analyze_memory(MGOP.transport_operator, "inv"))
         print("MassOperator")
         _pprint_memory_analysis(OperatorAnalysis.analyze_memory(MGOP.mass_operator, "mv"))
@@ -143,7 +143,7 @@ def run_all_for_particular_operator(dim, degree, operator_cls, **kwargs):
         print(f"\tmv time      : {timing_dict      * 1000:.2f} ms")
 
     def analyse_timings(MGOP):
-        print("TransportOperator")
+        print("TransportOperatorSingleAngle")
         _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP.transport_operator, "inv", **n_timings(dim)))
         print("MassOperator")
         _pprint_timing_analysis(OperatorAnalysis.analyze_timing(MGOP.mass_operator, "mv",        **n_timings(dim)))
@@ -203,7 +203,7 @@ run_all_for_particular_operator(2,2, _batched_pallas_op, batch_size=100)
 #  Total dofs         : 21600000
 # ================================
 # Memory Analysis for MV of Operators
-# TransportOperator
+# TransportOperatorSingleAngle
 # peak           : 215.30 MB
 # argument       : 104.99 MB
 # output         : 82.40 MB
@@ -249,7 +249,7 @@ run_all_for_particular_operator(2,2, _batched_pallas_op, batch_size=100)
 # output         : 164.79 MB
 # temp           : 622.23 MB
 # Timing Analysis for MV of Operators
-# TransportOperator
+# TransportOperatorSingleAngle
 #         mv time      : 525.97 ms
 # MassOperator
 #         mv time      : 4.48 ms
@@ -276,7 +276,7 @@ run_all_for_particular_operator(2,2, _batched_pallas_op, batch_size=100)
 #  Total dofs         : 21600000
 # ================================
 # Memory Analysis for MV of Operators
-# TransportOperator
+# TransportOperatorSingleAngle
 # peak           : 339.17 MB
 # argument       : 104.99 MB
 # output         : 82.40 MB
@@ -322,7 +322,7 @@ run_all_for_particular_operator(2,2, _batched_pallas_op, batch_size=100)
 # output         : 164.79 MB
 # temp           : 721.11 MB
 # Timing Analysis for MV of Operators
-# TransportOperator
+# TransportOperatorSingleAngle
 #         mv time      : 195.94 ms
 # MassOperator
 #         mv time      : 4.49 ms
@@ -349,7 +349,7 @@ run_all_for_particular_operator(2,2, _batched_pallas_op, batch_size=100)
 #  Total dofs         : 432000
 # ================================
 # Memory Analysis for MV of Operators
-# TransportOperator
+# TransportOperatorSingleAngle
 # peak           : 12.21 MB
 # argument       : 2.35 MB
 # output         : 1.65 MB
@@ -395,7 +395,7 @@ run_all_for_particular_operator(2,2, _batched_pallas_op, batch_size=100)
 # output         : 3.30 MB
 # temp           : 17.43 MB
 # Timing Analysis for MV of Operators
-# TransportOperator
+# TransportOperatorSingleAngle
 #         mv time      : 20.10 ms
 # MassOperator
 #         mv time      : 0.58 ms
@@ -422,7 +422,7 @@ run_all_for_particular_operator(2,2, _batched_pallas_op, batch_size=100)
 #  Total dofs         : 432000
 # ================================
 # Memory Analysis for MV of Operators
-# TransportOperator
+# TransportOperatorSingleAngle
 # peak           : 24.06 MB
 # argument       : 2.35 MB
 # output         : 1.65 MB
@@ -468,7 +468,7 @@ run_all_for_particular_operator(2,2, _batched_pallas_op, batch_size=100)
 # output         : 3.30 MB
 # temp           : 28.79 MB
 # Timing Analysis for MV of Operators
-# TransportOperator
+# TransportOperatorSingleAngle
 #         mv time      : 10.97 ms
 # MassOperator
 #         mv time      : 0.70 ms

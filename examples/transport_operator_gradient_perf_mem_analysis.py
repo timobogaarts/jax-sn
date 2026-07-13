@@ -13,19 +13,19 @@ from jax_sn.operators.transport_operator import BasicSweepData
 from jax_sn.solution_domain import BasixLagrangianSimplex, SolutionDomain
 from jax_sn.domain.domain_generation import create_cartesian_setup
 
-from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, VmapForward, VmapSweep, BatchedForward, BatchedSweep, VmapAngles, VmapPallasSweep, BatchedPallasSweep
+from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle, VmapForward, VmapSweep, BatchedForward, BatchedSweep, VmapAngles, VmapPallasSweep, BatchedPallasSweep
 
 def _vmap_op(*args):
-    return TransportOperator(*args, VmapForward(), VmapSweep())
+    return TransportOperatorSingleAngle(*args, VmapForward(), VmapSweep())
 
 def _batched_op(*args, batch_size=None):
-    return TransportOperator(*args, BatchedForward(batch_size), BatchedSweep(batch_size))
+    return TransportOperatorSingleAngle(*args, BatchedForward(batch_size), BatchedSweep(batch_size))
 
 def _vmap_pallas_op(*args):
-    return TransportOperator(*args, VmapForward(), VmapPallasSweep())
+    return TransportOperatorSingleAngle(*args, VmapForward(), VmapPallasSweep())
 
 def _batched_pallas_op(*args, batch_size=None):
-    return TransportOperator(*args, BatchedForward(batch_size), BatchedPallasSweep(batch_size))
+    return TransportOperatorSingleAngle(*args, BatchedForward(batch_size), BatchedPallasSweep(batch_size))
 import pyvista as pv
 import equinox as eqx
 import numpy as onp
@@ -69,7 +69,7 @@ def _run_single_angle_operators(dim, degree):
     angle_i  = jax_sn.quadrature_set.create_tn_quadrature_set(4)
     toposort = BasicSweepData.from_domain_angle(solution_domain.domain, angle_i[i_tn][0], 100)
     for operator_cls in transportoperators_sa.keys():        
-        operator_instance = operator_cls(solution_domain.solution_domain_data, toposort, 0, **transportoperators_sa[operator_cls])
+        operator_instance = operator_cls(solution_domain.spatial_data, toposort, 0, **transportoperators_sa[operator_cls])
         mem_mv, mem_mv_grad   = analyze_grad_memory(TransportOperatorSigmaParametrised, operator_instance, method="mv")    
         mem_inv, mem_inv_grad = analyze_grad_memory(TransportOperatorSigmaParametrised, operator_instance, method="inv")    
         print(f"{operator_cls.__name__} single angle for a dimension {dim} degree {degree} operator with {solution_domain.domain.n_elements} elements:")
@@ -78,7 +78,7 @@ def _run_single_angle_operators(dim, degree):
         print(f"\tinv memory     : {mem_inv}")
         print(f"\tgrad inv memory: {mem_inv_grad}")           
     for operator_cls in transportoperators_sa.keys():        
-        operator_instance = operator_cls(solution_domain.solution_domain_data, toposort, 0, **transportoperators_sa[operator_cls])
+        operator_instance = operator_cls(solution_domain.spatial_data, toposort, 0, **transportoperators_sa[operator_cls])
         time_mv, time_mv_grad   = analyze_grad_timing(TransportOperatorSigmaParametrised, operator_instance, method="mv", n_samples = 10, ignore_n = 2)    
         time_inv, time_inv_grad = analyze_grad_timing(TransportOperatorSigmaParametrised, operator_instance, method="inv", n_samples= 7,  ignore_n = 2)    
         print(f"{operator_cls.__name__} single angle for a dimension {dim} degree {degree} operator with {solution_domain.domain.n_elements} elements:")        
@@ -100,7 +100,7 @@ def _run_multi_angle_operators(dim, degree):
     toposorts = [BasicSweepData.from_domain_angle(solution_domain.domain, angle_i.angles[i], 100) for i in range(n_angles)]
     total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
     for operator_cls in transportoperators_ma.keys():        
-        operator_instance = TransportOperatorMultipleAngles(operator_cls(solution_domain.solution_domain_data, total_toposorts, 0, **transportoperators_ma[operator_cls]), VmapAngles())
+        operator_instance = TransportOperatorMultiAngle(operator_cls(solution_domain.spatial_data, total_toposorts, 0, **transportoperators_ma[operator_cls]), VmapAngles())
         mem_mv, mem_mv_grad   = analyze_grad_memory(TransportOperatorSigmaParametrised, operator_instance, method="mv")    
         mem_inv, mem_inv_grad = analyze_grad_memory(TransportOperatorSigmaParametrised, operator_instance, method="inv")    
         print(f"{operator_cls.__name__} multi angle for a dimension {dim} degree {degree} operator with {solution_domain.domain.n_elements} elements and {n_angles} angles:")
@@ -109,7 +109,7 @@ def _run_multi_angle_operators(dim, degree):
         print(f"\tinv memory     : {mem_inv}")
         print(f"\tgrad inv memory: {mem_inv_grad}")           
     for operator_cls in transportoperators_ma.keys():        
-        operator_instance = TransportOperatorMultipleAngles(operator_cls(solution_domain.solution_domain_data, total_toposorts, 0, **transportoperators_ma[operator_cls]), VmapAngles())
+        operator_instance = TransportOperatorMultiAngle(operator_cls(solution_domain.spatial_data, total_toposorts, 0, **transportoperators_ma[operator_cls]), VmapAngles())
         time_mv, time_mv_grad   = analyze_grad_timing(TransportOperatorSigmaParametrised, operator_instance, method="mv", n_samples = 3, ignore_n = 1)    
         time_inv, time_inv_grad = analyze_grad_timing(TransportOperatorSigmaParametrised, operator_instance, method="inv", n_samples= 3,  ignore_n = 1)    
         print(f"{operator_cls.__name__} multi angle for a dimension {dim} degree {degree} operator with {solution_domain.domain.n_elements} elements and {n_angles} angles:")        

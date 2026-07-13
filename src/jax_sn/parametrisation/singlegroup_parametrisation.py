@@ -6,11 +6,11 @@ class SingleGroupOperatorSigmaAllParametrised(ParametrisedModule):
     '''
     @staticmethod
     def theta_base(operator ):
-        return operator.setup.solution_domain_data.domain.cross_sections_indexed.cross_section_data
+        return operator.setup.spatial_data.domain.cross_sections_indexed.cross_section_data
 
     @staticmethod
     def reconstruct_operator(operator, theta):
         # Single canonical location now: the within-group scatter operator derives its cross
         # sections from the same `setup`, so one tree_at updates both transport and scatter.
-        return eqx.tree_at(lambda op : op.setup.solution_domain_data.domain.cross_sections_indexed.cross_section_data, operator, replace = theta)
+        return eqx.tree_at(lambda op : op.setup.spatial_data.domain.cross_sections_indexed.cross_section_data, operator, replace = theta)
     

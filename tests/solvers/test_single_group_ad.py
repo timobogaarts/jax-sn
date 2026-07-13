@@ -11,7 +11,7 @@ from jax_sn.parametrisation import SingleGroupOperatorSigmaAllParametrised
 
 
 def _sgop_xs(sgop):
-    return sgop.setup.solution_domain_data.domain.cross_sections_indexed.cross_section_data
+    return sgop.setup.spatial_data.domain.cross_sections_indexed.cross_section_data
 
 
 def _patch_sgop_xs(sgop, xs_data_indices, dx):

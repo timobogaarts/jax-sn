@@ -3,7 +3,7 @@ Fast single-operator, single-resolution benchmark for iterating on one strategy 
 
 ``run.py`` always sweeps *every* discovered strategy of a bench axis over one of the five fixed
 ``problems.PROBLEMS`` presets -- great for a full sweep, slow and noisy for "does my one new
-InversionStrategy get faster after this change, on a mesh small enough to iterate on". This script
+SingleAngleInversionStrategy get faster after this change, on a mesh small enough to iterate on". This script
 pins both: one bench axis (``--bench``), optionally narrowed to one strategy class (``--strategy``),
 against a resolution you set directly (``--dim/--degree/--n-other/--res-mult/--tn-order``) instead of
 picking from the presets. It reuses each ``bench_*.py`` module's own ``Bench`` definition (extract /
@@ -23,8 +23,8 @@ Examples
     # custom resolution across the board, one named preset instead
     python dev_bench.py --bench transport.forward --problem tiny-d1
 
-    # one (inversion, angle-lifting) pair from the multiangle product
-    python dev_bench.py --bench transport.inv.multiangle --strategy MySweep --lifting VmapInversionAngles
+    # one inversion with an explicit angle inversion (combinator wraps the inversion; native stands alone)
+    python dev_bench.py --bench transport.inv.multiangle --strategy MySweep --lifting ScanAngles
 
     # Warp example
     python dev_bench.py --bench transport.inv.multiangle \
@@ -35,7 +35,7 @@ import argparse
 
 from _common import measure, LiveTable
 from _create_problem import build_problem
-from _discovery import discover_variants, serializes
+from _discovery import discover_variants
 from run import discover_benches
 
 
@@ -66,8 +66,9 @@ def main():
                     help="restrict to discovered strategy class(es): name/substring, or a comma list for several "
                          "(e.g. 'BatchedSweep,VmapSweep'); default: sweep all")
     p.add_argument("--lifting", default="",
-                    help="transport.inv.multiangle only: restrict to discovered InversionAngleLifting(s), same comma-list "
-                         "syntax as --strategy")
+                    help="transport.inv.multiangle only: override the angle inversion with discovered MultiAngleInversionStrategy "
+                         "class(es) (native, or combinator wrapping the inversion), same comma-list syntax as --strategy; "
+                         "default: each strategy's auto-resolved natural lift")
     p.add_argument("--problem", default="", help="use a named preset from problems.PROBLEMS instead of the --dim/etc flags")
     p.add_argument("--dim", type=int, default=3)
     p.add_argument("--degree", type=int, default=1)
@@ -116,42 +117,70 @@ def main():
         table.ok(m.peak_mb, m.t_ms) if m.status == "ok" else table.skip(m.reason)
 
 
+def _multi_angle_inversion_strategy_for(lift_cls, inv_instance):
+    """Build an :class:`MultiAngleInversionStrategy` of class ``lift_cls`` for a single-angle inversion instance: a
+    native (e.g. warp) default-constructs; a combinator (``VmapAngles``/``ScanAngles``) wraps the
+    inversion as its ``inner``. Returns ``None`` if the pairing is illegal (e.g. ``VmapAngles`` over an
+    opaque kernel, which ``__check_init__`` rejects)."""
+    try:
+        return lift_cls()                 # native: owns no inner
+    except TypeError:
+        pass
+    try:
+        return lift_cls(inv_instance)     # combinator: wrap this inversion
+    except Exception:
+        return None                       # illegal pairing (e.g. VmapAngles over opaque)
+
+
 def _run_multiangle(args):
-    """``transport.inv`` swept over the (InversionStrategy x InversionAngleLifting) product -- mirrors
-    ``MultiAngleInvBench.run`` in ``bench_transport_multiangle.py``, but filterable to one pair via
-    ``--strategy``/``--lifting`` and buildable at a custom resolution."""
+    """``transport.inv`` swept over every ``SingleAngleInversionStrategy``, each using its auto-resolved natural
+    angle inversion -- mirrors ``MultiAngleInvBench.run`` in ``bench_transport_multiangle.py``, but
+    filterable via ``--strategy`` and buildable at a custom resolution. ``--lifting`` overrides the
+    angle inversion with a specific ``MultiAngleInversionStrategy`` class (a native, or a combinator wrapping the
+    inversion), so an off-default pairing like ``ScanAngles`` serialisation is benchmarkable."""
     from bench_transport import _INV_OVERRIDES
-    from jax_sn.operators.transport_operator import InversionStrategy, InversionAngleLifting, BatchedForward
-    from jax_sn.operators.multi_group_operator.multi_group_operator_creation import create_multi_group_operator
+    from jax_sn.operators.transport_operator import SingleAngleInversionStrategy, MultiAngleInversionStrategy, BatchedForward
+    from jax_sn.operators.multi_group_operator.multi_group_operator_creation import (
+        create_multi_group_operator, _resolve_multi_angle_inversion_strategy,
+    )
     from _bench import inv_call
 
     sd, qs, info = _resolve_problem(args)
     print(f">>> {info}", flush=True)
 
-    invs = [v for v in discover_variants(InversionStrategy, _INV_OVERRIDES) if v.instance is not None]
-    lifts = [v for v in discover_variants(InversionAngleLifting) if v.instance is not None]
+    invs = [v for v in discover_variants(SingleAngleInversionStrategy, _INV_OVERRIDES) if v.instance is not None]
     if args.strategy:
         invs = _filter_by(invs, args.strategy)
         if not invs:
-            raise SystemExit(f"no discovered InversionStrategy matches --strategy {args.strategy!r}")
+            raise SystemExit(f"no discovered SingleAngleInversionStrategy matches --strategy {args.strategy!r}")
+
+    lift_classes = None
     if args.lifting:
-        lifts = _filter_by(lifts, args.lifting)
-        if not lifts:
-            raise SystemExit(f"no discovered InversionAngleLifting matches --lifting {args.lifting!r}")
+        lift_classes = [v.instance for v in _filter_by(
+            discover_variants(MultiAngleInversionStrategy, instantiate=False), args.lifting)]
+        if not lift_classes:
+            raise SystemExit(f"no discovered MultiAngleInversionStrategy matches --lifting {args.lifting!r}")
 
-    pairs = [(i, l) for i in invs for l in lifts if not serializes(l.instance, i.instance)]
-    if not pairs:
-        raise SystemExit("no (inversion, lifting) pair survived the serializes() filter for this selection")
+    # (label, inversion instance, angle inversion) rows; default = auto-resolved natural lift.
+    rows = []
+    for inv in invs:
+        if lift_classes is None:
+            rows.append((inv.label, inv.instance, _resolve_multi_angle_inversion_strategy(inv.instance)))
+        else:
+            for lc in lift_classes:
+                ai = _multi_angle_inversion_strategy_for(lc, inv.instance)
+                if ai is not None:
+                    rows.append((f"{inv.label} + {lc.__name__}", inv.instance, ai))
+    if not rows:
+        raise SystemExit("no (inversion, angle-inversion) row for this selection")
 
-    table = LiveTable("transport.inv.multiangle", [f"{i.label} + {l.label}" for i, l in pairs])
-    for inv, lift in pairs:
-        label = f"{inv.label} + {lift.label}"
+    table = LiveTable("transport.inv.multiangle", [label for label, _, _ in rows])
+    for label, _inv, ai in rows:
         table.start(label)
 
-        def build_fn(i=inv.instance, l=lift.instance):
+        def build_fn(a=ai):
             mgop = create_multi_group_operator(
-                sd, qs, forward_strategy=BatchedForward(1000),
-                inversion_strategy=i, inversion_lifting=l)
+                sd, qs, forward_strategy=BatchedForward(1000), multi_angle_inversion_strategy=a)
             return inv_call(mgop.transport_operator)
 
         m = measure(build_fn)

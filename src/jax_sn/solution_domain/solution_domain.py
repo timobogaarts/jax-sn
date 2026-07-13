@@ -32,23 +32,22 @@ def compute_setup_for_solution_domain(element : Element, domain : GeometricDomai
     precomputed_data = element.precompute_geometric_data(domain)
     return fem_matrices, precomputed_data
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class SolutionDomainData:
+
+class SpatialData(eqx.Module):
     '''
     Bundles all data required to solve the transport equation on a domain in a JIT-compatible way.
-    Is a frozen dataclass to allow JIT-compilation.
+
     '''
 
-    domain                       : Domain        # JIT-compatible (frozen dataclass)
+    domain                       : Domain        
     '''
         The geometric domain on which to solve the transport equation. 
     '''
-    fem_matrices                 : FEMMatrices   # JIT-compatible (frozen dataclass)
+    fem_matrices                 : FEMMatrices   
     '''
         The finite element matrices for the domain.
     '''
-    precomputed_geometric_data   : PrecomputedGeometricData # JIT-compatible (frozen dataclass)
+    precomputed_geometric_data   : PrecomputedGeometricData
     '''
         The precomputed geometric data for the domain.
     '''
@@ -77,14 +76,14 @@ class SolutionDomain(eqx.Module):
     Convenience class to bundle all data required to solve the transport equation on a domain
     Is not fully JIT-compatible due to the Element class. Its methods are also available as standalone functions.
     '''
-    solution_domain_data : SolutionDomainData     
+    spatial_data : SpatialData     
     element              : Element  = eqx.field(static=True) # NOT JIT-compatible [can involve e.g. Basix element which is non-jax]
 
     @classmethod
     def from_element_and_domain(cls, element : Element, domain : Domain) -> "SolutionDomain":        
         assert isinstance(domain, Domain), f"domain must be an instance of Domain but got {type(domain)}"
         assert isinstance(element, Element), f"element must be an instance of Element but got {type(element)}"
-        return cls(SolutionDomainData(domain, *compute_setup_for_solution_domain(element, domain)),
+        return cls(SpatialData(domain, *compute_setup_for_solution_domain(element, domain)),
             element)
         
     def interpolate(self, points : jnp.ndarray, solution : jnp.ndarray):
@@ -98,23 +97,23 @@ class SolutionDomain(eqx.Module):
     
     @property
     def domain(self) -> Domain:
-        return self.solution_domain_data.domain
+        return self.spatial_data.domain
     @property   
     def precomputed_geometric_data(self) -> PrecomputedGeometricData:
-        return self.solution_domain_data.precomputed_geometric_data
+        return self.spatial_data.precomputed_geometric_data
     @property
     def fem_matrices(self) -> FEMMatrices:
-        return self.solution_domain_data.fem_matrices
+        return self.spatial_data.fem_matrices
     
     @property 
     def n_basis(self) -> int:
-        return self.solution_domain_data.fem_matrices.n_basis
+        return self.spatial_data.fem_matrices.n_basis
     @property 
     def n_elements(self) -> int:
-        return self.solution_domain_data.domain.n_elements
+        return self.spatial_data.domain.n_elements
     @property 
     def dimension(self) -> int:
-        return self.solution_domain_data.domain.vertices.shape[-1]
+        return self.spatial_data.domain.vertices.shape[-1]
     
     @property 
     def elements_basis_shape(self) -> jax.ShapeDtypeStruct:
@@ -125,7 +124,7 @@ class SolutionDomain(eqx.Module):
     
     
     def map_cross_sections_to_full_array(self, energy_group : int):
-        return self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(energy_group)
+        return self.spatial_data.domain.cross_sections_indexed.map_to_full_array(energy_group)
     
 
 def _interpolate_from_solution_domain(points, solution_domain : SolutionDomain, solution : jnp.ndarray):

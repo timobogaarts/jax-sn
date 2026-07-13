@@ -1,34 +1,31 @@
-from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
 from jax_sn.domain.geometric_domain import GeometricDomain, CrossSectionDataSingleGroup
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from functools import partial
-from ..transport_operator_strategies import ForwardStrategy
+from ..transport_operator_strategies import SingleAngleForwardStrategy
+from ..transport_data import ForwardData
 from .transport_operator_jax import (
     gij_kernel_idx_in_precomp,
     dij_f_p_fm_kernel_idx_in_precomp,
     _compute_omega_dot_n_Je_inflow,
 )
 
-if TYPE_CHECKING:
-    from ..transport_operator_interface import TransportOperator
 
-
-class VmapForward(ForwardStrategy):
+class VmapForward(SingleAngleForwardStrategy):
     '''Forward via vmap over all elements.'''
 
-    def forward(self, operator: "TransportOperator", x):
-        return forward_transport_operator_vmap(*operator._forward_data(), x)
+    def forward(self, data: ForwardData, x):
+        return forward_transport_operator_vmap(*data, x)
 
 
-class BatchedForward(ForwardStrategy):
+class BatchedForward(SingleAngleForwardStrategy):
     '''Forward via batched vmap + fori_loop. ``batch_size=None`` reproduces the non-batched version.'''
 
     batch_size: int = None
 
-    def forward(self, operator: "TransportOperator", x):
-        return forward_transport_operator_batch(*operator._forward_data(), x, self.batch_size)
+    def forward(self, data: ForwardData, x):
+        return forward_transport_operator_batch(*data, x, self.batch_size)
 
 
 #-----------------------------------------------------------

@@ -1,24 +1,36 @@
-from .sweep_data import SweepData, BasicSweepData, LeveledSweepData, LevelBasedParallelism, ProvidesLevels
-from .transport_operator_interface import TransportOperator, TransportOperatorMultipleAngles
-from .solution_setup import SolutionSetup, AngularSetup
-from .transport_spec import TransportSpec
+'''
+Transport operator implementations; both single angle and multi-angle. 
+
+
+transport_operator_interface defines the single-angle and multi-angle lineax operators.
+
+transport_oeprator_strategies defines the strategy interface (both inversion and application)
+
+multi_angle_transport_spec defines a way to build transport operators from data (using the stored strategies)
+
+sweep_data_implementations defines topological sorted sweep data (for both sweep and level-based sweep).
+
+
+'''
+
+
+from .sweep_data_implementations import SweepData, BasicSweepData, LeveledSweepData, LevelBasedParallelism, ProvidesLevels
+from .transport_operator_interface import TransportOperatorSingleAngle, TransportOperatorMultiAngle
+from .multi_angle_transport_spec import MultiAngleTransportSpec
 from .transport_operator_strategies import (
-    ForwardStrategy, InversionStrategy, ForwardAngleLifting, InversionAngleLifting,
+    SingleAngleForwardStrategy, SingleAngleInversionStrategy, MultiAngleInversionStrategy,
 )
 from .implementations.transport_operator_forward import VmapForward, BatchedForward
 from .implementations.transport_operator_jax import VmapSweep, BatchedSweep
-from .implementations.angle_liftings import VmapForwardAngles, VmapInversionAngles
+from .implementations.multi_angle_inversions import VmapAngles, ScanAngles
 
 
 from .implementations.transport_operator_pallas import (
     VmapPallasSweep, BatchedPallasSweep,
 )
 
-try:
-    from .implementations import transport_operator_warp
-    _warp_available = True
-except ImportError:
-    _warp_available = False
+
+from .implementations import transport_operator_warp
 
 __all__ = [
     'SweepData',
@@ -26,26 +38,19 @@ __all__ = [
     'LeveledSweepData',
     'LevelBasedParallelism',
     'ProvidesLevels',
-    'TransportOperator',
-    'TransportOperatorMultipleAngles',
-    'SolutionSetup',
-    'AngularSetup',
-    'TransportSpec',
-    'ForwardStrategy',
-    'InversionStrategy',
-    'ForwardAngleLifting',
-    'InversionAngleLifting',
+    'TransportOperatorSingleAngle',
+    'TransportOperatorMultiAngle',
+    'MultiAngleTransportSpec',
+    'SingleAngleForwardStrategy',
+    'SingleAngleInversionStrategy',
+    'MultiAngleInversionStrategy',
     'VmapForward',
     'BatchedForward',
     'VmapSweep',
     'BatchedSweep',
-    'VmapForwardAngles',
-    'VmapInversionAngles',
+    'VmapAngles',
+    'ScanAngles',
     'VmapPallasSweep',
-    'BatchedPallasSweep',    
+    'BatchedPallasSweep',
+    'transport_operator_warp'
 ]
-
-# Only export the warp submodule when warp is installed (optional dependency); otherwise
-# `from ... import *` would raise AttributeError on a name that was never bound.
-if _warp_available:
-    __all__.append('transport_operator_warp')

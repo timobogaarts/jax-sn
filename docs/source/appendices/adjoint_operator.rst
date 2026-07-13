@@ -138,6 +138,6 @@ can associate :math:`\overline{\mathbf{T}}^{-1}\to \mathbf{T}^{-T}` )
 
 
 This is very similar to the normal multigroup equation. The big difference is that the transport operator is transposed, which can be directly
-copied from the transpose of the TransportOperator, and the scattering is also backwards, which can be directly copied from the GatherScatterOperator.
+copied from the transpose of the TransportOperatorSingleAngle, and the scattering is also backwards, which can be directly copied from the GatherScatterOperator.
 
 

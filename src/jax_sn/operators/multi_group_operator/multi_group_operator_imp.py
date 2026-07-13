@@ -5,7 +5,8 @@ from jax_sn.domain.cross_sections import CrossSectionData
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.operators.single_group_operator import SingleGroupOperator
 from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator, MomentStrategy, DiscreteStrategy, BatchedMoment, BatchedDiscrete
-from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles, TransportSpec, SolutionSetup, AngularSetup
+from jax_sn.operators.transport_operator import TransportOperatorMultiAngle, MultiAngleTransportSpec
+from jax_sn.operators.operator_data import OperatorData, AngularData, DiscretisationData, NonDifferentiableData
 from jax_sn.operators.mass_operator import MassOperator, MassStrategy, VmapMass
 from jax_sn.operators.scatter_operator import GatherScatterOperator, GatherScatterOperatorBroadcasted
 from jax_sn.quadrature_set import QuadratureSetBase
@@ -42,7 +43,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     .. math::
         \mathbf{B}_{ij} = - \mathbf{M}\mathbf{T}_i^{-1}\mathbf{H} \mathbf{D}\mathbf{S}_{ij} 
     
-    where :math:`\mathbf{M}` is the batched moment operator (see :class:`MomentOperator <jax_sn.operators.moment_operator.MomentOperator>`), :math:`\mathbf{T}_g` is the transport operator for group g (see :class:`TransportOperatorMultipleAngles <jax_sn.operators.transport_operator.TransportOperatorMultipleAngles>`),
+    where :math:`\mathbf{M}` is the batched moment operator (see :class:`MomentOperator <jax_sn.operators.moment_operator.MomentOperator>`), :math:`\mathbf{T}_g` is the transport operator for group g (see :class:`TransportOperatorMultiAngle <jax_sn.operators.transport_operator.TransportOperatorMultiAngle>`),
     :math:`\mathbf{H}` is the mass operator (see :class:`MassOperator <jax_sn.operators.mass_operator.MassOperator>`), 
     :math:`\mathbf{D}` is the moment-to-discrete operator (see :class:`DiscreteOperator <jax_sn.operators.moment_operator.DiscreteOperator>`), and :math:`\mathbf{S}_{ij}` is the scattering operator from group j to group i (see :class:`ScatterOperator <jax_sn.operators.scatter_operator.ScatterOperator>`). These operators are all defined for a single energy group, as in their original definitions.
 
@@ -116,7 +117,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     Data ownership
     ---------------------------
     This operator follows the ``operator = setup + spec + strategy`` decomposition. It owns a single
-    canonical :attr:`setup` (a :class:`~jax_sn.operators.transport_operator.SolutionSetup`) plus a
+    canonical :attr:`setup` (a :class:`~jax_sn.operators.operator_data.OperatorData`) plus a
     data-free :attr:`transport_spec` and strategy/config fields, and exposes :attr:`transport_operator`,
     :attr:`mass_operator` and :attr:`gather_scatter_operator` as derived ``@property`` views. The data
     those sub-operators previously duplicated -- :class:`CrossSectionsIndexed`,
@@ -146,11 +147,11 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
       it would not actually provide that much improvement, since the main cost is still the transport sweeps, which would still need to be done sequentially.
 
     '''
-    setup                     : SolutionSetup
+    setup                     : OperatorData
     '''Canonical shared data: operator-defining spatial + angular data + operator-agnostic sweep plan. The single home every sub-operator draws on.'''
 
-    transport_spec            : TransportSpec
-    '''Data-free transport configuration (strategies + energy group); the transport operator is derived from :attr:`setup` + this via :meth:`TransportSpec.build`.'''
+    transport_spec            : MultiAngleTransportSpec
+    '''Data-free transport configuration (strategies + energy group); the transport operator is derived from :attr:`setup` + this via :meth:`MultiAngleTransportSpec.build`.'''
 
     n_energy_groups           : int
     '''Number of energy groups.'''
@@ -171,19 +172,19 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     r'''Whether to use the transposed operator.'''
 
     @property
-    def transport_operator(self) -> TransportOperatorMultipleAngles:
+    def transport_operator(self) -> TransportOperatorMultiAngle:
         '''The multi-angle transport operator, derived from :attr:`setup` + :attr:`transport_spec`.'''
         return self.transport_spec.build(self.setup)
 
     @property
     def moment_operator(self) -> MomentOperator:
         '''The moment operator, derived from :attr:`setup`'s angular harmonics.'''
-        return MomentOperator(self.setup.angular_setup.wk_ylm, self.setup.elements_basis_shape, self.moment_strategy)
+        return MomentOperator(self.setup.angular_data.wk_ylm, self.setup.elements_basis_shape, self.moment_strategy)
 
     @property
     def discrete_operator(self) -> DiscreteOperator:
         '''The discrete (moment-to-discrete) operator, derived from :attr:`setup`'s angular harmonics.'''
-        return DiscreteOperator(self.setup.angular_setup.ylm, self.setup.elements_basis_shape, self.discrete_strategy)
+        return DiscreteOperator(self.setup.angular_data.ylm, self.setup.elements_basis_shape, self.discrete_strategy)
 
     @property
     def mass_operator(self) -> MassOperator:
@@ -193,21 +194,21 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     @property
     def gather_scatter_operator(self) -> GatherScatterOperator:
         '''The gather-scatter operator, derived from :attr:`setup`'s cross sections. This is not a linear operator, but a class that implements the required functionality.'''
-        return self.gather_scatter_operator_cls(self.setup.solution_domain_data.domain.cross_sections_indexed)
+        return self.gather_scatter_operator_cls(self.setup.spatial_data.domain.cross_sections_indexed)
 
     @property
     def quadrature_set(self) -> QuadratureSetBase:
         '''The angular quadrature set (the single angular home lives in :attr:`setup`).'''
-        return self.setup.angular_setup.quadrature_set
+        return self.setup.angular_data.quadrature_set
 
     def __check_init__(self):
-        assert isinstance(self.setup, SolutionSetup), f"setup must be SolutionSetup, but got {type(self.setup)}."
-        assert isinstance(self.transport_spec, TransportSpec), f"transport_spec must be TransportSpec, but got {type(self.transport_spec)}."
+        assert isinstance(self.setup, OperatorData), f"setup must be OperatorData, but got {type(self.setup)}."
+        assert isinstance(self.transport_spec, MultiAngleTransportSpec), f"transport_spec must be MultiAngleTransportSpec, but got {type(self.transport_spec)}."
         assert isinstance(self.moment_strategy, MomentStrategy), f"moment_strategy must be MomentStrategy, but got {type(self.moment_strategy)}."
         assert isinstance(self.discrete_strategy, DiscreteStrategy), f"discrete_strategy must be DiscreteStrategy, but got {type(self.discrete_strategy)}."
         assert isinstance(self.mass_strategy, MassStrategy), f"mass_strategy must be MassStrategy, but got {type(self.mass_strategy)}."
         assert self.n_energy_groups > 0, f"n_energy_groups must be positive, but got {self.n_energy_groups}."
-        self.setup.solution_domain_data.domain.cross_sections_indexed.cross_section_data.assert_n_energy_groups(self.n_energy_groups)
+        self.setup.spatial_data.domain.cross_sections_indexed.cross_section_data.assert_n_energy_groups(self.n_energy_groups)
         assert self.moment_operator.out_structure() == self.discrete_operator.in_structure(), f"Moment operator out structure {self.moment_operator.out_structure()} must match discrete operator in structure {self.discrete_operator.in_structure()}."
     
     @eqx.filter_jit
@@ -267,7 +268,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         '''
         Whether the structure of the multi-group operator is lower block triangular (downscattering only)
         '''
-        return self.setup.solution_domain_data.domain.cross_sections_indexed.cross_section_data.downscattering_only
+        return self.setup.spatial_data.domain.cross_sections_indexed.cross_section_data.downscattering_only
 
     def convert_to_lower_block_triangular(self):
         r'''
@@ -278,16 +279,16 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         MultiGroupOperator
             The lower block triangular multi-group operator.
         '''
-        cs_data_lower = self.setup.solution_domain_data.domain.cross_sections_indexed.cross_section_data.convert_to_downscattering_only()
+        cs_data_lower = self.setup.spatial_data.domain.cross_sections_indexed.cross_section_data.convert_to_downscattering_only()
         return eqx.tree_at(self.cross_sections_indexed_loc, self, replace_fn = lambda xs_idx : eqx.tree_at(lambda xs : xs.cross_section_data, xs_idx, cs_data_lower))
 
     @property
     def n_elements(self):
-        return self.setup.solution_domain_data.domain.n_elements
+        return self.setup.spatial_data.domain.n_elements
 
     @property
     def n_angles(self):
-        return self.setup.angular_setup.quadrature_set.angles.shape[0]
+        return self.setup.angular_data.quadrature_set.angles.shape[0]
 
     @property
     def n_moments(self):
@@ -295,15 +296,15 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
 
     @property
     def n_basis(self):
-        return self.setup.solution_domain_data.n_basis
+        return self.setup.spatial_data.n_basis
 
     @property
     def domain(self):
-        return self.setup.solution_domain_data.domain
+        return self.setup.spatial_data.domain
 
     @property
-    def solution_domain_data(self):
-        return self.setup.solution_domain_data
+    def spatial_data(self):
+        return self.setup.spatial_data
 
     @property
     def cross_sections_indexed_loc(self):
@@ -311,7 +312,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         Returns a ``where`` function locating the cross sections in the tree. Now a single canonical
         location (``setup``), shared by the derived transport and gather-scatter operators.
         '''
-        return lambda m : m.setup.solution_domain_data.domain.cross_sections_indexed
+        return lambda m : m.setup.spatial_data.domain.cross_sections_indexed
 
     @property
     def precomputed_geometric_data_loc(self):
@@ -319,7 +320,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         Returns a ``where`` function locating the precomputed geometric data in the tree. Single
         canonical location (``setup``), shared by the derived transport and mass operators.
         '''
-        return lambda m : m.setup.solution_domain_data.precomputed_geometric_data
+        return lambda m : m.setup.spatial_data.precomputed_geometric_data
 
     @property
     def fem_matrices_loc(self):
@@ -327,7 +328,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         Returns a ``where`` function locating the FEM matrices in the tree. Single canonical location
         (``setup``), shared by the derived transport and mass operators.
         '''
-        return lambda m : m.setup.solution_domain_data.fem_matrices
+        return lambda m : m.setup.spatial_data.fem_matrices
 
     @classmethod
     def from_multigroup_operator(cls, mgop : "MultiGroupOperator"):
@@ -335,7 +336,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
 
     @classmethod
     def from_operators(cls, moment_operator : MomentOperator, discrete_operator : DiscreteOperator,
-                       transport_operator : TransportOperatorMultipleAngles, mass_operator : MassOperator,
+                       transport_operator : TransportOperatorMultiAngle, mass_operator : MassOperator,
                        gather_scatter_operator : GatherScatterOperator, quadrature_set : QuadratureSetBase,
                        n_energy_groups : int, transpose_bool : bool = False) -> "MultiGroupOperator":
         r'''
@@ -345,14 +346,16 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         extracted from the supplied operators. All the data the sub-operators previously duplicated is
         therefore deduplicated into the single :attr:`setup`.
         '''
-        setup = SolutionSetup(
-            transport_operator.solution_domain_data,
-            AngularSetup(quadrature_set, moment_operator.wk_yklm, discrete_operator.yklm),
-            transport_operator.sweep_data,
+        setup = OperatorData(
+            DiscretisationData(
+                transport_operator.spatial_data,
+                AngularData(quadrature_set, moment_operator.wk_yklm, discrete_operator.yklm),
+            ),
+            NonDifferentiableData(transport_operator.sweep_data),
         )
         return cls(
             setup,
-            TransportSpec.from_transport_operator(transport_operator),
+            MultiAngleTransportSpec.from_transport_operator(transport_operator),
             n_energy_groups,
             moment_operator.strategy,
             discrete_operator.strategy,
@@ -373,7 +376,7 @@ def _(operator : MultiGroupOperator):
 
 
 @eqx.filter_jit
-def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : MomentOperator, transport_operator : TransportOperatorMultipleAngles,  mass_operator      : MassOperator,  discrete_operator : DiscreteOperator, gather_scatter_operator : GatherScatterOperator, x : jnp.ndarray, checkpoint = False) -> jnp.ndarray:
+def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : MomentOperator, transport_operator : TransportOperatorMultiAngle,  mass_operator      : MassOperator,  discrete_operator : DiscreteOperator, gather_scatter_operator : GatherScatterOperator, x : jnp.ndarray, checkpoint = False) -> jnp.ndarray:
     r'''
     This computes the multi-group operator mv using a scan over energy groups.
     
@@ -389,7 +392,7 @@ def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : Momen
         Number of energy groups.
     moment_operator : MomentOperator
         The moment operator :math:`\mathbf{M}`.
-    transport_operator : TransportOperatorMultipleAngles
+    transport_operator : TransportOperatorMultiAngle
         The transport operator :math:`\mathbf{T}^{-1}`.
     mass_operator : MassOperator
         The mass operator :math:`\mathbf{H}`.
@@ -430,7 +433,7 @@ def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : Momen
 
 
 @eqx.filter_jit
-def _multi_group_operator_transpose_scan(n_energy_groups : int, moment_operator    : MomentOperator, transport_operator : TransportOperatorMultipleAngles,  mass_operator      : MassOperator,  discrete_operator : DiscreteOperator, gather_scatter_operator : GatherScatterOperator, x : jnp.ndarray, checkpoint = False) -> jnp.ndarray:    
+def _multi_group_operator_transpose_scan(n_energy_groups : int, moment_operator    : MomentOperator, transport_operator : TransportOperatorMultiAngle,  mass_operator      : MassOperator,  discrete_operator : DiscreteOperator, gather_scatter_operator : GatherScatterOperator, x : jnp.ndarray, checkpoint = False) -> jnp.ndarray:    
     r'''
     This computes the multi-group operator transpose mv using a scan over energy groups.
 
@@ -442,7 +445,7 @@ def _multi_group_operator_transpose_scan(n_energy_groups : int, moment_operator 
         Number of energy groups.
     moment_operator : MomentOperator
         The moment operator :math:`\mathbf{M}`.
-    transport_operator : TransportOperatorMultipleAngles
+    transport_operator : TransportOperatorMultiAngle
         The transport operator :math:`\mathbf{T}^{-1}`.
     mass_operator : MassOperator
         The mass operator :math:`\mathbf{H}`.

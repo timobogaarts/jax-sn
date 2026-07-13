@@ -4,7 +4,8 @@ from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator, MomentStrategy, DiscreteStrategy, BatchedMoment, BatchedDiscrete
 from jax_sn.operators.mass_operator import MassOperator, MassStrategy, VmapMass
 from jax_sn.operators.scatter_operator import ScatterOperator
-from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles, TransportSpec, SolutionSetup, AngularSetup
+from jax_sn.operators.transport_operator import TransportOperatorMultiAngle, MultiAngleTransportSpec
+from jax_sn.operators.operator_data import OperatorData, AngularData, DiscretisationData, NonDifferentiableData
 import lineax as lx
 
 import equinox as eqx
@@ -18,16 +19,16 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
     .. math::
         \mathbf{A}_g = \mathbf{I} - \mathbf{M}\mathbf{T}_g^{-1} \mathbf{H} \mathbf{D}\mathbf{S}_{gg}
 
-    where :math:`\mathbf{T}` is the (multi-angle) transport operator (see :class:`TransportOperatorMultipleAngles`), :math:`\mathbf{H}` the batched (over angles) mass operator (see :class:`MassOperator`), :math:`\mathbf{M}` the batched (over element and basis function)
+    where :math:`\mathbf{T}` is the (multi-angle) transport operator (see :class:`TransportOperatorMultiAngle`), :math:`\mathbf{H}` the batched (over angles) mass operator (see :class:`MassOperator`), :math:`\mathbf{M}` the batched (over element and basis function)
     moment operator (see :class:`MomentOperator`),  :math:`\mathbf{S}_{gg}` the inscattering operator (see :class:`ScatterOperator`).
 
     Data ownership
     ---------------------------
     This operator follows the ``operator = setup + spec + strategy`` decomposition. It owns a
-    single canonical :attr:`setup` (a :class:`~jax_sn.operators.transport_operator.SolutionSetup`,
-    bundling the operator-defining :class:`~jax_sn.solution_domain.SolutionDomainData` with the
+    single canonical :attr:`setup` (a :class:`~jax_sn.operators.operator_data.OperatorData`,
+    bundling the operator-defining :class:`~jax_sn.solution_domain.SpatialData` with the
     operator-agnostic sweep execution plan) and a small data-free
-    :attr:`transport_spec` (:class:`~jax_sn.operators.transport_operator.TransportSpec`), and
+    :attr:`transport_spec` (:class:`~jax_sn.operators.transport_operator.MultiAngleTransportSpec`), and
     exposes :attr:`transport_operator`, :attr:`mass_operator` and :attr:`inscatter_operator` as
     derived ``@property`` views built from those. The shared spatial/cross-section data therefore
     lives in exactly **one** pytree location (:attr:`setup`), so a single :func:`equinox.tree_at`
@@ -72,11 +73,11 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
 
     '''
 
-    setup              : SolutionSetup
+    setup              : OperatorData
     r'''Canonical shared data: operator-defining spatial + angular data + operator-agnostic sweep plan. The single home every sub-operator derives from.'''
 
-    transport_spec     : TransportSpec
-    r'''Data-free transport configuration (strategies + energy group); consumes :attr:`setup` via :meth:`TransportSpec.build`.'''
+    transport_spec     : MultiAngleTransportSpec
+    r'''Data-free transport configuration (strategies + energy group); consumes :attr:`setup` via :meth:`MultiAngleTransportSpec.build`.'''
 
     moment_strategy    : MomentStrategy = eqx.field(default_factory=BatchedMoment)
     r'''Contraction strategy for the derived :attr:`moment_operator`.'''
@@ -91,19 +92,19 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
     r'''Whether this operator applies the transposed action instead of the forward action.'''
 
     @property
-    def transport_operator(self) -> TransportOperatorMultipleAngles:
+    def transport_operator(self) -> TransportOperatorMultiAngle:
         r'''The multi-angle transport operator, derived from :attr:`setup` + :attr:`transport_spec`.'''
         return self.transport_spec.build(self.setup)
 
     @property
     def moment_operator(self) -> MomentOperator:
         r'''The moment operator, derived from :attr:`setup`'s angular harmonics.'''
-        return MomentOperator(self.setup.angular_setup.wk_ylm, self.setup.elements_basis_shape, self.moment_strategy)
+        return MomentOperator(self.setup.angular_data.wk_ylm, self.setup.elements_basis_shape, self.moment_strategy)
 
     @property
     def discrete_operator(self) -> DiscreteOperator:
         r'''The discrete (moment-to-discrete) operator, derived from :attr:`setup`'s angular harmonics.'''
-        return DiscreteOperator(self.setup.angular_setup.ylm, self.setup.elements_basis_shape, self.discrete_strategy)
+        return DiscreteOperator(self.setup.angular_data.ylm, self.setup.elements_basis_shape, self.discrete_strategy)
 
     @property
     def mass_operator(self) -> MassOperator:
@@ -117,8 +118,8 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
         return ScatterOperator(self.setup.domain.cross_sections_indexed, self.moment_operator.out_structure(), eg, eg)
 
     def __check_init__(self):
-        assert isinstance(self.setup, SolutionSetup), f"setup must be of type SolutionSetup but is {type(self.setup)}"
-        assert isinstance(self.transport_spec, TransportSpec), f"transport_spec must be of type TransportSpec but is {type(self.transport_spec)}"
+        assert isinstance(self.setup, OperatorData), f"setup must be of type OperatorData but is {type(self.setup)}"
+        assert isinstance(self.transport_spec, MultiAngleTransportSpec), f"transport_spec must be of type MultiAngleTransportSpec but is {type(self.transport_spec)}"
         assert isinstance(self.moment_strategy, MomentStrategy), f"moment_strategy must be of type MomentStrategy but is {type(self.moment_strategy)}"
         assert isinstance(self.discrete_strategy, DiscreteStrategy), f"discrete_strategy must be of type DiscreteStrategy but is {type(self.discrete_strategy)}"
         assert isinstance(self.mass_strategy, MassStrategy), f"mass_strategy must be of type MassStrategy but is {type(self.mass_strategy)}"
@@ -155,7 +156,7 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
         return eqx.tree_at(lambda op: op.transport_spec.energy_group, self, energy_group)
 
     @classmethod
-    def from_operators(cls, moment_operator : MomentOperator, transport_operator : TransportOperatorMultipleAngles,
+    def from_operators(cls, moment_operator : MomentOperator, transport_operator : TransportOperatorMultiAngle,
                        mass_operator : MassOperator, discrete_operator : DiscreteOperator,
                        quadrature_set, transpose_bool : bool = False) -> "SingleGroupOperator":
         r'''
@@ -167,14 +168,16 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
         moment/discrete operators are *not* stored: they are derived from :attr:`setup`, which is exactly
         the duplication this design removes.
         '''
-        setup = SolutionSetup(
-            transport_operator.solution_domain_data,
-            AngularSetup(quadrature_set, moment_operator.wk_yklm, discrete_operator.yklm),
-            transport_operator.sweep_data,
+        setup = OperatorData(
+            DiscretisationData(
+                transport_operator.spatial_data,
+                AngularData(quadrature_set, moment_operator.wk_yklm, discrete_operator.yklm),
+            ),
+            NonDifferentiableData(transport_operator.sweep_data),
         )
         return cls(
             setup,
-            TransportSpec.from_transport_operator(transport_operator),
+            MultiAngleTransportSpec.from_transport_operator(transport_operator),
             moment_operator.strategy,
             discrete_operator.strategy,
             mass_operator.strategy,
@@ -235,7 +238,7 @@ def _mv_single_group_operator(moment_operator, transport_operator, mass_operator
     ----------
     moment_operator : MomentOperator
         The moment operator :math:`\mathbf{M}`.
-    transport_operator : TransportOperatorMultipleAngles
+    transport_operator : TransportOperatorMultiAngle
         The transport operator :math:`\mathbf{T}^{-1}`.
     mass_operator : MassOperator
         The mass operator :math:`\mathbf{H}`.
@@ -289,7 +292,7 @@ def _mv_single_group_operator_transpose(moment_operator, transport_operator, mas
     ----------
     moment_operator : MomentOperator
         The moment operator :math:`\mathbf{M}`.
-    transport_operator : TransportOperatorMultipleAngles
+    transport_operator : TransportOperatorMultiAngle
         The transport operator :math:`\mathbf{T}^{-1}`.
     mass_operator : MassOperator
         The mass operator :math:`\mathbf{H}`.

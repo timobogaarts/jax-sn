@@ -5,7 +5,7 @@ from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.operators.multi_group_operator.lower_triangular_solver import MultiGroupLowerTriangularBlockSolver
 from jax_sn.operators.single_group_operator import SingleGroupOperator
 from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
-from jax_sn.operators.transport_operator import TransportOperatorMultipleAngles
+from jax_sn.operators.transport_operator import TransportOperatorMultiAngle
 from jax_sn.operators.mass_operator import MassOperator
 from jax_sn.operators.scatter_operator import GatherScatterOperator
 import lineax as lx 
@@ -43,7 +43,7 @@ class AdjointMultiGroupOperatorScan(AdjointMultiGroupOperator):
         return _adjoint_multi_group_operator_scan(self.n_energy_groups, self.moment_operator, self.transport_operator, self.mass_operator, self.discrete_operator, self.gather_scatter_operator, x, checkpoint=False)
 
 @eqx.filter_jit
-def _adjoint_multi_group_operator_scan(n_energy_groups : int, moment_operator    : MomentOperator, transport_operator : TransportOperatorMultipleAngles,  mass_operator      : MassOperator,  discrete_operator : DiscreteOperator, gather_scatter_operator : GatherScatterOperator, x : jnp.ndarray, checkpoint = False) -> jnp.ndarray:
+def _adjoint_multi_group_operator_scan(n_energy_groups : int, moment_operator    : MomentOperator, transport_operator : TransportOperatorMultiAngle,  mass_operator      : MassOperator,  discrete_operator : DiscreteOperator, gather_scatter_operator : GatherScatterOperator, x : jnp.ndarray, checkpoint = False) -> jnp.ndarray:
     r'''
     This computes the multi-group operator mv using a scan over energy groups.
     
@@ -59,7 +59,7 @@ def _adjoint_multi_group_operator_scan(n_energy_groups : int, moment_operator   
         Number of energy groups.
     moment_operator : MomentOperator
         The moment operator :math:`\mathbf{M}`.
-    transport_operator : TransportOperatorMultipleAngles
+    transport_operator : TransportOperatorMultiAngle
         The transport operator :math:`\mathbf{T}^{-1}`.
     mass_operator : MassOperator
         The mass operator :math:`\mathbf{H}`.

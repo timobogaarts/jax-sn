@@ -15,7 +15,7 @@ deliberately deferred.
    - Hard pairing constraints across supposedly independent fields
      (`WarpSequentialAngles.check_compatible` demands `isinstance(inversion_strategy, WarpSequentialSweep)`)
      — the axes are not actually orthogonal.
-   - `InversionStrategy.default_inversion_lifting()` is an upward dependency (single-angle level
+   - `SingleAngleInversionStrategy.default_inversion_lifting()` is an upward dependency (single-angle level
      knows about the multi-angle lifting concept).
    - `vmappable()` / `vmaps_inner()` exist only so `perf_tests/_discovery.py` can flag the one bad
      combination (vmap over an opaque kernel silently serialises) that the type system permitted.
@@ -63,12 +63,12 @@ simultaneously.**
 
 ```
 data (pytree leaves, single canonical home — UNCHANGED)
-  SolutionSetup = solution_domain_data + angular_setup + sweep_data
+  SolutionSetup = DiscretisationData(spatial: SpatialData + angular: AngularData) + NonDifferentiableData(sweep_data)
 
 configs/strategies (data-free eqx.Modules)
-  L1  ForwardStrategy, InversionStrategy          single-angle kernels
-  L2  AngleInversion = VmapAngles(inner) | ScanAngles(inner) | WarpSequentialAngles | WarpLevelAngles…
-  ──  TransportSpec  = forward_strategy + angle_inversion + energy_group
+  L1  SingleAngleForwardStrategy, SingleAngleInversionStrategy          single-angle kernels
+  L2  MultiAngleInversionStrategy = VmapAngles(inner) | ScanAngles(inner) | WarpSequentialAngles | WarpLevelAngles…
+  ──  MultiAngleTransportSpec  = forward_strategy + angle_inversion + energy_group
   L3  SweepChain     = ComposedChain(moment, discrete, mass strategies)
                      | FusedChain…                 (native, swallows L3's algebra)
   L4a SingleGroupOperator algebra: I − C_g ∘ S_gg          (fixed, tiny, final class)
@@ -77,34 +77,34 @@ configs/strategies (data-free eqx.Modules)
   L5  lx solvers (lineax boundary — opaque-kernel territory, later)
 ```
 
-### L2 — `AngleInversion` (replaces `InversionAngleLifting` + pairing machinery)
+### L2 — `MultiAngleInversionStrategy` (replaces `InversionAngleLifting` + pairing machinery)
 
 ```python
-class AngleInversion(eqx.Module):
+class MultiAngleInversionStrategy(eqx.Module):
     @abstractmethod
     def invert(self, op, b): ...
     @abstractmethod
-    def single_angle_strategy(self) -> InversionStrategy: ...   # for __getitem__ / indexing
+    def single_angle_strategy(self) -> SingleAngleInversionStrategy: ...   # for __getitem__ / indexing
     def required_capabilities(self) -> Tuple[type, ...]: ...    # INSTANCE method (see below)
     def default_sweep_data_type(self) -> Type[SweepData]: ...   # INSTANCE method
 
 # combinators: genuine lifts, owning their inner strategy
-class VmapAngles(AngleInversion):
-    inner: InversionStrategy
+class VmapAngles(MultiAngleInversionStrategy):
+    inner: SingleAngleInversionStrategy
     def __check_init__(self):
         assert self.inner.vmappable(), "vmap over an opaque kernel silently serialises; use ScanAngles or a fused lift"
     def required_capabilities(self):   return self.inner.required_capabilities()
     def default_sweep_data_type(self): return self.inner.default_sweep_data_type()
     def single_angle_strategy(self):   return self.inner
 
-class ScanAngles(AngleInversion):
-    inner: InversionStrategy   # legal over ANY inner, including opaque warp kernels
+class ScanAngles(MultiAngleInversionStrategy):
+    inner: SingleAngleInversionStrategy   # legal over ANY inner, including opaque warp kernels
 
 # native implementations: no inner, they ARE the kernel
-class WarpSequentialAngles(AngleInversion):
+class WarpSequentialAngles(MultiAngleInversionStrategy):
     def invert(self, op, b): return multi_angle_warp_sweep(*op._inversion_args(), b)
     def single_angle_strategy(self): return WarpSequentialSweep()
-class WarpLevelAngles(AngleInversion):
+class WarpLevelAngles(MultiAngleInversionStrategy):
     def required_capabilities(self):   return (ProvidesLevels,)
     def default_sweep_data_type(self): return LeveledSweepData
 ```
@@ -115,7 +115,7 @@ Consequences:
   becomes redundant.
 - `default_inversion_lifting()` inverts direction: the creation helper does
   `VmapAngles(inversion_strategy)` when vmappable, otherwise requires/looks up a native class
-  (optionally via `InversionStrategy.native_multi_angle: Optional[Type[AngleInversion]]`).
+  (optionally via `SingleAngleInversionStrategy.native_multi_angle: Optional[Type[MultiAngleInversionStrategy]]`).
 - Sweep-data declarations become **instance methods** that fold over the composition tree
   (combinators delegate to `inner`; natives declare their own). The current classmethod rationale
   ("answerable without an instance") dies with combinators, and nothing needs it: the creation
@@ -125,12 +125,19 @@ Consequences:
   to pass sweep data explicitly.
 - `ScanAngles(WarpSequentialSweep())` — scan over an opaque single-angle kernel — becomes a
   legitimate, expressible configuration (today it's only expressible as the flagged footgun).
-- `ForwardAngleLifting` is collapsed (multi-angle forward = vmap of `ForwardStrategy`; only one
+- `ForwardAngleLifting` is collapsed (multi-angle forward = vmap of `SingleAngleForwardStrategy`; only one
   implementation exists and warp has no fused forward). A fused forward, when it arrives, slots in
   as a mirrored `AngleForward` sum type.
-- `TransportSpec` shrinks to `forward_strategy + angle_inversion + energy_group`.
-- `TransportOperatorMultipleAngles.__getitem__` builds its single-angle view with
-  `angle_inversion.single_angle_strategy()`.
+- `MultiAngleTransportSpec` shrinks to `forward_strategy + angle_inversion + energy_group`.
+- `TransportOperatorMultiAngle` **holds its data directly** (`spatial_data`, batched `sweep_data`,
+  batched `angle`, `energy_group`, `forward_strategy`, `angle_inversion`) instead of wrapping a nested
+  `TransportOperatorSingleAngle`. The single-angle operator is a **derived view** (`__getitem__` /
+  `to_single_angle(k)`) built on demand from that data and `angle_inversion.single_angle_strategy()` —
+  the same "data has one home, operators are derived" move as `to_single_group_operator(g)` one level up.
+  This kills two warts of the old nesting: the stored "single-angle" op was secretly *batched* (a type
+  that lied about itself), and the single-angle inversion strategy lived in two places (the nested op's
+  `inversion_strategy` and `angle_inversion.single_angle_strategy()`), which a `VmapAngles` lift could
+  silently desync. Now `angle_inversion` is the single home of that strategy. **[implemented]**
 
 ### L3 — `SweepChain`
 
@@ -164,7 +171,7 @@ class ComposedChain(SweepChain):
 ```python
 class SingleGroupOperator(AbstractLinearOperator_sn):   # concrete, final
     setup:          SolutionSetup      # unchanged
-    transport_spec: TransportSpec
+    transport_spec: MultiAngleTransportSpec
     chain:          SweepChain = ComposedChain()
     transpose_bool: bool = False
     # mv:  x − chain.apply(T_g, …, inscatter.mv(x))
@@ -172,7 +179,7 @@ class SingleGroupOperator(AbstractLinearOperator_sn):   # concrete, final
 
 class MultiGroupOperator(AbstractLinearOperator_sn):    # concrete, final
     setup:              SolutionSetup
-    transport_spec:     TransportSpec
+    transport_spec:     MultiAngleTransportSpec
     chain:              SweepChain      = ComposedChain()
     apply:              MultiGroupApply = GroupsApply(ScanGroups())
     gather_scatter_cls: Type[GatherScatterOperator] = GatherScatterOperatorBroadcasted
@@ -236,7 +243,7 @@ operator to expose — the seam was fused away; the raise is honest).
 
 ## Where a differentiable fused kernel plugs in, by ambition level
 
-1. **Fuse the angle loop** — native `AngleInversion` (warp lives here; a pallas multi-angle would too).
+1. **Fuse the angle loop** — native `MultiAngleInversionStrategy` (warp lives here; a pallas multi-angle would too).
 2. **Fuse the contraction chain** — native `SweepChain`: fold `H D` into the sweep's per-element
    source assembly and/or `M` into the sweep output accumulation. One class, benefits the whole
    operator family at once. **Point the first pallas fusion effort here** — highest leverage per seam.
@@ -249,7 +256,7 @@ operator to expose — the seam was fused away; the raise is honest).
    the level where the non-differentiable story is free (see below).
 
 Monotonicity: each level up fuses more and reuses less — only climb when profiling says the seam
-overhead matters. `perf_tests` discovery extends naturally: `AngleInversion`, `SweepChain`,
+overhead matters. `perf_tests` discovery extends naturally: `MultiAngleInversionStrategy`, `SweepChain`,
 `GroupLifting`, `MultiGroupApply` are new strategy bases whose `__subclasses__()` walk gives the
 benchmark matrix (combinators need one `overrides` entry to supply an `inner`, machinery that
 already exists).
@@ -290,9 +297,9 @@ arrive — they slot in at the same seams.
 
 ## Implementation order (each step lands green independently)
 
-1. **`AngleInversion` refactor** (L2) — self-contained; the discovery-driven strategy test harness
+1. **`MultiAngleInversionStrategy` refactor** (L2) — self-contained; the discovery-driven strategy test harness
    covers it with essentially no new test code. Collapse `ForwardAngleLifting`; shrink
-   `TransportSpec`; move sweep-data declarations to instance methods; delete
+   `MultiAngleTransportSpec`; move sweep-data declarations to instance methods; delete
    `vmaps_inner`/`serializes` machinery; update `__getitem__` and the creation factory's
    lifting auto-resolution.
 2. **Extract `SweepChain`** (L3) with only `ComposedChain` — pure deduplication, zero behavior

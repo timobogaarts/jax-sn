@@ -1,5 +1,5 @@
 """
-EXPENSIVE (opt-in) -- iterative solves swept over the transport ``InversionStrategy``:
+EXPENSIVE (opt-in) -- iterative solves swept over the transport ``SingleAngleInversionStrategy``:
 
   - ``solve.iter`` : full-operator BiCGStab solve (each iteration ~ one ``MGOp.mv``).
   - ``solve.ltri`` : lower-triangular block solve (each iteration ~ one transport sweep, per group).
@@ -17,7 +17,7 @@ import numpy as onp
 from _common import peak_mb, time_ms, safe_run, short_exc, Measurement, LiveTable
 from _discovery import discover_variants
 from bench_transport import _INV_OVERRIDES
-from jax_sn.operators.transport_operator import InversionStrategy
+from jax_sn.operators.transport_operator import SingleAngleInversionStrategy
 from jax_sn.operators.multi_group_operator import MultiGroupLowerTriangularBlockSolver
 from jax_sn.operators.multi_group_operator.multi_group_operator_creation import create_multi_group_operator
 
@@ -48,7 +48,7 @@ class SolveBench:
 
     def run(self, sd, qs):
         out = {}
-        variants = discover_variants(InversionStrategy, _INV_OVERRIDES)
+        variants = discover_variants(SingleAngleInversionStrategy, _INV_OVERRIDES)
         labels = [f"{v.label} / {op}" for v in variants for op in ("solve.iter", "solve.ltri")]
         table = LiveTable(self.name, labels, extra_header=" / n_iter")
         for v in variants:

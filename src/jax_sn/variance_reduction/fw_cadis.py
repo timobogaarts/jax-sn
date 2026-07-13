@@ -46,7 +46,7 @@ def fw_cadis_scalar_flux(operator : MultiGroupOperator, rhs : RightHandSide, sol
     adjoint_mgop = adjoint_operator_cls.from_multigroup_operator(operator)
     forward_result = solve_multigroup_operator_rhs(operator, rhs, solver)
 
-    integration_coeff = operator.solution_domain_data.fem_matrices.integration_coeff
+    integration_coeff = operator.spatial_data.fem_matrices.integration_coeff
     forward_average_result = jnp.einsum("gei,i->ge", forward_result.value[:,0,...], integration_coeff) # scalar flux [n_groups, n_elements]
 
     one_over_phi = 1.0 / forward_average_result

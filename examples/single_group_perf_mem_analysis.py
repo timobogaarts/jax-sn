@@ -56,7 +56,7 @@ def setup_anisotropic(dim, degree, n_elem_regions, d_other_dim, n_other_dim, tn_
 
 def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim, n_other_dim, tn_order):
     from jax_sn.operators.scatter_operator import ScatterOperator
-    from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, VmapForward, VmapSweep, VmapAngles
+    from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle, VmapForward, VmapSweep, VmapAngles
     from jax_sn.operators.mass_operator import MassOperator
     from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
     from jax_sn.operators.transport_operator import BasicSweepData
@@ -65,7 +65,7 @@ def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim,
     solution_domain, sources, quadrature_set = setup_anisotropic(dim, degree, n_elem_regions, d_other_dim, n_other_dim, tn_order) 
 
     sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
-    transport_operator        = TransportOperatorMultipleAngles(TransportOperator(solution_domain.solution_domain_data, sweep_data, 0, VmapForward(), VmapSweep()), VmapAngles())
+    transport_operator        = TransportOperatorMultiAngle(TransportOperatorSingleAngle(solution_domain.spatial_data, sweep_data, 0, VmapForward(), VmapSweep()), VmapAngles())
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
     scatter_op                = ScatterOperator(solution_domain.domain.cross_sections_indexed, moment_operator.out_structure(), energy_group_in=0, energy_group_out=0)
@@ -76,11 +76,11 @@ def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim,
 
 
 def _run_multi_angle_operators(dim, degree, pallas = False):
-    from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, BatchedForward, BatchedSweep, VmapAngles, BatchedPallasSweep
+    from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle, BatchedForward, BatchedSweep, VmapAngles, BatchedPallasSweep
     def _batched_op(*args, batch_size=None):
-        return TransportOperator(*args, BatchedForward(batch_size), BatchedSweep(batch_size))
+        return TransportOperatorSingleAngle(*args, BatchedForward(batch_size), BatchedSweep(batch_size))
     def _batched_pallas_op(*args, batch_size=None):
-        return TransportOperator(*args, BatchedForward(batch_size), BatchedPallasSweep(batch_size))
+        return TransportOperatorSingleAngle(*args, BatchedForward(batch_size), BatchedPallasSweep(batch_size))
     from jax_sn.operators.transport_operator import BasicSweepData
     
     from jax_sn.operators.single_group_operator import SingleGroupOperator    
@@ -98,7 +98,7 @@ def _run_multi_angle_operators(dim, degree, pallas = False):
     toposorts = [BasicSweepData.from_domain_angle(solution_domain.domain, angle_i.angles[i], 100) for i in range(n_angles)]
     total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
     for operator_cls in transportoperators_ma.keys():        
-        operator_instance = TransportOperatorMultipleAngles(operator_cls(solution_domain.solution_domain_data, total_toposorts, 0, **transportoperators_ma[operator_cls]), VmapAngles())
+        operator_instance = TransportOperatorMultiAngle(operator_cls(solution_domain.spatial_data, total_toposorts, 0, **transportoperators_ma[operator_cls]), VmapAngles())
         mem_mv, mem_mv_grad   = analyze_grad_memory(TransportOperatorSigmaParametrised, operator_instance, method="mv")    
         mem_inv, mem_inv_grad = analyze_grad_memory(TransportOperatorSigmaParametrised, operator_instance, method="inv")    
         print(f"{operator_cls.__name__} multi angle for a dimension {dim} degree {degree} operator with {solution_domain.domain.n_elements} elements and {n_angles} angles:")
@@ -113,7 +113,7 @@ def _run_multi_angle_operators(dim, degree, pallas = False):
         print(f"\t\tgrad mv memory : {mem_mv_grad}")        
         
     for operator_cls in transportoperators_ma.keys():        
-        operator_instance = TransportOperatorMultipleAngles(operator_cls(solution_domain.solution_domain_data, total_toposorts, 0, **transportoperators_ma[operator_cls]), VmapAngles())
+        operator_instance = TransportOperatorMultiAngle(operator_cls(solution_domain.spatial_data, total_toposorts, 0, **transportoperators_ma[operator_cls]), VmapAngles())
         time_mv, time_mv_grad   = analyze_grad_timing(TransportOperatorSigmaParametrised, operator_instance, method="mv", n_samples = 3, ignore_n = 1)    
         time_inv, time_inv_grad = analyze_grad_timing(TransportOperatorSigmaParametrised, operator_instance, method="inv", n_samples= 3,  ignore_n = 1)    
         print(f"{operator_cls.__name__} multi angle for a dimension {dim} degree {degree} operator with {solution_domain.domain.n_elements} elements and {n_angles} angles:")        
@@ -148,11 +148,11 @@ def solve_bicgstab_stat(Aop, rhs):
 
 
 def _solve_single_group(dim, degree, pallas = True):
-    from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, BatchedForward, BatchedSweep, VmapAngles, BatchedPallasSweep
+    from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle, BatchedForward, BatchedSweep, VmapAngles, BatchedPallasSweep
     def _batched_op(*args, batch_size=None):
-        return TransportOperator(*args, BatchedForward(batch_size), BatchedSweep(batch_size))
+        return TransportOperatorSingleAngle(*args, BatchedForward(batch_size), BatchedSweep(batch_size))
     def _batched_pallas_op(*args, batch_size=None):
-        return TransportOperator(*args, BatchedForward(batch_size), BatchedPallasSweep(batch_size))
+        return TransportOperatorSingleAngle(*args, BatchedForward(batch_size), BatchedPallasSweep(batch_size))
     from jax_sn.operators.transport_operator import BasicSweepData
     
     from jax_sn.operators.single_group_operator import SingleGroupOperator    
@@ -173,7 +173,7 @@ def _solve_single_group(dim, degree, pallas = True):
     toposorts       = [BasicSweepData.from_domain_angle(solution_domain.domain, angle_i.angles[i], 100) for i in range(n_angles)]
     total_toposorts = jax.tree.map(lambda * xs : jnp.stack(xs), *toposorts)
     for operator_cls in transportoperators_ma.keys():        
-        operator_instance     = TransportOperatorMultipleAngles(operator_cls(solution_domain.solution_domain_data, total_toposorts, 0, **transportoperators_ma[operator_cls]), VmapAngles())
+        operator_instance     = TransportOperatorMultiAngle(operator_cls(solution_domain.spatial_data, total_toposorts, 0, **transportoperators_ma[operator_cls]), VmapAngles())
 
         rhs = Aop.moment_operator.mv(operator_instance.inv(source_total))
         

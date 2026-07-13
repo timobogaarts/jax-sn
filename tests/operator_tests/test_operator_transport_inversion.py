@@ -15,8 +15,8 @@ _ANGLE_I = 0   # single-angle inversion tests pick this angle from the multi-ang
 _DEFAULT_INVERSION = VmapSweep   # pure-JAX reference (pivot) every variant is compared against
 
 # Unlike the mass/moment/forward axes, an inversion strategy also fixes the *sweep-data toposort* it needs
-# (WarpLevelSweep -> LeveledSweepData, everything else -> BasicSweepData) and the multi-angle *inversion
-# lifting* (fused warp lifts vs VmapInversionAngles). create_multi_group_operator resolves both from the strategy, so the
+# (WarpLevelSweep -> LeveledSweepData, everything else -> BasicSweepData) and the multi-angle *angle
+# inversion* (fused native warp lifts vs VmapAngles). create_multi_group_operator resolves both from the strategy, so the
 # variant is built through the factory rather than a bare tree_at swap. The warp kernels are the 3-D
 # linear tetrahedron only (linear_tet_only). The level-*padded* sweep (a build-parameter, orthogonal to
 # the strategy axis) stays in test_warp_linear_tetrahedron.py.
@@ -101,8 +101,8 @@ class TestTransportInversionSingleAngle(_TransportInversionBase):
 
 @parametrize_strategies(INVERSION_STRATEGIES)
 class TestTransportInversionMultiAngle(_TransportInversionBase):
-    '''The multi-angle inverse: each inversion uses its own default inversion lifting (a fused warp lift
-    for the warp kernels, VmapInversionAngles otherwise), so the consistency check is exactly the
+    '''The multi-angle inverse: each inversion uses its own auto-resolved angle inversion (a fused native
+    warp lift for the warp kernels, VmapAngles otherwise), so the consistency check is exactly the
     fused-vs-stacked batching-correctness test.'''
 
     @pytest.fixture

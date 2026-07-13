@@ -354,7 +354,7 @@ def setup_bb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_d
 
 def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order):
     from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
-    from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, VmapForward, VmapSweep, VmapAngles
+    from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle, VmapForward, VmapSweep, VmapAngles
     from jax_sn.operators.mass_operator import MassOperator
     from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
     from jax_sn.operators.transport_operator import BasicSweepData
@@ -367,7 +367,7 @@ def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_o
     lmax                      = solution_domain.domain.cross_sections_indexed.l_max
 
     sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
-    transport_operator        = TransportOperatorMultipleAngles(TransportOperator(solution_domain.solution_domain_data, sweep_data, 0, VmapForward(), VmapSweep()), VmapAngles())
+    transport_operator        = TransportOperatorMultiAngle(TransportOperatorSingleAngle(solution_domain.spatial_data, sweep_data, 0, VmapForward(), VmapSweep()), VmapAngles())
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)    
     
@@ -389,7 +389,7 @@ def _get_bb_args(dim, degree):
     return dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order
 
 def _get_solution_interp(solution_domain, value):
-    x = jnp.linspace(0, jnp.max(solution_domain.solution_domain_data.domain.vertices[:,0]), 100)[:, None]
+    x = jnp.linspace(0, jnp.max(solution_domain.spatial_data.domain.vertices[:,0]), 100)[:, None]
     solution_values = jnp.array([solution_domain.interpolate(x, value[i,0,...]) for i in range(value.shape[0])])
     return x, solution_values
 
@@ -437,7 +437,7 @@ def setup_bb_symmetric(dim, degree, d_elem_regions, n_elem_regions, d_other_dim,
 
 def _setup_bb_mgop_symmetric(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_dim, tn_order, data_dictionary = None):
     from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
-    from jax_sn.operators.transport_operator import TransportOperator, TransportOperatorMultipleAngles, VmapForward, VmapSweep, VmapAngles
+    from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle, VmapForward, VmapSweep, VmapAngles
     from jax_sn.operators.mass_operator import MassOperator
     from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
     from jax_sn.operators.transport_operator import BasicSweepData
@@ -451,7 +451,7 @@ def _setup_bb_mgop_symmetric(dim, degree, d_elem_regions, n_elem_regions, d_othe
     lmax                      = solution_domain.domain.cross_sections_indexed.l_max
 
     sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
-    transport_operator        = TransportOperatorMultipleAngles(TransportOperator(solution_domain.solution_domain_data, sweep_data, 0, VmapForward(), VmapSweep()), VmapAngles())
+    transport_operator        = TransportOperatorMultiAngle(TransportOperatorSingleAngle(solution_domain.spatial_data, sweep_data, 0, VmapForward(), VmapSweep()), VmapAngles())
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
     moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)    
     

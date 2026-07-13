@@ -5,46 +5,34 @@ Both pure VMAP (vmap single-element inversion) and batched (batched single-eleme
 import jax 
 import jax.numpy as jnp 
 from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup
-from ..sweep_data import SweepData, BasicSweepData
+from ..sweep_data_implementations import SweepData, BasicSweepData
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from functools import partial
-from typing import TYPE_CHECKING
-from ..transport_operator_strategies import InversionStrategy
-from .angle_liftings import VmapInversionAngles
+from ..transport_operator_strategies import SingleAngleInversionStrategy
+from ..transport_data import InversionData
 
-if TYPE_CHECKING:
-    from ..transport_operator_interface import TransportOperator
-
-class VmapSweep(InversionStrategy):
+class VmapSweep(SingleAngleInversionStrategy):
     '''Inverse sweep with all per-element matrices computed via vmap (high memory).'''
 
-    def invert(self, operator: "TransportOperator", b):
-        return transport_inverse_sweep_complete_vmap(*operator._inversion_args(), b)
+    def invert(self, data: InversionData, b):
+        return transport_inverse_sweep_complete_vmap(*data, b)
 
     @classmethod
     def vmappable(cls):
         return True
 
-    @classmethod
-    def default_inversion_lifting(cls):
-        return VmapInversionAngles()
 
-
-class BatchedSweep(InversionStrategy):
+class BatchedSweep(SingleAngleInversionStrategy):
     '''Inverse sweep over batches of elements. ``batch_size=None`` reproduces the non-batched version.'''
 
     batch_size: int = None
 
-    def invert(self, operator: "TransportOperator", b):
-        return transport_inverse_sweep_batched(*operator._inversion_args(), b, self.batch_size)
+    def invert(self, data: InversionData, b):
+        return transport_inverse_sweep_batched(*data, b, self.batch_size)
 
     @classmethod
     def vmappable(cls):
         return True
-
-    @classmethod
-    def default_inversion_lifting(cls):
-        return VmapInversionAngles()
 
 
 

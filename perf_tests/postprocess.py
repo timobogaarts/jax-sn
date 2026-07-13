@@ -17,15 +17,15 @@ factors -- so this ordering is exact, not approximate; moment space is just the 
 
 The perf-test suite already benchmarks every one of those constituents standalone (``mass.mv.moment``,
 ``discrete.mv``, ``moment.mv``, ``scatter.gather``, ``transport.inv.multiangle``) as well as the two
-aggregates, all keyed by the same ``InversionStrategy`` label -- so this script only has to look up and
+aggregates, all keyed by the same ``SingleAngleInversionStrategy`` label -- so this script only has to look up and
 sum the matching rows of a golden JSON. It needs no jax/GPU: it is pure post-processing of
 ``perf_tests/golden/<name>.json``.
 
 Two facts are not recorded in the golden JSON itself and have to be hard-coded here:
 
-- the ``InversionStrategy -> default InversionAngleLifting`` pairing that ``transport.inv.multiangle``
-  is keyed by (mirrors each strategy's ``default_inversion_lifting()``; see ``operators/transport_operator/
-  implementations/*.py``);
+- the ``SingleAngleInversionStrategy -> natural MultiAngleInversionStrategy`` pairing that ``transport.inv.multiangle`` is keyed
+  by (mirrors ``create_multi_group_operator``'s auto-resolution: ``VmapAngles`` for a vmappable kernel,
+  else ``SingleAngleInversionStrategy.native_multi_angle()``; see ``operators/transport_operator/implementations/*.py``);
 - the number of energy groups the default MV problem is built with -- the breeding-blanket
   cross-section set is always 4-group (see ``_create_problem.bb_data_dict``), independent of
   ``--n-other``/``--res-mult``/etc.
@@ -62,17 +62,6 @@ DEFAULT_STRATEGY_LABEL = dict(
 
 MASS_BENCH = "mass.mv.moment"  # moment-space sizing -- see bench_mass.py; matches actual SGOp/MGOp usage
 
-# InversionStrategy label (as it appears in SGOp.mv/MGOp.mv) -> its default_inversion_lifting(), i.e. the
-# other half of the "<inv> + <lift>" label transport.inv.multiangle uses for the same combination.
-DEFAULT_LIFT = {
-    "VmapSweep": "VmapInversionAngles",
-    "BatchedSweep(1000)": "VmapInversionAngles",
-    "VmapPallasSweep": "VmapInversionAngles",
-    "BatchedPallasSweep(1000)": "VmapInversionAngles",
-    "WarpSequentialSweep": "WarpSequentialAngles",
-    "WarpLevelSweep": "WarpLevelAngles",
-}
-
 PIPELINE = ("scatter", "mass", "discrete", "moment", "transport")
 
 
@@ -89,15 +78,15 @@ def _point(golden: dict, bench: str, label: str):
 
 def _constituents(golden: dict, inv_label: str) -> dict:
     """``{name: (peak_mb, t_ms) | None}`` for the per-group pipeline pieces at this inversion
-    strategy. ``None`` marks a piece that's missing or skipped (e.g. an incompatible warp combo)."""
-    lift = DEFAULT_LIFT.get(inv_label)
-    transport_label = f"{inv_label} + {lift}" if lift else None
+    strategy. ``None`` marks a piece that's missing or skipped (e.g. an incompatible warp combo).
+    ``transport.inv.multiangle`` is keyed by the inversion label alone (each strategy uses its
+    auto-resolved natural angle inversion)."""
     return {
         "mass":      _point(golden, MASS_BENCH, DEFAULT_STRATEGY_LABEL["mass"]),
         "discrete":  _point(golden, "discrete.mv", DEFAULT_STRATEGY_LABEL["discrete"]),
         "moment":    _point(golden, "moment.mv", DEFAULT_STRATEGY_LABEL["moment"]),
         "scatter":   _point(golden, "scatter.gather", DEFAULT_STRATEGY_LABEL["scatter"]),
-        "transport": _point(golden, "transport.inv.multiangle", transport_label) if transport_label else None,
+        "transport": _point(golden, "transport.inv.multiangle", inv_label),
     }
 
 

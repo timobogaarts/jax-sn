@@ -129,4 +129,12 @@ The upwind flux is used as the numerical flux and is defined as:
     \end{cases}
 
 where :math:`\epsilon(\mathbf{s})` is the element connected to :math:`\epsilon` through the boundary point :math:`\mathbf{s}`.
+In the below mesh and for the particular :math:`\Omega` direction, for all boundaries, it is shown which values are used: if the boundary is orange within the element, that value is used, while for 
+inflow boundaries (:math:`\Omega \cdot \mathbf{n} < 0`), the value from the neighboring element is used, indicated by the arrow.
 
+.. image:: upwind_figure.png
+
+Now, intuitively, if an element has no inflow boundaries, it uses no values from other elements, and thus the solution can be immediately found without 
+reference to such other elements. Then, all elements depending only on that initial element can be solved immediately afterwards, and so on. 
+
+This leads to the idea of a dependency graph.

@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup
-from ..sweep_data import BasicSweepData
+from ..sweep_data_implementations import BasicSweepData
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from functools import partial
 from typing import Tuple
@@ -426,37 +426,29 @@ def transport_inverse_sweep_multiple_angles_batched_pallas(geometric_domain    :
 # ---------------------------------------------------------------------------
 # Pallas strategies + convenience constructors
 # ---------------------------------------------------------------------------
-from ..transport_operator_strategies import InversionStrategy
-from .angle_liftings import VmapInversionAngles
+from ..transport_operator_strategies import SingleAngleInversionStrategy
+from ..transport_data import InversionData
 
 
-class VmapPallasSweep(InversionStrategy):
+class VmapPallasSweep(SingleAngleInversionStrategy):
     '''Inverse sweep with all per-element matrices via vmap, using Pallas for the matrix ops.'''
 
-    def invert(self, operator, b):
-        return transport_inverse_sweep_complete_vmap_pallas(*operator._inversion_args(), b)
+    def invert(self, data: InversionData, b):
+        return transport_inverse_sweep_complete_vmap_pallas(*data, b)
 
     @classmethod
     def vmappable(cls):
         return True
 
-    @classmethod
-    def default_inversion_lifting(cls):
-        return VmapInversionAngles()
 
-
-class BatchedPallasSweep(InversionStrategy):
+class BatchedPallasSweep(SingleAngleInversionStrategy):
     '''Inverse sweep over batches of elements, using Pallas for the matrix ops.'''
 
     batch_size: int = None
 
-    def invert(self, operator, b):
-        return transport_inverse_sweep_batched_pallas(*operator._inversion_args(), b, self.batch_size)
+    def invert(self, data: InversionData, b):
+        return transport_inverse_sweep_batched_pallas(*data, b, self.batch_size)
 
     @classmethod
     def vmappable(cls):
         return True
-
-    @classmethod
-    def default_inversion_lifting(cls):
-        return VmapInversionAngles()

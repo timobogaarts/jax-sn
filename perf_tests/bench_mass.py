@@ -20,7 +20,7 @@ from jax_sn.operators.mass_operator import MassStrategy, MassOperator
 
 def _moment_sized(mgop) -> MassOperator:
     return MassOperator.from_solution_domain_data(
-        mgop.setup.solution_domain_data, (mgop.moment_operator.n_moments,), mgop.mass_strategy)
+        mgop.setup.spatial_data, (mgop.moment_operator.n_moments,), mgop.mass_strategy)
 
 
 BENCHES = [

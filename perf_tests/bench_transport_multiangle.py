@@ -1,19 +1,18 @@
 """
-Multi-angle transport inverse: ``transport_operator.inv`` over the (InversionStrategy x InversionAngleLifting)
-product. This is the one axis that is genuinely a combination -- and the valid combinations are *not* the
-full product: the warp liftings require a matching warp inversion. We don't encode that table; we
-enumerate the product and let the operator's own construction-time ``check_compatible`` reject the bad
-pairs (caught by ``measure`` as a self-documenting skip), so it stays correct as kernels are added.
+Multi-angle transport inverse: ``transport_operator.inv`` swept over every ``SingleAngleInversionStrategy``, each
+using its *natural* multi-angle angle inversion. ``create_multi_group_operator`` auto-resolves that
+(``VmapAngles`` over a vmappable kernel, the fused native warp lift otherwise), so there is no
+(strategy x lifting) product to enumerate and prune any more -- the one footgun (a vmap over an opaque
+kernel) is now unconstructible rather than flagged. To benchmark a non-default pairing (e.g.
+``ScanAngles`` serialisation) explicitly, use ``dev_bench.py --lifting``.
 """
 from dataclasses import dataclass, field
 
 from _common import measure, LiveTable
 from _bench import inv_call
-from _discovery import discover_variants, serializes
+from _discovery import discover_variants
 from bench_transport import _INV_OVERRIDES
-from jax_sn.operators.transport_operator import (
-    InversionStrategy, InversionAngleLifting, BatchedForward,
-)
+from jax_sn.operators.transport_operator import SingleAngleInversionStrategy, BatchedForward
 from jax_sn.operators.multi_group_operator.multi_group_operator_creation import create_multi_group_operator
 
 
@@ -25,26 +24,19 @@ class MultiAngleInvBench:
 
     def run(self, sd, qs):
         out = {}
-        invs = [i for i in discover_variants(InversionStrategy, self.inv_overrides) if i.instance is not None]
-        lifts = [l for l in discover_variants(InversionAngleLifting) if l.instance is not None]
-        # Full product, minus the vmap-over-opaque-kernel combos that would silently serialise
-        # (e.g. VmapInversionAngles x warp). Incompatible combos are *not* filtered here -- they self-skip via
-        # the operator's own check_compatible, caught by ``measure``.
-        pairs = [(i, l) for i in invs for l in lifts if not serializes(l.instance, i.instance)]
-        table = LiveTable(self.name, [f"{i.label} + {l.label}" for i, l in pairs])
-        for inv, lift in pairs:
-            label = f"{inv.label} + {lift.label}"
-            table.start(label)
+        invs = [i for i in discover_variants(SingleAngleInversionStrategy, self.inv_overrides) if i.instance is not None]
+        table = LiveTable(self.name, [i.label for i in invs])
+        for inv in invs:
+            table.start(inv.label)
 
-            def build_fn(i=inv.instance, l=lift.instance):
-                mgop = create_multi_group_operator(
-                    sd, qs, forward_strategy=BatchedForward(1000),
-                    inversion_strategy=i, inversion_lifting=l)
+            def build_fn(i=inv.instance):
+                # multi_angle_inversion_strategy left to auto-resolution: each strategy's natural multi-angle lift.
+                mgop = create_multi_group_operator(sd, qs, forward_strategy=BatchedForward(1000), inversion_strategy=i)
                 return inv_call(mgop.transport_operator)
 
             m = measure(build_fn)
             table.ok(m.peak_mb, m.t_ms) if m.status == "ok" else table.skip(m.reason)
-            out[label] = m.__dict__
+            out[inv.label] = m.__dict__
         return out
 
 

@@ -69,7 +69,7 @@ Transport is the richest axis (`operators/transport_operator/transport_operator_
   (`perf_tests/_discovery.py:serializes` flags this combination).
 - Concrete implementations live under `operators/transport_operator/implementations/` next to their
   kernel (`transport_operator_jax.py`, `transport_operator_pallas.py`, `transport_operator_warp.py`,
-  `transport_operator_forward.py`, `angle_liftings.py`, `linear_tetrahedron_warp_kernel.py`) — optional
+  `transport_operator_forward.py`, `multi_angle_inversions.py`, `linear_tetrahedron_warp_kernel.py`) — optional
   backends (pallas/warp) are only importable/registered when their dependency is present.
 
 All operators derive from `operators/base_linear_operator.py:AbstractLinearOperator_sn` (a `lineax`

@@ -30,7 +30,7 @@ this would not work for level-based parallelism, where the levels could *in prin
 which could lead to a race condition. Although extremely rare, we don't want to introduce the possibility. This epsilon guards 
 agains this by treaing faces with angle.face_normal > -INFLOW_EPSILON as outflow faces. Since the contribution is multiplied 
 by this dot-product, even if it were physical, the contribution would be on the order of the INFLOW_EPSILON, which should
-be chosen to be on the order of floating point errors.
+thus be chosen to be on the order of floating point errors.
 '''
 
 @wp.struct 
@@ -243,7 +243,7 @@ import equinox as eqx
 # =============================================================================
 from warp.jax_experimental import jax_callable, GraphMode
 from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup
-from ..sweep_data import BasicSweepData
+from ..sweep_data_implementations import BasicSweepData
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 
 def _flatten_base_args(geometric_domain           : GeometricDomain,
@@ -462,7 +462,7 @@ def _level_single_angle_sweep(
 level_sweep_sa_jax = jax_callable(_level_single_angle_sweep, graph_mode=GraphMode.NONE)
 
 
-from ..sweep_data import LevelBasedParallelism
+from ..sweep_data_implementations import LevelBasedParallelism
 
 @eqx.filter_jit
 def level_single_angle_warp_sweep(             geometric_domain           : GeometricDomain,
