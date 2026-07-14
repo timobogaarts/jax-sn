@@ -1,5 +1,8 @@
-import lineax as lx 
+from abc import abstractmethod
+from typing import NamedTuple
 
+import lineax as lx 
+import equinox as eqx
 
 class AbstractLinearOperator_sn(lx.AbstractLinearOperator):
     r'''
@@ -42,3 +45,86 @@ def _(operator):
 @lx.is_negative_semidefinite.register(AbstractLinearOperator_sn)
 def _(operator):
     return False
+
+
+@lx.linearise.register(AbstractLinearOperator_sn)
+def _(operator):
+    '''All jax-sn operators are already linear, so linearise is the identity. Required on the base:
+    lineax's default linearise raises, and the JVP path of ``lx.linear_solve`` recurses into
+    ``linearise`` on the primal operator, so autodiff through a solve needs this registered.'''
+    return operator
+
+class Strategy(eqx.Module):
+
+    @abstractmethod
+    def forward(self, data, x):
+        ...
+
+    @abstractmethod
+    def transpose(self, data, x):
+        ...
+    
+class SymmetricStrategy(Strategy):
+    '''A strategy which is symmetric, i.e. forward and transpose are the same.'''
+    def transpose(self, data, x):
+        return self.forward(data, x)
+
+
+class DataStrategyLinearOperator(AbstractLinearOperator_sn):
+    r'''
+    A linear operator which is defined by a data object and a strategy object.
+    The data object contains the information needed to construct the operator, and the strategy object defines how to apply the operator.
+    '''
+    data           :  eqx.AbstractVar[NamedTuple]    
+    strategy       :  eqx.AbstractVar[Strategy]
+    
+    @abstractmethod
+    def mv(self, x):
+        ...
+
+class SymmetricDataStrategyLinearOperator(DataStrategyLinearOperator):        
+
+    @eqx.filter_jit
+    def mv(self, x):
+        return self.strategy.forward(self.data, x)
+        
+    def transpose(self):
+        return self
+    
+    @abstractmethod
+    def _structure(self):
+        ...
+
+    def in_structure(self):
+        return self._structure()
+
+    def out_structure(self):
+        return self._structure()
+    
+class TransposeBoolDataStrategyLinearOperator(DataStrategyLinearOperator):
+    
+    transpose_bool :  eqx.AbstractVar[bool]
+
+    @eqx.filter_jit
+    def mv(self, x):
+        if self.transpose_bool:
+            return self.strategy.transpose(self.data, x)
+        else:
+            return self.strategy.forward(self.data, x)
+
+    def transpose(self):
+        return eqx.tree_at(lambda op: op.transpose_bool, self, not self.transpose_bool)
+        
+    @abstractmethod
+    def _in_structure(self):
+        ...
+
+    @abstractmethod
+    def _out_structure(self):
+        ...
+
+    def in_structure(self):
+        return self._out_structure() if self.transpose_bool else self._in_structure()
+
+    def out_structure(self):
+        return self._in_structure() if self.transpose_bool else self._out_structure()

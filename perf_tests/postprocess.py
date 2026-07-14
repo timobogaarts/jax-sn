@@ -3,7 +3,7 @@ Breaks the aggregate ``SGOp.mv``/``MGOp.mv`` golden numbers down into their cons
 so a timing/memory regression can be pinned on the operator that actually changed instead of just the
 end-to-end number moving.
 
-``SGOp.mv`` (see ``single_group_operator_imp.py:_mv_single_group_operator``) applies, per matvec::
+``SGOp.mv`` (see ``composed_single_group_strategies.py:ComposedSingleGroupStrategy.mv_forward``) applies, per matvec::
 
     x - moment(transport.inv(discrete(mass(inscatter(x)))))
 

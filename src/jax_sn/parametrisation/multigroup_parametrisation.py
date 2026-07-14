@@ -25,7 +25,7 @@ class MultigroupOperatorParametrisedVerticesXS(ParametrisedModule):
     '''
     @staticmethod
     def theta_base(operator : MultiGroupOperator ):
-        return VerticesXSTheta(operator.setup.spatial_data.domain.vertices, operator.setup.spatial_data.domain.cross_sections_indexed.cross_section_data)
+        return VerticesXSTheta(operator.operator_data.spatial_data.domain.vertices, operator.operator_data.spatial_data.domain.cross_sections_indexed.cross_section_data)
 
     @staticmethod
     def reconstruct_operator(operator : MultiGroupOperator, theta : VerticesXSTheta) -> MultiGroupOperator:
@@ -38,7 +38,7 @@ class MultigroupOperatorParametrisedXS(ParametrisedModule):
     '''
     @staticmethod
     def theta_base(operator : MultiGroupOperator ):
-        return operator.setup.spatial_data.domain.cross_sections_indexed.cross_section_data
+        return operator.operator_data.spatial_data.domain.cross_sections_indexed.cross_section_data
 
     @staticmethod
     def reconstruct_operator(operator : MultiGroupOperator, theta : CrossSectionData) -> MultiGroupOperator:
@@ -53,11 +53,11 @@ class MultigroupOperatorParametrisedVertices(ParametrisedModule):
     '''
     @staticmethod
     def theta_base(operator : MultiGroupOperator ):
-        return operator.setup.spatial_data.domain.vertices
+        return operator.operator_data.spatial_data.domain.vertices
 
     @staticmethod
     def reconstruct_operator(operator : MultiGroupOperator, theta : jnp.ndarray) -> MultiGroupOperator:
-        vertices_xs_theta = VerticesXSTheta(theta, operator.setup.spatial_data.domain.cross_sections_indexed.cross_section_data)
+        vertices_xs_theta = VerticesXSTheta(theta, operator.operator_data.spatial_data.domain.cross_sections_indexed.cross_section_data)
         return reconstruct_multigroup_operator_including_toposort(operator, vertices_xs_theta)
 
 class MultigroupOperatorParametrisedVerticesNoToposort(ParametrisedModule):
@@ -67,11 +67,11 @@ class MultigroupOperatorParametrisedVerticesNoToposort(ParametrisedModule):
     '''
     @staticmethod
     def theta_base(operator : MultiGroupOperator ):
-        return operator.setup.spatial_data.domain.vertices
+        return operator.operator_data.spatial_data.domain.vertices
 
     @staticmethod
     def reconstruct_operator(operator : MultiGroupOperator, theta : jnp.ndarray) -> MultiGroupOperator:
-        vertices_xs_theta = VerticesXSTheta(theta, operator.setup.spatial_data.domain.cross_sections_indexed.cross_section_data)
+        vertices_xs_theta = VerticesXSTheta(theta, operator.operator_data.spatial_data.domain.cross_sections_indexed.cross_section_data)
         return reconstruct_multigroup_operator_including_toposort(operator, vertices_xs_theta, False)
 
 class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
@@ -117,7 +117,7 @@ class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
 @eqx.filter_jit
 def reconstruct_multigroup_operator_xs(operator : MultiGroupOperator, cross_section_data : CrossSectionData) -> MultiGroupOperator:
         # Single canonical location: transport + gather-scatter both derive their cross sections from `setup`.
-        return eqx.tree_at(lambda op : op.setup.spatial_data.domain.cross_sections_indexed.cross_section_data, operator, replace = cross_section_data)
+        return eqx.tree_at(lambda op : op.operator_data.spatial_data.domain.cross_sections_indexed.cross_section_data, operator, replace = cross_section_data)
 
 
 @eqx.filter_jit
@@ -126,7 +126,7 @@ def reconstruct_multigroup_operator_including_toposort(operator : MultiGroupOper
 
         # Everything the sub-operators draw on lives in one canonical `setup`, so each replacement is a
         # single tree_at on a canonical location (no *_loc tuples, no per-operator special-casing).
-        domain = operator.setup.spatial_data.domain
+        domain = operator.operator_data.spatial_data.domain
 
         # 1. + 2. cross sections, vertices, and the face normals derived from them -- in one domain rebuild.
         face_normals    = jax_sn.domain.geometric_domain.compute_face_normal_vectors_from_3d_simplices(theta.vertices[domain.connectivity], domain.face_template)
@@ -134,11 +134,11 @@ def reconstruct_multigroup_operator_including_toposort(operator : MultiGroupOper
             lambda d : [d.vertices, d.face_normals, d.cross_sections_indexed.cross_section_data],
             domain,
             replace = [theta.vertices, face_normals, theta.cross_section_data])
-        operator_dom = eqx.tree_at(lambda op : op.setup.spatial_data.domain, operator, replace = domain_replaced)
+        operator_dom = eqx.tree_at(lambda op : op.operator_data.spatial_data.domain, operator, replace = domain_replaced)
 
         # 3. precomputed geometric data
         precomputed_geometric_data_comp = jax_sn.solution_domain.basix_fem._precompute_jacobians_simplex(domain_replaced)
-        operator_precomp = eqx.tree_at(lambda op : op.setup.spatial_data.precomputed_geometric_data, operator_dom, replace = precomputed_geometric_data_comp)
+        operator_precomp = eqx.tree_at(lambda op : op.operator_data.spatial_data.precomputed_geometric_data, operator_dom, replace = precomputed_geometric_data_comp)
 
         # 4. sweep data [only used for inversion, so the gradient should not flow through it -- hence the
         # stop_gradient. In some cases we don't replace it: only changing cross-sections, or a 1D geometry
@@ -146,7 +146,7 @@ def reconstruct_multigroup_operator_including_toposort(operator : MultiGroupOper
         if replace_topological_sort:
             # The sweep data knows how to recompute itself for the deformed domain, reusing its own stored
             # angles and preserving its concrete type. So this needs no operator/sweep-class special-casing.
-            sweep_data_replaced = jax.lax.stop_gradient(operator.setup.sweep_data.reconstruct(domain_replaced, operator.setup.angular_data.quadrature_set.angles))
-            return eqx.tree_at(lambda op : op.setup.sweep_data, operator_precomp, replace = sweep_data_replaced)
+            sweep_data_replaced = jax.lax.stop_gradient(operator.operator_data.sweep_data.reconstruct(domain_replaced, operator.operator_data.angular_data.quadrature_set.angles))
+            return eqx.tree_at(lambda op : op.operator_data.sweep_data, operator_precomp, replace = sweep_data_replaced)
         else:
             return operator_precomp

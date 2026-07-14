@@ -11,7 +11,7 @@ from jax_sn.parametrisation import SingleGroupOperatorSigmaAllParametrised
 
 
 def _sgop_xs(sgop):
-    return sgop.setup.spatial_data.domain.cross_sections_indexed.cross_section_data
+    return sgop.operator_data.spatial_data.domain.cross_sections_indexed.cross_section_data
 
 
 def _patch_sgop_xs(sgop, xs_data_indices, dx):
@@ -31,7 +31,7 @@ def _patch_sgop_xs(sgop, xs_data_indices, dx):
 
 
 def total_solve(sgop, source_eg0, solver):
-    rhs = sgop.moment_operator.mv(sgop.transport_operator.inv(sgop.mass_operator.mv(source_eg0)))
+    rhs = sgop.source_operator().mv(source_eg0)
     return lx.linear_solve(sgop, rhs, solver)
 
 

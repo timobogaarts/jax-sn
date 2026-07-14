@@ -1,29 +1,16 @@
 import jax
 import jax.numpy as jnp
 from jax_sn.quadrature_set import QuadratureSetBase
-import lineax as lx
-from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
+from jax_sn.operators.base_linear_operator import TransposeBoolDataStrategyLinearOperator
 import equinox as eqx
 
-from .moment_operator_strategies import DiscreteStrategy, BatchedDiscrete
+from .moment_operator_strategies import DiscreteStrategy, BatchedDiscrete, DiscreteData
 
 
-class DiscreteOperator(AbstractLinearOperator_sn):
+class DiscreteOperator(TransposeBoolDataStrategyLinearOperator):
     r'''
     Discrete operator that maps moments to angular fluxes. Approximate inverse of
     :class:`jax_sn.operators.moment_operator.MomentOperator`.
-
-    Implementation handling
-    ---------------------------
-    The contraction implementation is selected by the :attr:`strategy`
-    :class:`~.moment_operator_strategies.DiscreteStrategy` field, *not* by a subclass. See
-    :mod:`~jax_sn.operators.moment_operator.moment_operator_strategies`.
-
-    Direction handling
-    ---------------------------
-    Whether this operator applies the forward action or its transpose is carried by the
-    boolean field :attr:`transpose_bool`, *not* by a separate subclass. Transposition is a cheap
-    flag flip via :func:`equinox.tree_at` (no setup or reconstruction).
 
     Mathematical description
     ---------------------------
@@ -56,67 +43,38 @@ class DiscreteOperator(AbstractLinearOperator_sn):
 
     '''
 
-    yklm                 : jnp.ndarray           #[n_angles, n_moments]
+    data : DiscreteData
     r'''Matrix of [n_angles, n_moments] containing :math:`Y_{l,m}(\Omega_k)` values for each angle :math:`k` and moment :math:`(l,m)` (collapsed into a single index).'''
 
     elements_basis_shape : jax.ShapeDtypeStruct  #[n_elements, n_basis]
     r'''The shape of the elements and basis functions over which this operator is batched. Identified with :math:`F` in the documentation above.'''
 
-    strategy             : DiscreteStrategy = eqx.field(default_factory=BatchedDiscrete)
+    strategy             : DiscreteStrategy
     r'''How to apply the contraction. See :mod:`~jax_sn.operators.moment_operator.moment_operator_strategies`.'''
 
     transpose_bool       : bool = False
     r'''Whether this operator applies the transposed action (angles to moments) instead of the forward action (moments to angles).'''
 
     @classmethod
-    def from_quadrature_set(cls, quadrature_set : QuadratureSetBase, l_max : int, elements_basis_shape : jax.ShapeDtypeStruct, strategy : DiscreteStrategy = BatchedDiscrete()) -> "DiscreteOperator":
+    def from_quadrature_set(cls, quadrature_set : QuadratureSetBase, l_max : int, elements_basis_shape : jax.ShapeDtypeStruct, strategy : DiscreteStrategy) -> "DiscreteOperator":
         r'''
         Create a discrete operator from a quadrature set and desired moment order. This computes the :math:`Y_{l,m}(\Omega_k)` weights for the specified moment order.
         Prefer to initialise directly if possible.
-
-
-        :param quadrature_set:
-            The quadrature set to use for the discrete operator.
-        :param l_max:
-            The maximum moment order L to use.
-        :param elements_basis_shape:
-            The shape of the elements and basis functions over which this operator is batched. Identified with :math:`F` in the documentation above.
-        :param strategy:
-            The contraction strategy to use (default :class:`~.moment_operator_strategies.BatchedDiscrete`).
-
-
         '''
         yklm = quadrature_set.ylm_real(l_max)
-        return cls(yklm, elements_basis_shape, strategy)
+        return cls(DiscreteData(yklm), elements_basis_shape, strategy)    
 
-    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        if self.transpose_bool:
-            return self.strategy.transpose(self, x)
-        return self.strategy.forward(self, x)
-
-    def transpose(self) -> "DiscreteOperator":
-        '''Returns the transposed operator by flipping :attr:`transpose_bool`. There is no setup or reconstruction, so this operation is essentially free.'''
-        return eqx.tree_at(lambda op: op.transpose_bool, self, not self.transpose_bool)
-
-    def _forward_in_structure(self):
+    def _in_structure(self):
         '''Forward-direction input structure representing moments. Shape [n_moments, ...].'''
         return jax.ShapeDtypeStruct(
             shape=(self.yklm.shape[1],) + self.elements_basis_shape.shape,
             dtype=self.yklm.dtype)
 
-    def _forward_out_structure(self):
+    def _out_structure(self):
         '''Forward-direction output structure representing discrete angles. Shape [n_angles, ...].'''
         return jax.ShapeDtypeStruct(
             shape=(self.yklm.shape[0],) + self.elements_basis_shape.shape,
             dtype=self.yklm.dtype)
-
-    def in_structure(self):
-        '''Input structure. Moments in the forward direction, discrete angles in the transposed direction.'''
-        return self._forward_out_structure() if self.transpose_bool else self._forward_in_structure()
-
-    def out_structure(self):
-        '''Output structure. Discrete angles in the forward direction, moments in the transposed direction.'''
-        return self._forward_in_structure() if self.transpose_bool else self._forward_out_structure()
 
     @property
     def n_moments(self):
@@ -127,12 +85,3 @@ class DiscreteOperator(AbstractLinearOperator_sn):
     def n_angles(self):
         '''Number of discrete angles'''
         return self.yklm.shape[0]
-
-
-@lx.is_symmetric.register(DiscreteOperator)
-def _(operator):
-    return False
-
-@lx.linearise.register(DiscreteOperator)
-def _(operator):
-    return operator

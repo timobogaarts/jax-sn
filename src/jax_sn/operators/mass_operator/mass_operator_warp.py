@@ -1,26 +1,6 @@
 r'''
 NVIDIA Warp mass strategy.
-
-The mass operator is block-diagonal over elements and carries *no* inter-element data dependency (unlike
-the transport sweep), so it maps onto a trivially parallel Warp kernel: one thread per ``(batch, element)``
-computes
-
-.. math::
-    a_{be} = J^{vol}_e \, \mathbf{M} \, x_{be}
-
-where :math:`\mathbf{M}` is the (single, reference) mass matrix and :math:`J^{vol}_e` the volume Jacobian
-determinant. The kernel writes straight into its output buffer with no temporaries, so peak device memory is
-just input + output (no materialised einsum like :class:`VmapMass`, no batched-``dot_general`` round-trip
-like :class:`LaxMass`).
-
-Layout is fixed to degree-1 tetrahedra (``n_basis == 4``), matching the Warp transport kernels
-(:mod:`~jax_sn.operators.transport_operator.implementations.linear_tetrahedron_warp_kernel`): the basis
-vector is a ``vec4d`` and the reference mass matrix a ``mat44d``. The arbitrary leading batch axes (angles /
-moments) are flattened to a single dimension before the launch and restored after, so the same kernel serves
-every call site regardless of how the :class:`MassOperator` was sized.
-
-This module imports ``warp``; like the Warp transport implementation it is only importable when the ``warp``
-extra is installed, so :class:`WarpMass` simply never registers for autodiscovery on a machine without it.
+Only supports 4 basis functions.
 '''
 from __future__ import annotations
 

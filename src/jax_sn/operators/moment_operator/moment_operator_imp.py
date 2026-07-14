@@ -1,14 +1,13 @@
 import jax
 import jax.numpy as jnp
 from jax_sn.quadrature_set import QuadratureSetBase
-import lineax as lx
-from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
+from jax_sn.operators.base_linear_operator import TransposeBoolDataStrategyLinearOperator
 import equinox as eqx
 
-from .moment_operator_strategies import MomentStrategy, BatchedMoment
+from .moment_operator_strategies import MomentStrategy, BatchedMoment, MomentData
 
 
-class MomentOperator(AbstractLinearOperator_sn):
+class MomentOperator(TransposeBoolDataStrategyLinearOperator):
     r'''
     Moment operator that maps angular fluxes to moments.
 
@@ -59,20 +58,20 @@ class MomentOperator(AbstractLinearOperator_sn):
 
     '''
 
-    wk_yklm              : jnp.ndarray           #[n_angles, n_moments]
-    r'''Matrix of [n_angles, n_moments] containing :math:`w_k Y_{l,m}(\Omega_k)` values for each angle :math:`k` and moment :math:`(l,m)` (collapsed into a single index).'''
+    data                : MomentData
+    '''MomentData containing the :math:`w_k Y_{lm}(\Omega_k)` weights for the moment operator [differentiable]'''
 
     elements_basis_shape : jax.ShapeDtypeStruct  #[n_elements, n_basis]
     r'''The shape of the elements and basis functions over which this operator is batched. Identified with :math:`F` in the documentation above.'''
 
-    strategy             : MomentStrategy = eqx.field(default_factory=BatchedMoment)
+    strategy             : MomentStrategy
     r'''How to apply the contraction. See :mod:`~jax_sn.operators.moment_operator.moment_operator_strategies`.'''
 
     transpose_bool       : bool = False
     r'''Whether this operator applies the transposed action (moments to angles) instead of the forward action (angles to moments).'''
 
     @classmethod
-    def from_quadrature_set(cls, quadrature_set : QuadratureSetBase, l_max : int, elements_basis_shape : jax.ShapeDtypeStruct, strategy : MomentStrategy = BatchedMoment()) -> "MomentOperator":
+    def from_quadrature_set(cls, quadrature_set : QuadratureSetBase, l_max : int, elements_basis_shape : jax.ShapeDtypeStruct, strategy : MomentStrategy) -> "MomentOperator":
         r'''
         Create a moment operator from a quadrature set and desired moment order. This computes the :math:`w_k Y_{l,m}(\Omega_k)` weights for the specified moment order.
         Prefer to initialise directly if possible.
@@ -90,36 +89,19 @@ class MomentOperator(AbstractLinearOperator_sn):
 
         '''
         wk_yklm = quadrature_set.wk_ylm_real(l_max)
-        return cls(wk_yklm, elements_basis_shape, strategy)
+        return cls(MomentData(wk_yklm), elements_basis_shape, strategy)
 
-    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        if self.transpose_bool:
-            return self.strategy.transpose(self, x)
-        return self.strategy.forward(self, x)
-
-    def transpose(self) -> "MomentOperator":
-        '''Returns the transposed operator by flipping :attr:`transpose_bool`. There is no setup or reconstruction, so this operation is essentially free.'''
-        return eqx.tree_at(lambda op: op.transpose_bool, self, not self.transpose_bool)
-
-    def _forward_in_structure(self):
+    def _in_structure(self):
         '''Forward-direction input structure representing discrete angles. Shape [n_angles, ...].'''
         return jax.ShapeDtypeStruct(
             shape=(self.wk_yklm.shape[0],) + self.elements_basis_shape.shape,
             dtype=self.wk_yklm.dtype)
 
-    def _forward_out_structure(self):
+    def _out_structure(self):
         '''Forward-direction output structure representing moments. Shape [n_moments, ...].'''
         return jax.ShapeDtypeStruct(
             shape=(self.wk_yklm.shape[1],) + self.elements_basis_shape.shape,
             dtype=self.wk_yklm.dtype)
-
-    def in_structure(self):
-        '''Input structure. Discrete angles in the forward direction, moments in the transposed direction.'''
-        return self._forward_out_structure() if self.transpose_bool else self._forward_in_structure()
-
-    def out_structure(self):
-        '''Output structure. Moments in the forward direction, discrete angles in the transposed direction.'''
-        return self._forward_in_structure() if self.transpose_bool else self._forward_out_structure()
 
     @property
     def n_moments(self):
@@ -130,12 +112,3 @@ class MomentOperator(AbstractLinearOperator_sn):
     def n_angles(self):
         '''Number of discrete angles'''
         return self.wk_yklm.shape[0]
-
-
-@lx.is_symmetric.register(MomentOperator)
-def _(operator):
-    return False
-
-@lx.linearise.register(MomentOperator)
-def _(operator):
-    return operator

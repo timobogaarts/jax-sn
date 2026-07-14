@@ -77,7 +77,7 @@ def _adjoint_multi_group_operator_scan(n_energy_groups : int, moment_operator   
     '''
     transport_operator_t = transport_operator.transpose()
 
-    # We have exactly the same memory analysis as for the single group operator, (see _mv_single_group_operator).
+    # We have exactly the same memory analysis as for the single group operator, (see ComposedSingleGroupStrategy.mv_forward).
     # Two discrete single-group sized temporaries [n_angles, n_elements, n_basis] are required as in/out for transport operator. 
     in_structure_shape = (n_energy_groups,) + moment_operator.out_structure().shape
 

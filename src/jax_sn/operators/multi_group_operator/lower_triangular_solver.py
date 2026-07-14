@@ -111,9 +111,8 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinear
         solution, n_steps = state
         sgop = mgop.to_single_group_operator(i)        
         
-        # Mass before discrete (moment space): mass and discrete commute (independent tensor factors),
-        # mirrors MultiGroupOperator's forward scan.
-        rhs_i = rhs[i] + mgop.moment_operator.mv(sgop.transport_operator.inv(mgop.discrete_operator.mv(mgop.mass_operator.mv(mgop.gather_scatter_operator.gather_forward(solution, i)))))
+        # Scatter source for group i, swept into flux moments by the group-i chain C_i = M T_i^{-1} D H.
+        rhs_i = rhs[i] + sgop.chain_operator().mv(mgop.gather_scatter_operator.gather_forward(solution, i))
         lxsolve = lx.linear_solve(sgop, rhs_i, solver, throw = False, options = {"y0" : rhs_i}) # Solve single group system
 
         if diagnostic.print_single_group:
@@ -214,10 +213,7 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver : lx.Abst
     n_groups = mgop.n_energy_groups
     sgop_t  = mgop.to_single_group_operator(0)  # the sgop transpose doesn't actually transpose its constituents, just has a different mv method that takes care of it.
                                                # so, instead we just transpose the individual members of it and transpose when we need.
-    top_t = sgop_t.transport_operator.transpose()
-    dop_t = sgop_t.discrete_operator.transpose()
-    mop_t = sgop_t.moment_operator.transpose()
-    hop_t = sgop_t.mass_operator.transpose()     
+    chain_operator_t = sgop_t.chain_operator().transpose()  # C^T = H^T D^T (T^{-1})^T M^T; per-group via .to_energy_group
 
     if diagnostic.print_single_group:
         jax.debug.print("Using upper triangular transpose solver for multi-group operator with {n_groups} energy groups.", n_groups = n_groups)
@@ -241,9 +237,7 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver : lx.Abst
         
         lxsolvevalue, nsteps = jax.lax.cond(jnp.all(rhs_i == 0.0), zero_rhs, nonzero_rhs,  operand = rhs_i)
         
-        # Discrete-transpose before mass (moment space): mirrors the forward scan's mass-before-discrete
-        # ordering, since mass and discrete^T also act on independent tensor factors and commute.
-        xi_new       = xi_g.at[g_i].set(hop_t.mv(dop_t.mv(top_t.to_energy_group(g_i).inv(mop_t.mv(lxsolvevalue))))) # D^T H^T (T_g^{-1})^T M^T [phi_g]
+        xi_new       = xi_g.at[g_i].set(chain_operator_t.to_energy_group(g_i).mv(lxsolvevalue)) # zeta_g = C_g^T [phi_g] = D^T H^T (T_g^{-1})^T M^T [phi_g]
         solution_new = solution.at[g_i].set(lxsolvevalue)        
         if diagnostic.print_single_group:
             jax.debug.print("Solved energy group {eg} in {n_steps} steps", eg = g_i, n_steps = nsteps)

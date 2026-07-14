@@ -122,7 +122,7 @@ def _build_mgop(solution_domain, quad, batch_size=4):
 
 
 def _order(mgop):
-    return onp.asarray(mgop.setup.sweep_data.levels_argsort)
+    return onp.asarray(mgop.operator_data.sweep_data.levels_argsort)
 
 
 # --------------------------------------------------------------------------------------------------

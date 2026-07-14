@@ -90,8 +90,8 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
     sweep_data     = sweep_data_type.from_domain_quadrature_set(solution_domain.domain, quadrature_set, **sweep_data_kwargs)
 
     angular_data             = AngularData.from_quadrature_set(quadrature_set, lmax)
-    setup                     = OperatorData(DiscretisationData(solution_domain.spatial_data, angular_data), NonDifferentiableData(sweep_data))
-    transport_spec            = MultiAngleTransportSpec(forward_strategy, multi_angle_inversion_strategy, energy_group=0)
+    operator_data             = OperatorData(DiscretisationData(solution_domain.spatial_data, angular_data), NonDifferentiableData(sweep_data))
+    transport_spec            = MultiAngleTransportSpec(forward_strategy, multi_angle_inversion_strategy)
 
-    return multi_group_operator_cls(setup, transport_spec, n_energy_groups, moment_strategy, discrete_strategy, mass_strategy, gather_scatter_operator_cls, **multi_group_operator_cls_kwargs)
+    return multi_group_operator_cls(operator_data, transport_spec, n_energy_groups, moment_strategy, discrete_strategy, mass_strategy, gather_scatter_operator_cls, **multi_group_operator_cls_kwargs)
     

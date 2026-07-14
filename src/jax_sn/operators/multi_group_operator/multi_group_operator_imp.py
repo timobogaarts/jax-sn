@@ -3,7 +3,7 @@ import jax.numpy as jnp
 from typing import Type
 from jax_sn.domain.cross_sections import CrossSectionData
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
-from jax_sn.operators.single_group_operator import SingleGroupOperator
+from jax_sn.operators.single_group_operator import SingleGroupOperator, ComposedSingleGroupStrategy
 from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator, MomentStrategy, DiscreteStrategy, BatchedMoment, BatchedDiscrete
 from jax_sn.operators.transport_operator import TransportOperatorMultiAngle, MultiAngleTransportSpec
 from jax_sn.operators.operator_data import OperatorData, AngularData, DiscretisationData, NonDifferentiableData
@@ -116,13 +116,13 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
 
     Data ownership
     ---------------------------
-    This operator follows the ``operator = setup + spec + strategy`` decomposition. It owns a single
-    canonical :attr:`setup` (a :class:`~jax_sn.operators.operator_data.OperatorData`) plus a
+    This operator follows the ``operator = operator_data + spec + strategy`` decomposition. It owns a single
+    canonical :attr:`operator_data` (a :class:`~jax_sn.operators.operator_data.OperatorData`) plus a
     data-free :attr:`transport_spec` and strategy/config fields, and exposes :attr:`transport_operator`,
     :attr:`mass_operator` and :attr:`gather_scatter_operator` as derived ``@property`` views. The data
     those sub-operators previously duplicated -- :class:`CrossSectionsIndexed`,
     :class:`PrecomputedGeometricData`, :class:`FEMMatrices` -- now lives in exactly **one** pytree
-    location (:attr:`setup`), so a single :func:`equinox.tree_at` updates every consumer at once and
+    location (:attr:`operator_data`), so a single :func:`equinox.tree_at` updates every consumer at once and
     there is no hand-synced invariant to maintain. (:attr:`moment_operator` and
     :attr:`discrete_operator` remain stored fields, carrying the angular harmonics.)
 
@@ -147,11 +147,11 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
       it would not actually provide that much improvement, since the main cost is still the transport sweeps, which would still need to be done sequentially.
 
     '''
-    setup                     : OperatorData
+    operator_data                     : OperatorData
     '''Canonical shared data: operator-defining spatial + angular data + operator-agnostic sweep plan. The single home every sub-operator draws on.'''
 
     transport_spec            : MultiAngleTransportSpec
-    '''Data-free transport configuration (strategies + energy group); the transport operator is derived from :attr:`setup` + this via :meth:`MultiAngleTransportSpec.build`.'''
+    '''Data-free transport configuration (strategies + energy group); the transport operator is derived from :attr:`operator_data` + this via :meth:`MultiAngleTransportSpec.build`.'''
 
     n_energy_groups           : int
     '''Number of energy groups.'''
@@ -166,49 +166,50 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     '''Contraction strategy for the derived :attr:`mass_operator`.'''
 
     gather_scatter_operator_cls : Type[GatherScatterOperator] = eqx.field(static=True, default=GatherScatterOperatorBroadcasted)
-    '''Implementation class for the derived :attr:`gather_scatter_operator` (built on :attr:`setup`'s cross sections).'''
+    '''Implementation class for the derived :attr:`gather_scatter_operator` (built on :attr:`operator_data`'s cross sections).'''
 
     transpose_bool : bool = False
     r'''Whether to use the transposed operator.'''
 
     @property
     def transport_operator(self) -> TransportOperatorMultiAngle:
-        '''The multi-angle transport operator, derived from :attr:`setup` + :attr:`transport_spec`.'''
-        return self.transport_spec.build(self.setup)
+        '''The multi-angle transport operator, derived from :attr:`operator_data` + :attr:`transport_spec`. Built at
+        the base group 0; callers select the per-group operator via ``.to_energy_group(g)``.'''
+        return self.transport_spec.build(self.operator_data, 0)
 
     @property
     def moment_operator(self) -> MomentOperator:
-        '''The moment operator, derived from :attr:`setup`'s angular harmonics.'''
-        return MomentOperator(self.setup.angular_data.wk_ylm, self.setup.elements_basis_shape, self.moment_strategy)
+        '''The moment operator, derived from :attr:`operator_data`'s angular harmonics.'''
+        return MomentOperator(self.operator_data.angular_data.wk_ylm, self.operator_data.elements_basis_shape, self.moment_strategy)
 
     @property
     def discrete_operator(self) -> DiscreteOperator:
-        '''The discrete (moment-to-discrete) operator, derived from :attr:`setup`'s angular harmonics.'''
-        return DiscreteOperator(self.setup.angular_data.ylm, self.setup.elements_basis_shape, self.discrete_strategy)
+        '''The discrete (moment-to-discrete) operator, derived from :attr:`operator_data`'s angular harmonics.'''
+        return DiscreteOperator(self.operator_data.angular_data.ylm, self.operator_data.elements_basis_shape, self.discrete_strategy)
 
     @property
     def mass_operator(self) -> MassOperator:
-        '''The mass operator, derived from :attr:`setup` (shares its geometric data + FEM matrices).'''
+        '''The mass operator, derived from :attr:`operator_data` (shares its geometric data + FEM matrices).'''
         return MassOperator.from_transport_operator(self.transport_operator, self.mass_strategy)
 
     @property
     def gather_scatter_operator(self) -> GatherScatterOperator:
-        '''The gather-scatter operator, derived from :attr:`setup`'s cross sections. This is not a linear operator, but a class that implements the required functionality.'''
-        return self.gather_scatter_operator_cls(self.setup.spatial_data.domain.cross_sections_indexed)
+        '''The gather-scatter operator, derived from :attr:`operator_data`'s cross sections. This is not a linear operator, but a class that implements the required functionality.'''
+        return self.gather_scatter_operator_cls(self.operator_data.spatial_data.domain.cross_sections_indexed)
 
     @property
     def quadrature_set(self) -> QuadratureSetBase:
-        '''The angular quadrature set (the single angular home lives in :attr:`setup`).'''
-        return self.setup.angular_data.quadrature_set
+        '''The angular quadrature set (the single angular home lives in :attr:`operator_data`).'''
+        return self.operator_data.angular_data.quadrature_set
 
     def __check_init__(self):
-        assert isinstance(self.setup, OperatorData), f"setup must be OperatorData, but got {type(self.setup)}."
+        assert isinstance(self.operator_data, OperatorData), f"operator_data must be OperatorData, but got {type(self.operator_data)}."
         assert isinstance(self.transport_spec, MultiAngleTransportSpec), f"transport_spec must be MultiAngleTransportSpec, but got {type(self.transport_spec)}."
         assert isinstance(self.moment_strategy, MomentStrategy), f"moment_strategy must be MomentStrategy, but got {type(self.moment_strategy)}."
         assert isinstance(self.discrete_strategy, DiscreteStrategy), f"discrete_strategy must be DiscreteStrategy, but got {type(self.discrete_strategy)}."
         assert isinstance(self.mass_strategy, MassStrategy), f"mass_strategy must be MassStrategy, but got {type(self.mass_strategy)}."
         assert self.n_energy_groups > 0, f"n_energy_groups must be positive, but got {self.n_energy_groups}."
-        self.setup.spatial_data.domain.cross_sections_indexed.cross_section_data.assert_n_energy_groups(self.n_energy_groups)
+        self.operator_data.spatial_data.domain.cross_sections_indexed.cross_section_data.assert_n_energy_groups(self.n_energy_groups)
         assert self.moment_operator.out_structure() == self.discrete_operator.in_structure(), f"Moment operator out structure {self.moment_operator.out_structure()} must match discrete operator in structure {self.discrete_operator.in_structure()}."
     
     @eqx.filter_jit
@@ -255,20 +256,23 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         SingleGroupOperator
             The single group operator for energy group g_i.
         ''' 
-        # Shares the *same* canonical setup (spatial + angular + sweep); only the energy group differs.
-        return SingleGroupOperator(self.setup,
-                                   self.transport_spec.to_energy_group(g_i),
-                                   self.moment_strategy,
-                                   self.discrete_strategy,
-                                   self.mass_strategy,
-                                   self.transpose_bool)
+        # Shares the *same* canonical operator_data (spatial + angular + sweep); only the energy group differs.
+        # The multigroup contraction + transport strategies are wrapped into the single-group whole-mv
+        # strategy (transitional until the multigroup operator itself moves to a MultiGroupStrategy).
+        strategy = ComposedSingleGroupStrategy(
+            transport_spec=self.transport_spec,
+            moment_strategy=self.moment_strategy,
+            discrete_strategy=self.discrete_strategy,
+            mass_strategy=self.mass_strategy,
+        )
+        return SingleGroupOperator(self.operator_data, g_i, strategy, self.transpose_bool)
         
     @property
     def lower_block_triangular(self):
         '''
         Whether the structure of the multi-group operator is lower block triangular (downscattering only)
         '''
-        return self.setup.spatial_data.domain.cross_sections_indexed.cross_section_data.downscattering_only
+        return self.operator_data.spatial_data.domain.cross_sections_indexed.cross_section_data.downscattering_only
 
     def convert_to_lower_block_triangular(self):
         r'''
@@ -279,16 +283,16 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         MultiGroupOperator
             The lower block triangular multi-group operator.
         '''
-        cs_data_lower = self.setup.spatial_data.domain.cross_sections_indexed.cross_section_data.convert_to_downscattering_only()
+        cs_data_lower = self.operator_data.spatial_data.domain.cross_sections_indexed.cross_section_data.convert_to_downscattering_only()
         return eqx.tree_at(self.cross_sections_indexed_loc, self, replace_fn = lambda xs_idx : eqx.tree_at(lambda xs : xs.cross_section_data, xs_idx, cs_data_lower))
 
     @property
     def n_elements(self):
-        return self.setup.spatial_data.domain.n_elements
+        return self.operator_data.spatial_data.domain.n_elements
 
     @property
     def n_angles(self):
-        return self.setup.angular_data.quadrature_set.angles.shape[0]
+        return self.operator_data.angular_data.quadrature_set.angles.shape[0]
 
     @property
     def n_moments(self):
@@ -296,43 +300,43 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
 
     @property
     def n_basis(self):
-        return self.setup.spatial_data.n_basis
+        return self.operator_data.spatial_data.n_basis
 
     @property
     def domain(self):
-        return self.setup.spatial_data.domain
+        return self.operator_data.spatial_data.domain
 
     @property
     def spatial_data(self):
-        return self.setup.spatial_data
+        return self.operator_data.spatial_data
 
     @property
     def cross_sections_indexed_loc(self):
         '''
         Returns a ``where`` function locating the cross sections in the tree. Now a single canonical
-        location (``setup``), shared by the derived transport and gather-scatter operators.
+        location (``operator_data``), shared by the derived transport and gather-scatter operators.
         '''
-        return lambda m : m.setup.spatial_data.domain.cross_sections_indexed
+        return lambda m : m.operator_data.spatial_data.domain.cross_sections_indexed
 
     @property
     def precomputed_geometric_data_loc(self):
         '''
         Returns a ``where`` function locating the precomputed geometric data in the tree. Single
-        canonical location (``setup``), shared by the derived transport and mass operators.
+        canonical location (``operator_data``), shared by the derived transport and mass operators.
         '''
-        return lambda m : m.setup.spatial_data.precomputed_geometric_data
+        return lambda m : m.operator_data.spatial_data.precomputed_geometric_data
 
     @property
     def fem_matrices_loc(self):
         '''
         Returns a ``where`` function locating the FEM matrices in the tree. Single canonical location
-        (``setup``), shared by the derived transport and mass operators.
+        (``operator_data``), shared by the derived transport and mass operators.
         '''
-        return lambda m : m.setup.spatial_data.fem_matrices
+        return lambda m : m.operator_data.spatial_data.fem_matrices
 
     @classmethod
     def from_multigroup_operator(cls, mgop : "MultiGroupOperator"):
-        return cls(mgop.setup, mgop.transport_spec, mgop.n_energy_groups, mgop.moment_strategy, mgop.discrete_strategy, mgop.mass_strategy, mgop.gather_scatter_operator_cls, mgop.transpose_bool)
+        return cls(mgop.operator_data, mgop.transport_spec, mgop.n_energy_groups, mgop.moment_strategy, mgop.discrete_strategy, mgop.mass_strategy, mgop.gather_scatter_operator_cls, mgop.transpose_bool)
 
     @classmethod
     def from_operators(cls, moment_operator : MomentOperator, discrete_operator : DiscreteOperator,
@@ -341,12 +345,12 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
                        n_energy_groups : int, transpose_bool : bool = False) -> "MultiGroupOperator":
         r'''
         Build a multi-group operator from already-constructed sub-operators. The canonical
-        :attr:`setup` bundles the transport operator's spatial data + sweep plan with the angular data
+        :attr:`operator_data` bundles the transport operator's spatial data + sweep plan with the angular data
         (``quadrature_set`` + the harmonics read off the moment/discrete operators); the strategies are
         extracted from the supplied operators. All the data the sub-operators previously duplicated is
-        therefore deduplicated into the single :attr:`setup`.
+        therefore deduplicated into the single :attr:`operator_data`.
         '''
-        setup = OperatorData(
+        operator_data = OperatorData(
             DiscretisationData(
                 transport_operator.spatial_data,
                 AngularData(quadrature_set, moment_operator.wk_yklm, discrete_operator.yklm),
@@ -354,7 +358,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
             NonDifferentiableData(transport_operator.sweep_data),
         )
         return cls(
-            setup,
+            operator_data,
             MultiAngleTransportSpec.from_transport_operator(transport_operator),
             n_energy_groups,
             moment_operator.strategy,
@@ -409,7 +413,7 @@ def _multi_group_operator_scan(n_energy_groups : int, moment_operator    : Momen
     
     '''
 
-    # We have exactly the same memory analysis as for the single group operator, (see _mv_single_group_operator).
+    # We have exactly the same memory analysis as for the single group operator, (see ComposedSingleGroupStrategy.mv_forward).
     # Two discrete single-group sized temporaries [n_angles, n_elements, n_basis] are required as in/out for transport operator. 
     in_structure_shape = (n_energy_groups,) + moment_operator.out_structure().shape
 

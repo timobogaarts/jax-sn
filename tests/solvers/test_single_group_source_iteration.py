@@ -14,7 +14,7 @@ _N_SOURCE_ITER = 300
 def test_single_group_source_iteration(bb_sgop):
     sgop, source_total, solution_domain, bb_args = bb_sgop
 
-    rhs = sgop.moment_operator.mv(sgop.transport_operator.inv(sgop.mass_operator.mv(source_total)))
+    rhs = sgop.source_operator().mv(source_total)
 
     @eqx.filter_jit
     def source_iterate(op, rhs):

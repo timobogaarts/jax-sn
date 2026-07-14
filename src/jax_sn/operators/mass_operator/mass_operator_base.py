@@ -4,7 +4,7 @@ from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 
 import lineax as lx
 import equinox as eqx
-from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
+from jax_sn.operators.base_linear_operator import SymmetricDataStrategyLinearOperator
 
 from typing import Tuple
 from jax_sn.solution_domain import SpatialData
@@ -12,10 +12,10 @@ from typing import Union
 
 from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle
 
-from .mass_operator_strategies import MassStrategy, VmapMass
+from .mass_operator_strategies import MassStrategy, VmapMass, MassData
 
 
-class MassOperator(AbstractLinearOperator_sn):
+class MassOperator(SymmetricDataStrategyLinearOperator):
     r'''
     Mass operator.
     Computes for a given vector :math:`\{ v_j \}` the mass matrix map:
@@ -77,106 +77,16 @@ class MassOperator(AbstractLinearOperator_sn):
     In essence, this just is a batched matrix product (and is implemented like that as well).
 
     '''
-
-    fem_matrices                : FEMMatrices
-    '''Finite element method matrices containing the mass matrix.'''
-
-    precomputed_geometric_data  : PrecomputedGeometricData
-    '''Precomputed geometric data containing the Jacobian determinants.'''
+    data                         : MassData
+    '''MassData containing FEM matrices and precomputed geometric data. [differentiable]'''
 
     additional_shape             : Tuple[int] = ()
     '''Additional leading shape to batch over. Used for consistent in/out structure definitions.'''
 
-    strategy                     : MassStrategy = eqx.field(default_factory=VmapMass)
+    strategy                     : MassStrategy
     '''How to apply the mass contraction. See :mod:`~jax_sn.operators.mass_operator.mass_operator_strategies`.'''
 
-    @classmethod
-    def from_solution_domain_data(
-        cls,
-        spatial_data : SpatialData,
-        additional_shape     : Tuple[int] = (),
-        strategy             : MassStrategy = VmapMass()
-    ) -> "MassOperator":
-        r'''
-        Construct a MassOperator from solution domain data.
-
-        Parameters
-        ----------
-        spatial_data : SpatialData
-            The solution domain data to use.
-        additional_shape : Tuple[int]
-            Additional leading shape to batch over.
-        strategy : MassStrategy
-            The contraction strategy to use (default :class:`~.mass_operator_strategies.VmapMass`).
-
-        Returns
-        -------
-        MassOperator
-            The constructed MassOperator.
-        '''
-        return cls(
-            spatial_data.fem_matrices,
-            spatial_data.precomputed_geometric_data,
-            additional_shape,
-            strategy
-        )
-
-    @classmethod
-    def from_transport_operator(cls, transport_operator : Union[TransportOperatorSingleAngle, TransportOperatorMultiAngle], strategy : MassStrategy = VmapMass()) -> "MassOperator":
-        r'''
-        Construct a MassOperator from a transport operator.
-
-        Parameters
-        ----------
-        transport_operator : Union[TransportOperatorSingleAngle, TransportOperatorMultiAngle]
-            The transport operator to use.
-        strategy : MassStrategy
-            The contraction strategy to use (default :class:`~.mass_operator_strategies.VmapMass`).
-        Returns
-        -------
-        MassOperator
-            The constructed MassOperator.
-        '''
-        in_structure = transport_operator.in_structure()
-        spatial_data = transport_operator.spatial_data
-
-        return cls(spatial_data.fem_matrices,
-                   spatial_data.precomputed_geometric_data,
-                   in_structure.shape[:-2],
-                   strategy)
-
-
-    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        '''
-        Apply the mass operator to the input vector x.
-
-        Parameters
-        ----------
-        x : jnp.ndarray
-            Input array of shape [..., n_elements, n_basis]
-
-        Returns
-        -------
-        jnp.ndarray
-            Output array of shape [..., n_elements, n_basis]
-        '''
-        return self.strategy.forward(self, x)
-
-
-    def transpose(self) -> "MassOperator":
-        '''Returns the transpose operator, which is itself since the mass matrix is symmetric.'''
-        return self  # Mass matrix is symmetric
-
-    def in_structure(self):
-        '''Input structure. Shape [..., n_elements, n_basis] where ... is the same as :attr:`additional_shape`.'''
-        return self._shape_inout
-
-    def out_structure(self):
-        '''Output structure. Shape [..., n_elements, n_basis] where ... is the same as :attr:`additional_shape`.'''
-        return self._shape_inout
-
-    @property
-    def _shape_inout(self):
+    def _structure(self):
         n_elements = self.precomputed_geometric_data.n_elements
         n_basis = self.fem_matrices.n_basis
         return jax.ShapeDtypeStruct(self.additional_shape + (n_elements, n_basis), self.fem_matrices.mass_matrix.dtype)
@@ -185,7 +95,3 @@ class MassOperator(AbstractLinearOperator_sn):
 @lx.is_symmetric.register(MassOperator)
 def _(operator : MassOperator):
     return True
-
-@lx.linearise.register(MassOperator)
-def _(operator : MassOperator):
-    return operator

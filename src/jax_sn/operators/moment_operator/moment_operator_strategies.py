@@ -18,29 +18,33 @@ modules depend only on the (array-free) strategy classes.
 import jax
 import jax.numpy as jnp
 from abc import abstractmethod
-from typing import TYPE_CHECKING
+from typing import NamedTuple
 
 import equinox as eqx
 
-if TYPE_CHECKING:
-    from .moment_operator_imp import MomentOperator
-    from .discrete_operator_imp import DiscreteOperator
+from jax_sn.operators.base_linear_operator import Strategy
+
+
+class MomentData(NamedTuple):
+    wk_yklm: jnp.ndarray
+
+
+class DiscreteData(NamedTuple):
+    yklm: jnp.ndarray
 
 
 # ---------------------------------------------------------------------------
 # Moment strategies (angles <-> moments, weighted harmonics ``wk_yklm``)
 # ---------------------------------------------------------------------------
-class MomentStrategy(eqx.Module):
-    '''How to apply the moment contraction. Reads ``operator.wk_yklm``.'''
+class MomentStrategy(Strategy):
+    '''How to apply the moment contraction. Reads ``data.wk_yklm``.'''
 
     @abstractmethod
-    def forward(self, operator: "MomentOperator", x):
-        '''Forward action: discrete angles -> moments.'''
+    def forward(self, data: MomentData, x):
         ...
 
     @abstractmethod
-    def transpose(self, operator: "MomentOperator", x):
-        '''Transposed action: moments -> discrete angles.'''
+    def transpose(self, data: MomentData, x):
         ...
 
 
@@ -51,11 +55,11 @@ class BatchedMoment(MomentStrategy):
     wants the angles leading and the trailing ``(n_elements, n_basis)`` contiguous.
     '''
 
-    def forward(self, operator: "MomentOperator", x):
-        return _call_batched_moment_operator(x, operator.wk_yklm)
+    def forward(self, data: MomentData, x):
+        return _call_batched_moment_operator(x, data.wk_yklm)
 
-    def transpose(self, operator: "MomentOperator", x):
-        return _call_batched_moment_operator_transposed(x, operator.wk_yklm)
+    def transpose(self, data: MomentData, x):
+        return _call_batched_moment_operator_transposed(x, data.wk_yklm)
 
 
 class StreamingMoment(MomentStrategy):
@@ -64,38 +68,36 @@ class StreamingMoment(MomentStrategy):
     time, trading compute for a smaller peak memory footprint than the batched einsum.
     '''
 
-    def forward(self, operator: "MomentOperator", x):
-        return _call_streaming_moment_operator(x, operator.wk_yklm)
+    def forward(self, data: MomentData, x):
+        return _call_streaming_moment_operator(x, data.wk_yklm)
 
-    def transpose(self, operator: "MomentOperator", x):
-        return _call_streaming_moment_operator_transposed(x, operator.wk_yklm)
+    def transpose(self, data: MomentData, x):
+        return _call_streaming_moment_operator_transposed(x, data.wk_yklm)
 
 
 # ---------------------------------------------------------------------------
 # Discrete strategies (moments <-> angles, unweighted harmonics ``yklm``)
 # ---------------------------------------------------------------------------
-class DiscreteStrategy(eqx.Module):
-    '''How to apply the discrete (moment-to-angle) contraction. Reads ``operator.yklm``.'''
+class DiscreteStrategy(Strategy):
+    '''How to apply the discrete (moment-to-angle) contraction. Reads ``data.yklm``.'''
 
     @abstractmethod
-    def forward(self, operator: "DiscreteOperator", x):
-        '''Forward action: moments -> discrete angles.'''
+    def forward(self, data: DiscreteData, x):
         ...
 
     @abstractmethod
-    def transpose(self, operator: "DiscreteOperator", x):
-        '''Transposed action: discrete angles -> moments.'''
+    def transpose(self, data: DiscreteData, x):
         ...
 
 
 class BatchedDiscrete(DiscreteStrategy):
     '''Batched-matrix (einsum) implementation of the discrete operator.'''
 
-    def forward(self, operator: "DiscreteOperator", x):
-        return _moment_to_discrete_mv(operator.yklm, x)
+    def forward(self, data: DiscreteData, x):
+        return _moment_to_discrete_mv(data.yklm, x)
 
-    def transpose(self, operator: "DiscreteOperator", x):
-        return _moment_to_discrete_transpose_mv(operator.yklm, x)
+    def transpose(self, data: DiscreteData, x):
+        return _moment_to_discrete_transpose_mv(data.yklm, x)
 
 
 # ---------------------------------------------------------------------------

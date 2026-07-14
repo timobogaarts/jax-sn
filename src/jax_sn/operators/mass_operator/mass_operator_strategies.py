@@ -16,27 +16,28 @@ dispatch to them, so the operator module depends only on the (array-free) strate
 import jax
 import jax.numpy as jnp
 from abc import abstractmethod
-from typing import TYPE_CHECKING
+from typing import NamedTuple
 
 import equinox as eqx
 
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
+from jax_sn.operators.base_linear_operator import SymmetricStrategy
 
-if TYPE_CHECKING:
-    from .mass_operator_base import MassOperator
+
+class MassData(NamedTuple):
+    fem_matrices               : FEMMatrices
+    precomputed_geometric_data : PrecomputedGeometricData
 
 
 # ---------------------------------------------------------------------------
 # Mass strategies
 # ---------------------------------------------------------------------------
-class MassStrategy(eqx.Module):
-    '''How to apply the mass operator. Reads ``operator.fem_matrices`` and ``operator.precomputed_geometric_data``.'''
+class MassStrategy(SymmetricStrategy):
+    '''How to apply the mass operator. Symmetric, so ``transpose`` == ``forward``.'''
 
     @abstractmethod
-    def forward(self, operator: "MassOperator", x):
-        '''Apply the (symmetric) mass operator. Forward and transpose coincide.'''
+    def forward(self, data: MassData, x):
         ...
-
 
 class VmapMass(MassStrategy):
     r'''
@@ -46,10 +47,10 @@ class VmapMass(MassStrategy):
     temporaries).
     '''
 
-    def forward(self, operator: "MassOperator", x):
+    def forward(self, data: MassData, x):
         return _total_mass_kernel_idx_in_precomp(
-            operator.fem_matrices,
-            operator.precomputed_geometric_data,
+            data.fem_matrices,
+            data.precomputed_geometric_data,
             x,
         )
 
@@ -61,10 +62,10 @@ class LaxMass(MassStrategy):
     :class:`VmapMass`.
     '''
 
-    def forward(self, operator: "MassOperator", x):
+    def forward(self, data: MassData, x):
         return total_mass_kernel_lax(
-            operator.fem_matrices,
-            operator.precomputed_geometric_data,
+            data.fem_matrices,
+            data.precomputed_geometric_data,
             x,
         )
 

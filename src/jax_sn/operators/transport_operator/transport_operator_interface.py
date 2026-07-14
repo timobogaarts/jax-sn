@@ -61,7 +61,7 @@ class TransportOperatorSingleAngle(AbstractLinearOperator_sn):
     Base class for transport operators.
     Since the implementation of the transport operator can vary (e.g., vmap-based, batched, Pallas, etc.), this is an abstract base class that defines the interface for transport operators.
 
-    This operator can be constructed on its own or through a :class:`MultiAngleTransportSpec` and a :class:`OperatorData`. The spec defines the strategies and energy group, while the setup provides the data.
+    This operator can be constructed on its own or through a :class:`MultiAngleTransportSpec` and a :class:`OperatorData`. The spec defines the strategies, the ``operator_data`` provides the data, and the energy group is passed to :meth:`MultiAngleTransportSpec.build`.
 
     Mathematical description
     ---------------------------
