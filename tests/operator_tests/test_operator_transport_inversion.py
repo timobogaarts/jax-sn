@@ -1,25 +1,23 @@
 import pytest
 import numpy as onp
-import jax.numpy as jnp
+import equinox as eqx
 
-from jax_sn.operators.transport_operator import VmapSweep, BatchedSweep, VmapPallasSweep, BatchedPallasSweep
-from jax_sn.operators.transport_operator.implementations.transport_operator_warp import WarpSequentialSweep, WarpLevelSweep
-from jax_sn.operators.multi_group_operator.multi_group_operator_creation import create_multi_group_operator
+from jax_sn.operators.transport_operator import (
+    VmapSweep, BatchedSweep, VmapPallasSweep, BatchedPallasSweep, VmapAngles, ScanAngles,
+)
+from jax_sn.operators.transport_operator.implementations.transport_operator_warp import (
+    WarpSequentialSweep, WarpLevelSweep, WarpSequentialAngles, WarpLevelAngles,
+)
+from tests.conftest import bb_mgop
 
 from .operator_util import (
-    BaseOperatorProperties, Spec, parametrize_strategies, linear_tet_only, _rand,
+    BaseOperatorProperties, Spec, parametrize_strategies, parametrize_instances,
+    linear_tet_only, _rand,
 )
 
 _ANGLE_I = 0   # single-angle inversion tests pick this angle from the multi-angle operator
 
-_DEFAULT_INVERSION = VmapSweep   # pure-JAX reference (pivot) every variant is compared against
 
-# Unlike the mass/moment/forward axes, an inversion strategy also fixes the *sweep-data toposort* it needs
-# (WarpLevelSweep -> LeveledSweepData, everything else -> BasicSweepData) and the multi-angle *angle
-# inversion* (fused native warp lifts vs VmapAngles). create_multi_group_operator resolves both from the strategy, so the
-# variant is built through the factory rather than a bare tree_at swap. The warp kernels are the 3-D
-# linear tetrahedron only (linear_tet_only). The level-*padded* sweep (a build-parameter, orthogonal to
-# the strategy axis) stays in test_warp_linear_tetrahedron.py.
 INVERSION_STRATEGIES = {
     VmapSweep:          Spec(),
     BatchedSweep:       Spec(kwargs=dict(batch_size=64)),
@@ -29,49 +27,40 @@ INVERSION_STRATEGIES = {
     WarpLevelSweep:      Spec(supports=linear_tet_only),
 }
 
+MULTI_ANGLE_STRATEGIES = {
+    VmapAngles(VmapSweep()):          Spec(),   
+    ScanAngles(VmapSweep()):          Spec(),   
+    VmapAngles(BatchedSweep(64)):     Spec(),   
+    WarpSequentialAngles():           Spec(supports=linear_tet_only),  
+    WarpLevelAngles():                Spec(supports=linear_tet_only),  
+}
 
-# ---------------------------------------------------------------------------
-# Per-(dim, degree, strategy) mgop build, cached: the six property methods per parametrised variant would
-# otherwise each rebuild the (expensive) sweep-data toposort. Keyed by a string label so heterogeneous
-# strategy kwargs stay hashable. The pivot (all-defaults) mgop is cached the same way.
-# ---------------------------------------------------------------------------
-_MGOP_CACHE = {}
-
-
-def _sd_qs(bb_mgop):
-    return bb_mgop[2], bb_mgop[0].quadrature_set   # (solution_domain, quadrature_set)
-
+_SWEEP_DATA_CACHE = {}
 
 def _dim_degree(bb_mgop):
     return bb_mgop[3][0], bb_mgop[3][1]
 
 
-def _variant_mgop(bb_mgop, strategy_cls, kwargs):
-    dim, degree = _dim_degree(bb_mgop)
-    key = (dim, degree, f"{strategy_cls.__name__}-{sorted(kwargs.items())}")
-    if key not in _MGOP_CACHE:
-        sd, qs = _sd_qs(bb_mgop)
-        _MGOP_CACHE[key] = create_multi_group_operator(sd, qs, inversion_strategy=strategy_cls(**kwargs))
-    return _MGOP_CACHE[key]
+def _angle_sample(n_angles):    
+    return sorted({0, n_angles // 3, (2 * n_angles) // 3, n_angles - 1})
 
 
-def _pivot_mgop(bb_mgop):
+def _sweep_data(bb_mgop, sweep_data_type):
     dim, degree = _dim_degree(bb_mgop)
-    key = (dim, degree, "__pivot__")
-    if key not in _MGOP_CACHE:
-        sd, qs = _sd_qs(bb_mgop)
-        _MGOP_CACHE[key] = create_multi_group_operator(sd, qs, inversion_strategy=_DEFAULT_INVERSION())
-    return _MGOP_CACHE[key]
+    key = (dim, degree, sweep_data_type.__name__)
+    if key not in _SWEEP_DATA_CACHE:
+        base_sd = bb_mgop[0].transport_operator.sweep_data
+        if isinstance(base_sd, sweep_data_type):
+            _SWEEP_DATA_CACHE[key] = base_sd
+        else:
+            solution_domain, quadrature_set = bb_mgop[2], bb_mgop[0].quadrature_set
+            _SWEEP_DATA_CACHE[key] = sweep_data_type.from_domain_quadrature_set(solution_domain.domain, quadrature_set)
+    return _SWEEP_DATA_CACHE[key]
+
+
 
 
 class _TransportInversionBase(BaseOperatorProperties):
-    '''Shared config for the transport inversion axis: the battery runs against ``op.inv`` (via the
-    ``apply`` override) and tolerances are relaxed to the iterative sweep's accuracy. The VJP / JVP are
-    taken w.r.t. the whole operator like every other axis: a WarpLevelSweep variant carries a differently
-    typed ``sweep_data`` than the BasicSweepData pivot, but every ``sweep_data`` field is an integer index
-    array, so ``_inexact_leaves`` drops them and op and reference line up regardless (the forward-JVP
-    likewise perturbs only the shared inexact leaves, exercising forward-mode through the sweep kernel).'''
-
     rtol_exact, atol_exact = 1e-9, 1e-9
     rtol, atol = 1e-9, 1e-9
     rtol_grad, atol_grad = 1e-7, 1e-7
@@ -85,12 +74,14 @@ class TestTransportInversionSingleAngle(_TransportInversionBase):
 
     @pytest.fixture
     def operator(self, bb_mgop, strategy_cls, kwargs):
-        '''The single-angle inverse sweep with this strategy on the shared BB problem.'''
-        return _variant_mgop(bb_mgop, strategy_cls, kwargs).transport_operator[_ANGLE_I]
+        strategy = strategy_cls(**kwargs)
+        top = bb_mgop[0].transport_operator[_ANGLE_I]
+        sweep_data = _sweep_data(bb_mgop, strategy.default_sweep_data_type())[_ANGLE_I]
+        return eqx.tree_at(lambda t: (t.sweep_data, t.inversion_strategy), top, (sweep_data, strategy))
 
     @pytest.fixture
     def build_reference(self, bb_mgop):
-        return lambda: _pivot_mgop(bb_mgop).transport_operator[_ANGLE_I]
+        return lambda: bb_mgop[0].transport_operator[_ANGLE_I]
 
     def test_forward_backward_identity(self, operator):
         '''T^-1(T x) == x and its transpose -- a self-contained round-trip property of the inverse.'''
@@ -99,18 +90,25 @@ class TestTransportInversionSingleAngle(_TransportInversionBase):
         onp.testing.assert_allclose(operator.transpose().inv(operator.transpose().mv(x)), x, rtol=self.rtol, atol=self.atol)
 
 
-@parametrize_strategies(INVERSION_STRATEGIES)
-class TestTransportInversionMultiAngle(_TransportInversionBase):
-    '''The multi-angle inverse: each inversion uses its own auto-resolved angle inversion (a fused native
-    warp lift for the warp kernels, VmapAngles otherwise), so the consistency check is exactly the
-    fused-vs-stacked batching-correctness test.'''
+@parametrize_instances(MULTI_ANGLE_STRATEGIES)
+class TestTransportInversionMultiAngle(_TransportInversionBase):    
 
     @pytest.fixture
-    def operator(self, bb_mgop, strategy_cls, kwargs):
-        return _variant_mgop(bb_mgop, strategy_cls, kwargs).transport_operator
+    def operator(self, bb_mgop, strategy):
+        top = bb_mgop[0].transport_operator
+        sweep_data = _sweep_data(bb_mgop, strategy.default_sweep_data_type())
+        return eqx.tree_at(lambda t: (t.sweep_data, t.multi_angle_inversion_strategy), top, (sweep_data, strategy))
 
     @pytest.fixture
     def build_reference(self, bb_mgop):
-        return lambda: _pivot_mgop(bb_mgop).transport_operator
+        return lambda: bb_mgop[0].transport_operator
+
+    def test_indexing_consistency(self, operator):        
+        x = _rand(operator.in_structure().shape, 10)
+        b = _rand(operator.in_structure().shape, 11)
+        mv_all, inv_all = operator.mv(x), operator.inv(b)
+        for i in _angle_sample(operator.in_structure().shape[0]):
+            onp.testing.assert_allclose(operator[i].mv(x[i]),  mv_all[i],  rtol=self.rtol, atol=self.atol)
+            onp.testing.assert_allclose(operator[i].inv(b[i]), inv_all[i], rtol=self.rtol, atol=self.atol)
 
 

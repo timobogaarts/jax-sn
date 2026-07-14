@@ -68,6 +68,39 @@ def parametrize_strategies(strategies: Dict[Type, Spec], dim_degrees=DIM_DEGREES
     )
 
 
+def instance_label(instance) -> str:
+    '''Readable, collision-free test id for a strategy *instance*: ``VmapAngles(VmapSweep())`` ->
+    ``VmapAngles-VmapSweep``, a native ``WarpSequentialAngles()`` -> ``WarpSequentialAngles``. Composed
+    strategies carry the wrapped kernel in ``.inner``; native ones have no inner so the class name alone
+    is unambiguous.'''
+    name = type(instance).__name__
+    inner = getattr(instance, "inner", None)
+    return f"{name}-{type(inner).__name__}" if inner is not None else name
+
+
+def valid_instance_combos(strategies: Dict[object, Spec], dim_degrees=DIM_DEGREES):
+    '''((dim, degree), instance) over supported combos. Like :func:`valid_combos` but keyed on pre-built
+    strategy *instances* -- for a strategy axis whose variants are configured objects (e.g. the multi-angle
+    inversion, where a variant is a lift wrapping an inner kernel) rather than a class + ctor kwargs.'''
+    return [
+        pytest.param((dim, degree), inst, id=f"dim{dim}-deg{degree}-{instance_label(inst)}", marks=spec.marks)
+        for (dim, degree) in dim_degrees
+        for inst, spec in strategies.items()
+        if spec.supports(dim, degree)
+    ]
+
+
+def parametrize_instances(strategies: Dict[object, Spec], dim_degrees=DIM_DEGREES):
+    '''Class/function decorator parametrising over strategy *instances* x (dim, degree) (see
+    :func:`valid_instance_combos`). The test receives the instance as the ``strategy`` fixture arg.'''
+
+    return pytest.mark.parametrize(
+        "bb_mgop_dim_degree, strategy",
+        valid_instance_combos(strategies, dim_degrees),
+        indirect=["bb_mgop_dim_degree"],
+    )
+
+
 def _rand(shape, seed):
     '''Random array of the given shape, seeded for reproducibility.'''
     return jnp.array(onp.random.default_rng(seed).random(shape))
