@@ -29,7 +29,9 @@ dependencies = [
     "fenics-basix>=0.7.0",
     "equinox",
     "lineax",
-    "warp-lang"
+    "warp-lang",
+    # typing_extensions.Self: typing.Self is 3.11+, requires-python is >=3.9.
+    "typing_extensions"
 ]
 
 [project.optional-dependencies]

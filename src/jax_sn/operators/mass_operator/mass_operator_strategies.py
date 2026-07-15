@@ -16,28 +16,11 @@ dispatch to them, so the operator module depends only on the (array-free) strate
 import jax
 import jax.numpy as jnp
 from abc import abstractmethod
-from typing import NamedTuple
 
 import equinox as eqx
 
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
-from jax_sn.operators.base_linear_operator import SymmetricStrategy
-
-
-class MassData(NamedTuple):
-    fem_matrices               : FEMMatrices
-    precomputed_geometric_data : PrecomputedGeometricData
-
-
-# ---------------------------------------------------------------------------
-# Mass strategies
-# ---------------------------------------------------------------------------
-class MassStrategy(SymmetricStrategy):
-    '''How to apply the mass operator. Symmetric, so ``transpose`` == ``forward``.'''
-
-    @abstractmethod
-    def forward(self, data: MassData, x):
-        ...
+from .mass_operator_base import MassData, MassStrategy
 
 class VmapMass(MassStrategy):
     r'''

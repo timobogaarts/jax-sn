@@ -56,7 +56,7 @@ N_ENERGY_GROUPS = 4  # fixed by _create_problem.bb_data_dict; not swept by any -
 # (bench_machinery.py only ever passes inversion_strategy) -- the label each shows up under in its
 # own standalone bench.
 DEFAULT_STRATEGY_LABEL = dict(
-    mass="VmapMass", discrete="BatchedDiscrete", moment="BatchedMoment",
+    mass="VmapMass", discrete="BatchedFluxMoment", moment="BatchedFluxMoment",
     scatter="GatherScatterOperatorBroadcasted",
 )
 

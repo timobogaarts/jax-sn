@@ -58,7 +58,7 @@ def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim,
     from jax_sn.operators.scatter_operator import ScatterOperator
     from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle, VmapForward, VmapSweep, VmapAngles
     from jax_sn.operators.mass_operator import MassOperator
-    from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
+    from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator, MomentData, DiscreteData, BatchedFluxMoment
     from jax_sn.operators.transport_operator import BasicSweepData
     from jax_sn.operators.single_group_operator import SingleGroupOperator    
             
@@ -67,10 +67,10 @@ def _setup_anisotropic_scattering_args(dim, degree, n_elem_regions, d_other_dim,
     sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
     transport_operator        = TransportOperatorMultiAngle(TransportOperatorSingleAngle(solution_domain.spatial_data, sweep_data, 0, VmapForward(), VmapSweep()), VmapAngles())
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
-    moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
+    moment_operator           = MomentOperator(MomentData.from_quadrature_set(quadrature_set, 1), solution_domain.elements_basis_shape, BatchedFluxMoment())
     scatter_op                = ScatterOperator(solution_domain.domain.cross_sections_indexed, moment_operator.out_structure(), energy_group_in=0, energy_group_out=0)
     source_total              = jnp.broadcast_to(sources[0][None, :, :], (quadrature_set.angles.shape[0],) + sources[0].shape) # source for all angles
-    discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = 1, elements_basis_shape=solution_domain.elements_basis_shape)
+    discrete_operator         = DiscreteOperator(DiscreteData.from_quadrature_set(quadrature_set, 1), solution_domain.elements_basis_shape, BatchedFluxMoment())
     Aop = SingleGroupOperator.from_operators(moment_operator, transport_operator, mass_operator, discrete_operator, quadrature_set)
     return Aop, source_total, solution_domain
 

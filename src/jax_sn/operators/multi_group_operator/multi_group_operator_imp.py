@@ -4,11 +4,11 @@ from typing import Type
 from jax_sn.domain.cross_sections import CrossSectionData
 from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
 from jax_sn.operators.single_group_operator import SingleGroupOperator, ComposedSingleGroupStrategy
-from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator, MomentStrategy, DiscreteStrategy, BatchedMoment, BatchedDiscrete
+from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator, FluxMomentStrategy, BatchedFluxMoment, MomentData, DiscreteData
 from jax_sn.operators.transport_operator import TransportOperatorMultiAngle, MultiAngleTransportSpec
 from jax_sn.operators.operator_data import OperatorData, AngularData, DiscretisationData, NonDifferentiableData
-from jax_sn.operators.mass_operator import MassOperator, MassStrategy, VmapMass
-from jax_sn.operators.scatter_operator import GatherScatterOperator, GatherScatterOperatorBroadcasted
+from jax_sn.operators.mass_operator import MassOperator, MassData, MassStrategy, VmapMass
+from jax_sn.operators.scatter_operator import GatherScatterOperator, GatherScatterOperatorBroadcasted, ScatterStrategy, IndexedScatter
 from jax_sn.quadrature_set import QuadratureSetBase
 import lineax as lx
 import equinox as eqx
@@ -156,14 +156,17 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     n_energy_groups           : int
     '''Number of energy groups.'''
 
-    moment_strategy           : MomentStrategy = eqx.field(default_factory=BatchedMoment)
+    moment_strategy           : FluxMomentStrategy = eqx.field(default_factory=BatchedFluxMoment)
     '''Contraction strategy for the derived :attr:`moment_operator`.'''
 
-    discrete_strategy         : DiscreteStrategy = eqx.field(default_factory=BatchedDiscrete)
+    discrete_strategy         : FluxMomentStrategy = eqx.field(default_factory=BatchedFluxMoment)
     '''Contraction strategy for the derived :attr:`discrete_operator`.'''
 
     mass_strategy             : MassStrategy = eqx.field(default_factory=VmapMass)
     '''Contraction strategy for the derived :attr:`mass_operator`.'''
+
+    scatter_strategy          : ScatterStrategy = eqx.field(default_factory=IndexedScatter)
+    '''Contraction strategy for the derived within-group scatter operator.'''
 
     gather_scatter_operator_cls : Type[GatherScatterOperator] = eqx.field(static=True, default=GatherScatterOperatorBroadcasted)
     '''Implementation class for the derived :attr:`gather_scatter_operator` (built on :attr:`operator_data`'s cross sections).'''
@@ -180,17 +183,19 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     @property
     def moment_operator(self) -> MomentOperator:
         '''The moment operator, derived from :attr:`operator_data`'s angular harmonics.'''
-        return MomentOperator(self.operator_data.angular_data.wk_ylm, self.operator_data.elements_basis_shape, self.moment_strategy)
+        return MomentOperator(MomentData(self.operator_data.angular_data.wk_ylm), self.operator_data.elements_basis_shape, self.moment_strategy)
 
     @property
     def discrete_operator(self) -> DiscreteOperator:
         '''The discrete (moment-to-discrete) operator, derived from :attr:`operator_data`'s angular harmonics.'''
-        return DiscreteOperator(self.operator_data.angular_data.ylm, self.operator_data.elements_basis_shape, self.discrete_strategy)
+        return DiscreteOperator(DiscreteData(self.operator_data.angular_data.ylm), self.operator_data.elements_basis_shape, self.discrete_strategy)
 
     @property
     def mass_operator(self) -> MassOperator:
         '''The mass operator, derived from :attr:`operator_data` (shares its geometric data + FEM matrices).'''
-        return MassOperator.from_transport_operator(self.transport_operator, self.mass_strategy)
+        spatial_data = self.operator_data.spatial_data
+        return MassOperator(MassData(spatial_data.fem_matrices, spatial_data.precomputed_geometric_data),
+                            (self.operator_data.n_angles,), self.mass_strategy)
 
     @property
     def gather_scatter_operator(self) -> GatherScatterOperator:
@@ -205,8 +210,8 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
     def __check_init__(self):
         assert isinstance(self.operator_data, OperatorData), f"operator_data must be OperatorData, but got {type(self.operator_data)}."
         assert isinstance(self.transport_spec, MultiAngleTransportSpec), f"transport_spec must be MultiAngleTransportSpec, but got {type(self.transport_spec)}."
-        assert isinstance(self.moment_strategy, MomentStrategy), f"moment_strategy must be MomentStrategy, but got {type(self.moment_strategy)}."
-        assert isinstance(self.discrete_strategy, DiscreteStrategy), f"discrete_strategy must be DiscreteStrategy, but got {type(self.discrete_strategy)}."
+        assert isinstance(self.moment_strategy, FluxMomentStrategy), f"moment_strategy must be FluxMomentStrategy, but got {type(self.moment_strategy)}."
+        assert isinstance(self.discrete_strategy, FluxMomentStrategy), f"discrete_strategy must be FluxMomentStrategy, but got {type(self.discrete_strategy)}."
         assert isinstance(self.mass_strategy, MassStrategy), f"mass_strategy must be MassStrategy, but got {type(self.mass_strategy)}."
         assert self.n_energy_groups > 0, f"n_energy_groups must be positive, but got {self.n_energy_groups}."
         self.operator_data.spatial_data.domain.cross_sections_indexed.cross_section_data.assert_n_energy_groups(self.n_energy_groups)
@@ -264,6 +269,7 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
             moment_strategy=self.moment_strategy,
             discrete_strategy=self.discrete_strategy,
             mass_strategy=self.mass_strategy,
+            scatter_strategy=self.scatter_strategy,
         )
         return SingleGroupOperator(self.operator_data, g_i, strategy, self.transpose_bool)
         
@@ -336,7 +342,10 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
 
     @classmethod
     def from_multigroup_operator(cls, mgop : "MultiGroupOperator"):
-        return cls(mgop.operator_data, mgop.transport_spec, mgop.n_energy_groups, mgop.moment_strategy, mgop.discrete_strategy, mgop.mass_strategy, mgop.gather_scatter_operator_cls, mgop.transpose_bool)
+        return cls(mgop.operator_data, mgop.transport_spec, mgop.n_energy_groups,
+                   moment_strategy=mgop.moment_strategy, discrete_strategy=mgop.discrete_strategy,
+                   mass_strategy=mgop.mass_strategy, scatter_strategy=mgop.scatter_strategy,
+                   gather_scatter_operator_cls=mgop.gather_scatter_operator_cls, transpose_bool=mgop.transpose_bool)
 
     @classmethod
     def from_operators(cls, moment_operator : MomentOperator, discrete_operator : DiscreteOperator,
@@ -352,20 +361,20 @@ class MultiGroupOperator(AbstractLinearOperator_sn):
         '''
         operator_data = OperatorData(
             DiscretisationData(
-                transport_operator.spatial_data,
-                AngularData(quadrature_set, moment_operator.wk_yklm, discrete_operator.yklm),
+                transport_operator.data.spatial_data,
+                AngularData(quadrature_set, moment_operator.data.wk_yklm, discrete_operator.data.yklm),
             ),
-            NonDifferentiableData(transport_operator.sweep_data),
+            NonDifferentiableData(transport_operator.data.sweep_data),
         )
         return cls(
             operator_data,
             MultiAngleTransportSpec.from_transport_operator(transport_operator),
             n_energy_groups,
-            moment_operator.strategy,
-            discrete_operator.strategy,
-            mass_operator.strategy,
-            type(gather_scatter_operator),
-            transpose_bool,
+            moment_strategy=moment_operator.strategy,
+            discrete_strategy=discrete_operator.strategy,
+            mass_strategy=mass_operator.strategy,
+            gather_scatter_operator_cls=type(gather_scatter_operator),
+            transpose_bool=transpose_bool,
         )
     
 

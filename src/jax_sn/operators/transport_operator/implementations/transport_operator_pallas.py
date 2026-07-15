@@ -427,14 +427,14 @@ def transport_inverse_sweep_multiple_angles_batched_pallas(geometric_domain    :
 # Pallas strategies + convenience constructors
 # ---------------------------------------------------------------------------
 from ..transport_operator_strategies import SingleAngleInversionStrategy
-from ..transport_data import InversionData
+from ..transport_data import TransportData
 
 
 class VmapPallasSweep(SingleAngleInversionStrategy):
     '''Inverse sweep with all per-element matrices via vmap, using Pallas for the matrix ops.'''
 
-    def invert(self, data: InversionData, b):
-        return transport_inverse_sweep_complete_vmap_pallas(*data, b)
+    def invert(self, data: TransportData, b):
+        return transport_inverse_sweep_complete_vmap_pallas(*data.inversion_args, b)
 
     @classmethod
     def vmappable(cls):
@@ -446,8 +446,8 @@ class BatchedPallasSweep(SingleAngleInversionStrategy):
 
     batch_size: int = None
 
-    def invert(self, data: InversionData, b):
-        return transport_inverse_sweep_batched_pallas(*data, b, self.batch_size)
+    def invert(self, data: TransportData, b):
+        return transport_inverse_sweep_batched_pallas(*data.inversion_args, b, self.batch_size)
 
     @classmethod
     def vmappable(cls):

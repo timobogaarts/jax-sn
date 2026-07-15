@@ -1,15 +1,15 @@
 import pytest
 import equinox as eqx
 
-from jax_sn.operators.moment_operator import BatchedMoment, StreamingMoment, BatchedDiscrete
+from jax_sn.operators.moment_operator import BatchedFluxMoment, StreamingFluxMoment
 
 from .operator_util import BaseOperatorProperties, Spec, parametrize_strategies
 
-_DEFAULT_MOMENT = BatchedMoment   # pure-JAX reference (pivot) every variant is compared against
+_DEFAULT_MOMENT = BatchedFluxMoment   # pure-JAX reference (pivot) every variant is compared against
 
-MOMENT_STRATEGIES = {BatchedMoment: Spec(), 
-                     StreamingMoment: Spec()
-                    }  
+MOMENT_STRATEGIES = {BatchedFluxMoment: Spec(),
+                     StreamingFluxMoment: Spec()
+                    }
 
 @parametrize_strategies(MOMENT_STRATEGIES)
 class TestMomentOperator(BaseOperatorProperties):
@@ -24,9 +24,12 @@ class TestMomentOperator(BaseOperatorProperties):
         return lambda: eqx.tree_at(lambda op: op.strategy, bb_mgop[0].moment_operator, _DEFAULT_MOMENT())
 
 
-_DEFAULT_DISCRETE = BatchedDiscrete   # pure-JAX reference (pivot) every variant is compared against
+_DEFAULT_DISCRETE = BatchedFluxMoment   # pure-JAX reference (pivot) every variant is compared against
 
-DISCRETE_STRATEGIES = {BatchedDiscrete: Spec()} # only one variant in this case!
+# Same strategies as the moment operator: the direction lives in the data, not the strategy.
+DISCRETE_STRATEGIES = {BatchedFluxMoment: Spec(),
+                       StreamingFluxMoment: Spec()
+                      }
 
 @parametrize_strategies(DISCRETE_STRATEGIES)
 class TestDiscreteOperator(BaseOperatorProperties):

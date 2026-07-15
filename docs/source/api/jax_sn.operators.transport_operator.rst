@@ -22,5 +22,6 @@ Submodules
 
    jax_sn.operators.transport_operator.multi_angle_transport_spec
    jax_sn.operators.transport_operator.sweep_data_implementations
-   jax_sn.operators.transport_operator.transport_operator_interface
+   jax_sn.operators.transport_operator.transport_data
+   jax_sn.operators.transport_operator.transport_operator_base
    jax_sn.operators.transport_operator.transport_operator_strategies

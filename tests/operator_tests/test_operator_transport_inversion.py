@@ -49,7 +49,7 @@ def _sweep_data(bb_mgop, sweep_data_type):
     dim, degree = _dim_degree(bb_mgop)
     key = (dim, degree, sweep_data_type.__name__)
     if key not in _SWEEP_DATA_CACHE:
-        base_sd = bb_mgop[0].transport_operator.sweep_data
+        base_sd = bb_mgop[0].transport_operator.data.sweep_data
         if isinstance(base_sd, sweep_data_type):
             _SWEEP_DATA_CACHE[key] = base_sd
         else:
@@ -77,7 +77,7 @@ class TestTransportInversionSingleAngle(_TransportInversionBase):
         strategy = strategy_cls(**kwargs)
         top = bb_mgop[0].transport_operator[_ANGLE_I]
         sweep_data = _sweep_data(bb_mgop, strategy.default_sweep_data_type())[_ANGLE_I]
-        return eqx.tree_at(lambda t: (t.sweep_data, t.inversion_strategy), top, (sweep_data, strategy))
+        return eqx.tree_at(lambda t: (t.data.sweep_data, t.inversion_strategy), top, (sweep_data, strategy))
 
     @pytest.fixture
     def build_reference(self, bb_mgop):
@@ -97,7 +97,7 @@ class TestTransportInversionMultiAngle(_TransportInversionBase):
     def operator(self, bb_mgop, strategy):
         top = bb_mgop[0].transport_operator
         sweep_data = _sweep_data(bb_mgop, strategy.default_sweep_data_type())
-        return eqx.tree_at(lambda t: (t.sweep_data, t.multi_angle_inversion_strategy), top, (sweep_data, strategy))
+        return eqx.tree_at(lambda t: (t.data.sweep_data, t.inversion_strategy), top, (sweep_data, strategy))
 
     @pytest.fixture
     def build_reference(self, bb_mgop):

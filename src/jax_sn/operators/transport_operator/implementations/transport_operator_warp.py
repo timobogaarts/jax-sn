@@ -6,7 +6,7 @@ from ..sweep_data_implementations import BasicSweepData, LeveledSweepData, Provi
 from jax_sn.solution_domain import SpatialData
 
 from ..transport_operator_strategies import SingleAngleInversionStrategy, MultiAngleInversionStrategy
-from ..transport_data import InversionData
+from ..transport_data import TransportData
 from .linear_tetrahedron_warp_kernel import (
     single_angle_warp_sweep, multi_angle_warp_sweep,
     level_single_angle_warp_sweep, level_multi_angle_warp_sweep,
@@ -28,11 +28,11 @@ def _assert_warp_compatible(spatial_data: SpatialData):
 class WarpSequentialSweep(SingleAngleInversionStrategy):
     '''Single-angle inverse via the sequential Warp sweep kernel (no batching).'''
 
-    def invert(self, data: InversionData, b):
-        return single_angle_warp_sweep(*data, b)
+    def invert(self, data: TransportData, b):
+        return single_angle_warp_sweep(*data.inversion_args, b)
 
-    def check_compatible(self, operator):
-        _assert_warp_compatible(operator.spatial_data)
+    def check_compatible(self, data):
+        _assert_warp_compatible(data.spatial_data)
 
     @classmethod
     def vmappable(cls):
@@ -52,8 +52,8 @@ class WarpLevelSweep(SingleAngleInversionStrategy):
     :class:`~jax_sn.operators.transport_operator.LeveledSweepData`.
     '''
 
-    def invert(self, data: InversionData, b):
-        return level_single_angle_warp_sweep(*data, b, data.sweep_data.level_fwd)
+    def invert(self, data: TransportData, b):
+        return level_single_angle_warp_sweep(*data.inversion_args, b, data.sweep_data.level_fwd)
 
     @classmethod
     def required_capabilities(cls):
@@ -71,9 +71,9 @@ class WarpLevelSweep(SingleAngleInversionStrategy):
     def native_multi_angle(cls):
         return WarpLevelAngles   # the fused multi-angle kernel, not a vmap of this one
 
-    def check_compatible(self, operator):
-        super().check_compatible(operator)  # enforces required_capabilities (ProvidesLevels)
-        _assert_warp_compatible(operator.spatial_data)
+    def check_compatible(self, data):
+        super().check_compatible(data)  # enforces required_capabilities (ProvidesLevels)
+        _assert_warp_compatible(data.spatial_data)
 
 
 # ---------------------------------------------------------------------------
@@ -89,17 +89,11 @@ class WarpSequentialAngles(MultiAngleInversionStrategy):
     def single_angle_strategy(self):
         return WarpSequentialSweep()
 
-    def invert(self, data: InversionData, b):
-        return multi_angle_warp_sweep(*data, b)
+    def invert(self, data: TransportData, b):
+        return multi_angle_warp_sweep(*data.inversion_args, b)
 
-    def required_capabilities(self):
-        return ()
-
-    def default_sweep_data_type(self):
-        return BasicSweepData
-
-    def check_compatible(self, operator):
-        _assert_warp_compatible(operator.spatial_data)
+    def check_compatible(self, data):
+        _assert_warp_compatible(data.spatial_data)
 
 
 class WarpLevelAngles(MultiAngleInversionStrategy):
@@ -109,8 +103,8 @@ class WarpLevelAngles(MultiAngleInversionStrategy):
     def single_angle_strategy(self):
         return WarpLevelSweep()
 
-    def invert(self, data: InversionData, b):
-        return level_multi_angle_warp_sweep(*data, b, data.sweep_data.level_fwd)
+    def invert(self, data: TransportData, b):
+        return level_multi_angle_warp_sweep(*data.inversion_args, b, data.sweep_data.level_fwd)
 
     def required_capabilities(self):
         return (ProvidesLevels,)
@@ -118,9 +112,6 @@ class WarpLevelAngles(MultiAngleInversionStrategy):
     def default_sweep_data_type(self):
         return LeveledSweepData
 
-    def check_compatible(self, operator):
-        for capability in self.required_capabilities():
-            assert isinstance(operator.sweep_data, capability), \
-                f"{type(self).__name__} requires sweep data providing {capability.__name__}, " \
-                f"but got {type(operator.sweep_data).__name__}."
-        _assert_warp_compatible(operator.spatial_data)
+    def check_compatible(self, data):
+        super().check_compatible(data)  # enforces required_capabilities (ProvidesLevels)
+        _assert_warp_compatible(data.spatial_data)

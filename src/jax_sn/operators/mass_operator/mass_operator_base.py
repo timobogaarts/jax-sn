@@ -4,15 +4,27 @@ from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 
 import lineax as lx
 import equinox as eqx
-from jax_sn.operators.base_linear_operator import SymmetricDataStrategyLinearOperator
+from jax_sn.operators.base_linear_operator import (
+    BaseOperatorData, SymmetricDataStrategyLinearOperator, SymmetricStrategy,
+)
 
 from typing import Tuple
-from jax_sn.solution_domain import SpatialData
-from typing import Union
 
-from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle
+from abc import abstractmethod
 
-from .mass_operator_strategies import MassStrategy, VmapMass, MassData
+class MassData(BaseOperatorData):
+    fem_matrices               : FEMMatrices
+    precomputed_geometric_data : PrecomputedGeometricData
+
+# ---------------------------------------------------------------------------
+# Mass strategies
+# ---------------------------------------------------------------------------
+class MassStrategy(SymmetricStrategy):
+    '''How to apply the mass operator. Symmetric, so ``transpose`` == ``forward``.'''
+
+    @abstractmethod
+    def forward(self, data: MassData, x):
+        ...
 
 
 class MassOperator(SymmetricDataStrategyLinearOperator):
@@ -24,14 +36,7 @@ class MassOperator(SymmetricDataStrategyLinearOperator):
         a_i = \sum_{j} \int H_i H_j dV v_j
 
     Is arbitrarily batched over additional leading dimensions.
-
-    Implementation handling
-    ---------------------------
-    The contraction implementation (vmap over elements, batched ``lax.dot_general``, ...) is selected
-    by the :attr:`strategy` :class:`~.mass_operator_strategies.MassStrategy` field, *not* by a
-    subclass. A new implementation is a new strategy object. See
-    :mod:`~jax_sn.operators.mass_operator.mass_operator_strategies`.
-
+    
     Mathematical description
     ---------------------------
 
@@ -80,16 +85,16 @@ class MassOperator(SymmetricDataStrategyLinearOperator):
     data                         : MassData
     '''MassData containing FEM matrices and precomputed geometric data. [differentiable]'''
 
-    additional_shape             : Tuple[int] = ()
+    additional_shape             : Tuple[int]
     '''Additional leading shape to batch over. Used for consistent in/out structure definitions.'''
 
     strategy                     : MassStrategy
     '''How to apply the mass contraction. See :mod:`~jax_sn.operators.mass_operator.mass_operator_strategies`.'''
 
     def _structure(self):
-        n_elements = self.precomputed_geometric_data.n_elements
-        n_basis = self.fem_matrices.n_basis
-        return jax.ShapeDtypeStruct(self.additional_shape + (n_elements, n_basis), self.fem_matrices.mass_matrix.dtype)
+        n_elements = self.data.precomputed_geometric_data.n_elements
+        n_basis = self.data.fem_matrices.n_basis
+        return jax.ShapeDtypeStruct(self.additional_shape + (n_elements, n_basis), self.data.fem_matrices.mass_matrix.dtype)
 
 
 @lx.is_symmetric.register(MassOperator)

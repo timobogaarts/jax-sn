@@ -1,13 +1,20 @@
-from jax_sn.operators.transport_operator import SingleAngleForwardStrategy, SingleAngleInversionStrategy, MultiAngleInversionStrategy, VmapForward, VmapSweep, VmapAngles
+from jax_sn.operators.transport_operator import SingleAngleForwardStrategy, SingleAngleInversionStrategy, MultiAngleInversionStrategy, VmapForward, VmapSweep, VmapAngles, VmapAnglesForward
 from jax_sn.operators.transport_operator import MultiAngleTransportSpec
 from jax_sn.operators.operator_data import OperatorData, AngularData, DiscretisationData, NonDifferentiableData
 from jax_sn.operators.mass_operator import MassStrategy, VmapMass
-from jax_sn.operators.moment_operator import MomentStrategy, DiscreteStrategy, BatchedMoment, BatchedDiscrete
-from jax_sn.operators.scatter_operator import GatherScatterOperator, GatherScatterOperatorBroadcasted
+from jax_sn.operators.moment_operator import FluxMomentStrategy, BatchedFluxMoment
+from jax_sn.operators.scatter_operator import GatherScatterOperator, GatherScatterOperatorBroadcasted, ScatterStrategy, IndexedScatter
 from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan, MultiGroupOperator
 from jax_sn.quadrature_set import QuadratureSetBase
 from typing import Dict, Type
 from jax_sn.solution_domain import SolutionDomain
+
+
+def _resolve_multi_angle_forward_strategy(forward_strategy : SingleAngleForwardStrategy):
+    '''The natural multi-angle forward for a single-angle strategy: its fused native lift if it declares
+    one, else :class:`VmapAnglesForward`. Mirrors :func:`_resolve_multi_angle_inversion_strategy`.'''
+    native = forward_strategy.native_multi_angle()
+    return native() if native is not None else VmapAnglesForward(forward_strategy)
 
 
 def _resolve_multi_angle_inversion_strategy(inversion_strategy : SingleAngleInversionStrategy) -> MultiAngleInversionStrategy:
@@ -29,9 +36,10 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
                                 inversion_strategy : SingleAngleInversionStrategy = VmapSweep(),
                                 multi_angle_inversion_strategy : MultiAngleInversionStrategy = None,
                                 sweep_data_kwargs : Dict = {},
-                                moment_strategy : MomentStrategy = BatchedMoment(),
-                                discrete_strategy : DiscreteStrategy = BatchedDiscrete(),
+                                moment_strategy : FluxMomentStrategy = BatchedFluxMoment(),
+                                discrete_strategy : FluxMomentStrategy = BatchedFluxMoment(),
                                 mass_strategy : MassStrategy = VmapMass(),
+                                scatter_strategy : ScatterStrategy = IndexedScatter(),
                                 gather_scatter_operator_cls : Type[GatherScatterOperator] = GatherScatterOperatorBroadcasted,
                                 multi_group_operator_cls : Type[MultiGroupOperatorScan] = MultiGroupOperatorScan,
                                 multi_group_operator_cls_kwargs : Dict = {}
@@ -69,6 +77,8 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
         ``{"maximum_number_of_levels": ...}`` for a level-parallel toposort), by default {}.
     mass_strategy : MassStrategy, optional
         The contraction strategy to use for the mass operator, by default :class:`VmapMass`
+    scatter_strategy : ScatterStrategy, optional
+        The contraction strategy to use for the within-group scatter operator, by default :class:`IndexedScatter`
     gather_scatter_operator_cls : Type[GatherScatterOperator], optional
         The class to use for the gather scatter operator, by default :class:`GatherScatterOperatorBroadcasted`
     multi_group_operator_cls : Type[MultiGroupOperatorScan], optional
@@ -91,7 +101,11 @@ def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set
 
     angular_data             = AngularData.from_quadrature_set(quadrature_set, lmax)
     operator_data             = OperatorData(DiscretisationData(solution_domain.spatial_data, angular_data), NonDifferentiableData(sweep_data))
-    transport_spec            = MultiAngleTransportSpec(forward_strategy, multi_angle_inversion_strategy)
+    transport_spec            = MultiAngleTransportSpec(_resolve_multi_angle_forward_strategy(forward_strategy), multi_angle_inversion_strategy)
 
-    return multi_group_operator_cls(operator_data, transport_spec, n_energy_groups, moment_strategy, discrete_strategy, mass_strategy, gather_scatter_operator_cls, **multi_group_operator_cls_kwargs)
+    return multi_group_operator_cls(operator_data, transport_spec, n_energy_groups,
+                                    moment_strategy=moment_strategy, discrete_strategy=discrete_strategy,
+                                    mass_strategy=mass_strategy, scatter_strategy=scatter_strategy,
+                                    gather_scatter_operator_cls=gather_scatter_operator_cls,
+                                    **multi_group_operator_cls_kwargs)
     

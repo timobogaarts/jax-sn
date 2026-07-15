@@ -1,30 +1,17 @@
-from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 
 from jax_sn.domain.cross_sections import CrossSectionsIndexed
-from jax_sn.operators.base_linear_operator import Strategy
+from .scatter_operator_base import ScatterData, ScatterStrategy
 from jax_sn.quadrature_set.quadrature_set_base import _lm_real_expansion
-
-
-class ScatterData(NamedTuple):
-    energy_group_out       : int
-    energy_group_in        : int
-    cross_sections_indexed : CrossSectionsIndexed
-
-
-class ScatterStrategy(Strategy):
-    '''How to apply the (symmetric-shaped) scatter contraction. Reads ``data``.'''
-
 
 class IndexedScatter(ScatterStrategy):
     def forward(self, data: ScatterData, x):
         return total_scatter_kernel_xs_indexed(
             data.energy_group_out, data.energy_group_in, data.cross_sections_indexed, x
         )
-
 
 def _scatter_kernel_xs_indexed_kernel(elem_idx : int, g_out : int, g_in : int, cross_sections_indexed : CrossSectionsIndexed, moments_array : jnp.ndarray) -> jnp.ndarray:
     r'''

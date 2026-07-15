@@ -1,11 +1,19 @@
 import jax
 
-from jax_sn.operators.base_linear_operator import SymmetricDataStrategyLinearOperator
+from jax_sn.operators.base_linear_operator import (
+    BaseOperatorData, SymmetricDataStrategyLinearOperator, SymmetricStrategy,
+)
 from jax_sn.domain.cross_sections import CrossSectionsIndexed
-
-from .scatter_operator_strategies import ScatterStrategy, IndexedScatter, ScatterData
-
 import equinox as eqx
+
+
+class ScatterData(BaseOperatorData):
+    energy_group_out       : int
+    energy_group_in        : int
+    cross_sections_indexed : CrossSectionsIndexed
+
+class ScatterStrategy(SymmetricStrategy):
+    '''How to apply the (symmetric-shaped) scatter contraction. Reads ``data``.'''
 
 class ScatterOperator(SymmetricDataStrategyLinearOperator):
     r'''
@@ -39,17 +47,19 @@ class ScatterOperator(SymmetricDataStrategyLinearOperator):
     data                   : ScatterData
     r'''ScatterData containing the indexed cross sections for the scatter operator. [differentiable except for groups]'''
     
-    strategy               : ScatterStrategy = eqx.field(default_factory=IndexedScatter)
+    strategy               : ScatterStrategy
     r'''How to apply the scatter contraction.'''
+
+    moments_elements_basis_shape : jax.ShapeDtypeStruct
+    r'''The shape of the moments, elements and basis functions over which this operator is batched. Identified with :math:`\mathcal{M}\otimes \mathcal{E}\otimes \mathcal{B}` in the documentation above.'''
 
     def __check_init__(self):
         assert self.moments_elements_basis_shape.ndim == 3, f"elements_basis_shape must be 2D [moments_n_elements, n_basis], but has shape {self.moments_elements_basis_shape.shape}."
-        assert self.moments_elements_basis_shape.shape[1] == self.cross_sections_indexed.indices.shape[0], f"Number of elements in elements_basis_shape {self.moments_elements_basis_shape.shape[0]} must match number of elements in cross_sections_indexed {self.cross_sections_indexed.indices.shape[0]}."
-
+        assert self.moments_elements_basis_shape.shape[1] == self.data.cross_sections_indexed.indices.shape[0], f"Number of elements in elements_basis_shape {self.moments_elements_basis_shape.shape[0]} must match number of elements in cross_sections_indexed {self.data.cross_sections_indexed.indices.shape[0]}."
 
     def _structure(self):
         return self.moments_elements_basis_shape
 
     def to_energy_group(self, energy_group_out : int, energy_group_in : int) -> "ScatterOperator":
-        return eqx.tree_at(lambda op: (op.energy_group_out, op.energy_group_in), self,
+        return eqx.tree_at(lambda op: (op.data.energy_group_out, op.data.energy_group_in), self,
                            (energy_group_out, energy_group_in))

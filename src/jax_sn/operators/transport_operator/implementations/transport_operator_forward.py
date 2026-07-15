@@ -4,7 +4,7 @@ from jax_sn.domain.geometric_domain import GeometricDomain, CrossSectionDataSing
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from functools import partial
 from ..transport_operator_strategies import SingleAngleForwardStrategy
-from ..transport_data import ForwardData
+from ..transport_data import TransportData
 from .transport_operator_jax import (
     gij_kernel_idx_in_precomp,
     dij_f_p_fm_kernel_idx_in_precomp,
@@ -15,8 +15,8 @@ from .transport_operator_jax import (
 class VmapForward(SingleAngleForwardStrategy):
     '''Forward via vmap over all elements.'''
 
-    def forward(self, data: ForwardData, x):
-        return forward_transport_operator_vmap(*data, x)
+    def forward(self, data: TransportData, x):
+        return forward_transport_operator_vmap(*data.forward_args, x)
 
 
 class BatchedForward(SingleAngleForwardStrategy):
@@ -24,8 +24,8 @@ class BatchedForward(SingleAngleForwardStrategy):
 
     batch_size: int = None
 
-    def forward(self, data: ForwardData, x):
-        return forward_transport_operator_batch(*data, x, self.batch_size)
+    def forward(self, data: TransportData, x):
+        return forward_transport_operator_batch(*data.forward_args, x, self.batch_size)
 
 
 #-----------------------------------------------------------

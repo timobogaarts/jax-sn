@@ -9,13 +9,13 @@ from ..sweep_data_implementations import SweepData, BasicSweepData
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from functools import partial
 from ..transport_operator_strategies import SingleAngleInversionStrategy
-from ..transport_data import InversionData
+from ..transport_data import TransportData
 
 class VmapSweep(SingleAngleInversionStrategy):
     '''Inverse sweep with all per-element matrices computed via vmap (high memory).'''
 
-    def invert(self, data: InversionData, b):
-        return transport_inverse_sweep_complete_vmap(*data, b)
+    def invert(self, data: TransportData, b):
+        return transport_inverse_sweep_complete_vmap(*data.inversion_args, b)
 
     @classmethod
     def vmappable(cls):
@@ -27,8 +27,8 @@ class BatchedSweep(SingleAngleInversionStrategy):
 
     batch_size: int = None
 
-    def invert(self, data: InversionData, b):
-        return transport_inverse_sweep_batched(*data, b, self.batch_size)
+    def invert(self, data: TransportData, b):
+        return transport_inverse_sweep_batched(*data.inversion_args, b, self.batch_size)
 
     @classmethod
     def vmappable(cls):

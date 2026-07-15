@@ -10,7 +10,7 @@ import lineax as lx
 import equinox as eqx
 from abc import abstractmethod
 from jax_sn.quadrature_set.quadrature_set_base import _lm_real_expansion
-from .scatter_operator_imp import ScatterOperator
+from .scatter_operator_base import ScatterOperator, ScatterData
 
 class GatherScatterOperator(eqx.Module):
     r'''
@@ -135,10 +135,7 @@ class GatherScatterOperator(eqx.Module):
         '''
         assert x.ndim == 4, f"Input x must be 4D [n_groups, n_moments, n_elements, n_basis], but has shape {x.shape}."
         self.cross_sections_indexed.cross_section_data.assert_n_energy_groups(x.shape[0])
-        assert x.shape[-2] == self.cross_sections_indexed.indices.shape[0], f"Input x shape {x.shape} does not match number of elements in cross_sections_indexed {self.cross_sections_indexed.indices.shape[0]}."
-
-    def to_scatter_operator(self, energy_group_out : int, energy_group_in : int, moments_elements_basis_shape : jax.ShapeDtypeStruct) -> "ScatterOperator":
-        return ScatterOperator(self.cross_sections_indexed, moments_elements_basis_shape, energy_group_out, energy_group_in)
+        assert x.shape[-2] == self.cross_sections_indexed.indices.shape[0], f"Input x shape {x.shape} does not match number of elements in cross_sections_indexed {self.cross_sections_indexed.indices.shape[0]}."    
     
 #====================================================================================================================================================================================================================
 # Broadcasted implementation

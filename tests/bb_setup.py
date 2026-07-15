@@ -338,9 +338,9 @@ def build_multigroup_operator(solution_domain, sources, quadrature_set):
     '''Assemble the transport/mass/moment/discrete/scatter operators and the MultiGroupOperatorScan
     for a BB solution domain. Returns (Aop, source_total_all_angles, solution_domain).'''
     from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
-    from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle, VmapForward, VmapSweep, VmapAngles
-    from jax_sn.operators.mass_operator import MassOperator
-    from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
+    from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle, TransportData, VmapForward, VmapSweep, VmapAngles, VmapAnglesForward
+    from jax_sn.operators.mass_operator import MassOperator, MassData, VmapMass
+    from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator, MomentData, DiscreteData, BatchedFluxMoment
     from jax_sn.operators.transport_operator import BasicSweepData
     from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan
 
@@ -348,10 +348,12 @@ def build_multigroup_operator(solution_domain, sources, quadrature_set):
     lmax                      = solution_domain.domain.cross_sections_indexed.l_max
 
     sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
-    transport_operator        = TransportOperatorMultiAngle(solution_domain.spatial_data, sweep_data, quadrature_set.angles, 0, VmapForward(), VmapAngles(VmapSweep()))
-    mass_operator             = MassOperator.from_transport_operator(transport_operator)
-    moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
-    discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
+    transport_data            = TransportData(solution_domain.spatial_data, 0, quadrature_set.angles, sweep_data)
+    transport_operator        = TransportOperatorMultiAngle(transport_data, VmapAnglesForward(VmapForward()), VmapAngles(VmapSweep()))
+    mass_operator             = MassOperator(MassData(solution_domain.spatial_data.fem_matrices, solution_domain.spatial_data.precomputed_geometric_data),
+                                             (quadrature_set.angles.shape[0],), VmapMass())
+    moment_operator           = MomentOperator(MomentData.from_quadrature_set(quadrature_set, lmax), solution_domain.elements_basis_shape, BatchedFluxMoment())
+    discrete_operator         = DiscreteOperator(DiscreteData.from_quadrature_set(quadrature_set, lmax), solution_domain.elements_basis_shape, BatchedFluxMoment())
     gather_scatter_operator   = GatherScatterOperatorBroadcasted(cross_sections_indexed=solution_domain.domain.cross_sections_indexed)
     source_total              = jnp.broadcast_to(sources[None, :, :], (quadrature_set.angles.shape[0],) + sources.shape) # source for all angles
     Aop                       = MultiGroupOperatorScan.from_operators(moment_operator, discrete_operator, transport_operator, mass_operator, gather_scatter_operator, quadrature_set, n_energy_groups)

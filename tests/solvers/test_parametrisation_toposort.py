@@ -33,10 +33,10 @@ from jax_sn.solution_domain.basix_fem import BasixLagrangianSimplex
 from jax_sn.solution_domain.solution_domain import SolutionDomain
 from jax_sn.quadrature_set.quadrature_set_base import QuadratureSet
 from jax_sn.operators.transport_operator import (
-    TransportOperatorSingleAngle, TransportOperatorMultiAngle, BatchedForward, BatchedSweep, VmapAngles, BasicSweepData,
+    TransportOperatorSingleAngle, TransportOperatorMultiAngle, TransportData, BatchedForward, BatchedSweep, VmapAngles, VmapAnglesForward, BasicSweepData,
 )
-from jax_sn.operators.mass_operator import MassOperator
-from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
+from jax_sn.operators.mass_operator import MassOperator, MassData, VmapMass
+from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator, MomentData, DiscreteData, BatchedFluxMoment
 from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
 from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan
 from jax_sn.parametrisation.multigroup_parametrisation import (
@@ -112,10 +112,12 @@ def _build_mgop(solution_domain, quad, batch_size=4):
     lmax = solution_domain.domain.cross_sections_indexed.l_max
     sweep    = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quad, 100)
     top      = TransportOperatorMultiAngle(
-        solution_domain.spatial_data, sweep, quad.angles, 0, BatchedForward(batch_size), VmapAngles(BatchedSweep(batch_size)))
-    mass     = MassOperator.from_transport_operator(top)
-    moment   = MomentOperator.from_quadrature_set(quad, l_max=lmax, elements_basis_shape=solution_domain.elements_basis_shape)
-    discrete = DiscreteOperator.from_quadrature_set(quad, l_max=lmax, elements_basis_shape=solution_domain.elements_basis_shape)
+        TransportData(solution_domain.spatial_data, 0, quad.angles, sweep),
+        VmapAnglesForward(BatchedForward(batch_size)), VmapAngles(BatchedSweep(batch_size)))
+    mass     = MassOperator(MassData(solution_domain.spatial_data.fem_matrices, solution_domain.spatial_data.precomputed_geometric_data),
+                            (quad.angles.shape[0],), VmapMass())
+    moment   = MomentOperator(MomentData.from_quadrature_set(quad, lmax), solution_domain.elements_basis_shape, BatchedFluxMoment())
+    discrete = DiscreteOperator(DiscreteData.from_quadrature_set(quad, lmax), solution_domain.elements_basis_shape, BatchedFluxMoment())
     gs       = GatherScatterOperatorBroadcasted(cross_sections_indexed=solution_domain.domain.cross_sections_indexed)
     mgop     = MultiGroupOperatorScan.from_operators(moment, discrete, top, mass, gs, quad, n_eg)
     return mgop.convert_to_lower_block_triangular()

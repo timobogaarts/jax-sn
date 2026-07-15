@@ -1,12 +1,12 @@
-from .moment_operator_imp import MomentOperator
-from .discrete_operator_imp import DiscreteOperator
-from .moment_operator_strategies import (
-    MomentStrategy, BatchedMoment, StreamingMoment,
-    DiscreteStrategy, BatchedDiscrete,
+from .moment_discrete_operator_base import (
+    DiscreteMomentData, MomentData, DiscreteData,
+    FluxMomentStrategy, FluxMomentOperator,
+    MomentOperator, DiscreteOperator,
 )
+from .fluxmoment_strategies import BatchedFluxMoment, StreamingFluxMoment
 
 __all__ = [
-    "MomentOperator", "DiscreteOperator",
-    "MomentStrategy", "BatchedMoment", "StreamingMoment",
-    "DiscreteStrategy", "BatchedDiscrete",
+    "MomentOperator", "DiscreteOperator", "FluxMomentOperator",
+    "DiscreteMomentData", "MomentData", "DiscreteData",
+    "FluxMomentStrategy", "BatchedFluxMoment", "StreamingFluxMoment",
 ]

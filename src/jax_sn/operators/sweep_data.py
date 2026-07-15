@@ -8,9 +8,10 @@ import equinox as eqx
 from abc import abstractmethod
 
 from jax_sn.domain.geometric_domain import GeometricDomain
+from jax_sn.operators.base_linear_operator import BaseOperatorData
 
 
-class SweepData(eqx.Module):
+class SweepData(BaseOperatorData):
     '''
     Abstract base for the data required to invert (sweep) the transport operator.
     '''

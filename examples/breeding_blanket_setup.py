@@ -356,7 +356,7 @@ def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_o
     from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
     from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle, VmapForward, VmapSweep, VmapAngles
     from jax_sn.operators.mass_operator import MassOperator
-    from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
+    from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator, MomentData, DiscreteData, BatchedFluxMoment
     from jax_sn.operators.transport_operator import BasicSweepData
     from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan
     
@@ -369,12 +369,12 @@ def _setup_bb_args(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_o
     sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
     transport_operator        = TransportOperatorMultiAngle(TransportOperatorSingleAngle(solution_domain.spatial_data, sweep_data, 0, VmapForward(), VmapSweep()), VmapAngles())
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
-    moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)    
+    moment_operator           = MomentOperator(MomentData.from_quadrature_set(quadrature_set, lmax), solution_domain.elements_basis_shape, BatchedFluxMoment())    
     
     groups_elements_basis_shape = (n_energy_groups, ) + solution_domain.elements_basis_shape.shape 
 
 
-    discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
+    discrete_operator         = DiscreteOperator(DiscreteData.from_quadrature_set(quadrature_set, lmax), solution_domain.elements_basis_shape, BatchedFluxMoment())
     gather_scatter_operator   = GatherScatterOperatorBroadcasted(cross_sections_indexed=solution_domain.domain.cross_sections_indexed)
     source_total              = jnp.broadcast_to(sources[None, :, :], (quadrature_set.angles.shape[0],) + sources.shape) # source for all angles
     Aop                       = MultiGroupOperatorScan(moment_operator, discrete_operator, transport_operator, mass_operator, gather_scatter_operator, n_energy_groups)
@@ -439,7 +439,7 @@ def _setup_bb_mgop_symmetric(dim, degree, d_elem_regions, n_elem_regions, d_othe
     from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
     from jax_sn.operators.transport_operator import TransportOperatorSingleAngle, TransportOperatorMultiAngle, VmapForward, VmapSweep, VmapAngles
     from jax_sn.operators.mass_operator import MassOperator
-    from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
+    from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator, MomentData, DiscreteData, BatchedFluxMoment
     from jax_sn.operators.transport_operator import BasicSweepData
     from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan
     
@@ -453,12 +453,12 @@ def _setup_bb_mgop_symmetric(dim, degree, d_elem_regions, n_elem_regions, d_othe
     sweep_data = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quadrature_set, n_iterations_per_loop = 100)
     transport_operator        = TransportOperatorMultiAngle(TransportOperatorSingleAngle(solution_domain.spatial_data, sweep_data, 0, VmapForward(), VmapSweep()), VmapAngles())
     mass_operator             = MassOperator.from_transport_operator(transport_operator)
-    moment_operator           = MomentOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)    
+    moment_operator           = MomentOperator(MomentData.from_quadrature_set(quadrature_set, lmax), solution_domain.elements_basis_shape, BatchedFluxMoment())    
     
     groups_elements_basis_shape = (n_energy_groups, ) + solution_domain.elements_basis_shape.shape 
 
 
-    discrete_operator         = DiscreteOperator.from_quadrature_set(quadrature_set, l_max = lmax, elements_basis_shape=solution_domain.elements_basis_shape)
+    discrete_operator         = DiscreteOperator(DiscreteData.from_quadrature_set(quadrature_set, lmax), solution_domain.elements_basis_shape, BatchedFluxMoment())
     gather_scatter_operator   = GatherScatterOperatorBroadcasted(cross_sections_indexed=solution_domain.domain.cross_sections_indexed)
     source_total              = jnp.broadcast_to(sources[None, :, :], (quadrature_set.angles.shape[0],) + sources.shape) # source for all angles
     Aop                       = MultiGroupOperatorScan(moment_operator, discrete_operator, transport_operator, mass_operator, gather_scatter_operator, n_energy_groups)

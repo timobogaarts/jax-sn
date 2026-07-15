@@ -2,27 +2,24 @@
 Transport operator implementations; both single angle and multi-angle. 
 
 
-transport_operator_interface defines the single-angle and multi-angle lineax operators.
-
-transport_oeprator_strategies defines the strategy interface (both inversion and application)
-
-multi_angle_transport_spec defines a way to build transport operators from data (using the stored strategies)
-
-sweep_data_implementations defines topological sorted sweep data (for both sweep and level-based sweep).
-
-
+transport_operator_base defines the single-angle and multi-angle lineax operators, strategies, and data.
 '''
 
-
 from .sweep_data_implementations import SweepData, BasicSweepData, LeveledSweepData, LevelBasedParallelism, ProvidesLevels
-from .transport_operator_interface import TransportOperatorSingleAngle, TransportOperatorMultiAngle
+
+from .transport_data import TransportData
+from .transport_operator_base import (
+    AbstractTransportOperator, TransportOperatorSingleAngle, TransportOperatorMultiAngle,
+)
 from .multi_angle_transport_spec import MultiAngleTransportSpec
 from .transport_operator_strategies import (
-    SingleAngleForwardStrategy, SingleAngleInversionStrategy, MultiAngleInversionStrategy,
+    SingleAngleForwardStrategy, MultiAngleForwardStrategy, ComposedMultiAngleForwardStrategy,
+    AbstractInversionStrategy,
+    SingleAngleInversionStrategy, MultiAngleInversionStrategy, ComposedMultiAngleInversionStrategy,
 )
 from .implementations.transport_operator_forward import VmapForward, BatchedForward
 from .implementations.transport_operator_jax import VmapSweep, BatchedSweep
-from .implementations.multi_angle_inversions import VmapAngles, ScanAngles
+from .implementations.multi_angle_inversions import VmapAngles, ScanAngles, VmapAnglesForward, ScanAnglesForward
 
 
 from .implementations.transport_operator_pallas import (
@@ -38,18 +35,26 @@ __all__ = [
     'LeveledSweepData',
     'LevelBasedParallelism',
     'ProvidesLevels',
+    'TransportData',
+    'AbstractTransportOperator',
     'TransportOperatorSingleAngle',
     'TransportOperatorMultiAngle',
     'MultiAngleTransportSpec',
     'SingleAngleForwardStrategy',
+    'MultiAngleForwardStrategy',
+    'ComposedMultiAngleForwardStrategy',
+    'AbstractInversionStrategy',
     'SingleAngleInversionStrategy',
     'MultiAngleInversionStrategy',
+    'ComposedMultiAngleInversionStrategy',
     'VmapForward',
     'BatchedForward',
     'VmapSweep',
     'BatchedSweep',
     'VmapAngles',
     'ScanAngles',
+    'VmapAnglesForward',
+    'ScanAnglesForward',
     'VmapPallasSweep',
     'BatchedPallasSweep',
     'transport_operator_warp'

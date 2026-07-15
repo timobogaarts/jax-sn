@@ -80,3 +80,13 @@ class OperatorData(eqx.Module):
     @property
     def elements_basis_shape(self):
         return self.discretisation_data.spatial.elements_basis_shape
+    
+    @property
+    def n_moments(self):
+        return self.angular_data.wk_ylm.shape[1]
+    
+    @property 
+    def n_angles(self):
+        return self.angular_data.wk_ylm.shape[0]
+    
+    

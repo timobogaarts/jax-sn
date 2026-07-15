@@ -21,74 +21,34 @@ class SingleGroupStrategyBase(eqx.Module):
 class SingleGroupStrategy(SingleGroupStrategyBase):
     r'''
     Apply the full :math:`\mathbf{I} - \mathbf{M}\mathbf{T}_g^{-1}\mathbf{H}\mathbf{D}\mathbf{S}_{gg}` operator, either forward or backward.
+
+    Abstract chain and source operators: a SingleGroupStrategy can have a very logical chain and source operator (e.g. if composed of sub-operators), 
+    which it can then yield (or just raise an error if this does not exist).
     '''
 
+    @abstractmethod
     def chain_strategy(self) -> "SingleGroupChainStrategy":
-        '''The matching chain strategy (:math:`\\mathbf{C}_g`). Raises unless the strategy can factor
-        into sub-operators -- a fused whole-mv strategy cannot.'''
-        raise NotImplementedError(f"{type(self).__name__} cannot expose a separate chain strategy")
+        ...
 
+    @abstractmethod
     def source_strategy(self) -> "SingleGroupSourceStrategy":
-        '''The matching source strategy (:math:`\\mathbf{M}\\mathbf{T}_g^{-1}\\mathbf{H}`). Raises unless
-        the strategy can factor into sub-operators.'''
-        raise NotImplementedError(f"{type(self).__name__} cannot expose a separate source strategy")
+        ...
 
 class SingleGroupChainStrategy(SingleGroupStrategyBase):
     r'''
     Apply the chain :math:`\mathbf{C}_g = \mathbf{M}\mathbf{T}_g^{-1}\mathbf{H}\mathbf{D}` operator, either forward or backward.
     '''
 
-
 class SingleGroupSourceStrategy(SingleGroupStrategyBase):
     r'''
     Apply the source :math:`\mathbf{M}\mathbf{T}_g^{-1}\mathbf{H}` operator, either forward or backward.
     '''
 
-class SingleGroupMapping(eqx.Module):
+def single_group_moment_structure(operator_data: OperatorData) -> jax.ShapeDtypeStruct:        
+    return jax.ShapeDtypeStruct((operator_data.n_moments,) + operator_data.elements_basis_shape.shape, operator_data.angular_data.wk_ylm.dtype)
 
-    operator_data :  eqx.AbstractVar[OperatorData]
-    transpose_bool : eqx.AbstractVar[bool]
-
-    @abstractmethod
-    def _in_structure(self):
-        ...
-
-    @abstractmethod
-    def _out_structure(self):
-        ...
-
-    def in_structure(self):
-        return self._out_structure() if self.transpose_bool else self._in_structure()
-
-    def out_structure(self):
-        return self._in_structure() if self.transpose_bool else self._out_structure()
-
-def single_group_moment_structure(operator_data: OperatorData) -> jax.ShapeDtypeStruct:    
-    wk_ylm = operator_data.angular_data.wk_ylm
-    return jax.ShapeDtypeStruct((wk_ylm.shape[1],) + operator_data.elements_basis_shape.shape, wk_ylm.dtype)
-
-def single_group_angle_structure(operator_data: OperatorData) -> jax.ShapeDtypeStruct:
-    wk_ylm = operator_data.angular_data.wk_ylm
-    return jax.ShapeDtypeStruct((wk_ylm.shape[0],) + operator_data.elements_basis_shape.shape, wk_ylm.dtype)
-
-def build_inscatter_operator(operator_data: OperatorData, energy_group: int) -> ScatterOperator:
-    r'''The within-group scatter :math:`\mathbf{S}_{gg}`, derived from ``operator_data``'s cross sections
-    and the energy group.'''
-    return ScatterOperator(operator_data.domain.cross_sections_indexed, single_group_moment_structure(operator_data), energy_group, energy_group)
-
-
-class DiscreteToMomentSingleGroup(SingleGroupMapping):
-    def _in_structure(self):
-        return single_group_angle_structure(self.operator_data)    
-    def _out_structure(self):
-        return single_group_moment_structure(self.operator_data)
-        
-class MomentToMomentSingleGroup(SingleGroupMapping):
-    def _in_structure(self):
-        return single_group_moment_structure(self.operator_data)
-    def _out_structure(self):
-        return single_group_moment_structure(self.operator_data)
-    
+def single_group_angle_structure(operator_data: OperatorData) -> jax.ShapeDtypeStruct:    
+    return jax.ShapeDtypeStruct((operator_data.n_angles,) + operator_data.elements_basis_shape.shape, operator_data.angular_data.wk_ylm.dtype)
 
 class SingleGroupOperatorBase(AbstractLinearOperator_sn):
 
@@ -96,6 +56,22 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
     energy_group   : int
     strategy       : SingleGroupStrategyBase   # narrowed per concrete operator; declared here to fix field order
     transpose_bool : bool = False
+
+    @abstractmethod
+    def _in_structure(self):
+        '''Forward-direction input structure.'''
+        ...
+
+    @abstractmethod
+    def _out_structure(self):
+        '''Forward-direction output structure.'''
+        ...
+
+    def in_structure(self):
+        return self._out_structure() if self.transpose_bool else self._in_structure()
+
+    def out_structure(self):
+        return self._in_structure() if self.transpose_bool else self._out_structure()
 
     def transpose(self) -> "SingleGroupOperatorBase":
         return eqx.tree_at(lambda op: op.transpose_bool, self, not self.transpose_bool)
@@ -115,7 +91,7 @@ class SingleGroupOperatorBase(AbstractLinearOperator_sn):
         assert isinstance(self.operator_data, OperatorData), f"operator_data must be of type OperatorData but is {type(self.operator_data)}"
         assert isinstance(self.strategy, SingleGroupStrategyBase), f"strategy must be a SingleGroupStrategyBase but is {type(self.strategy)}"
 
-class SingleGroupOperator(SingleGroupOperatorBase, MomentToMomentSingleGroup):
+class SingleGroupOperator(SingleGroupOperatorBase):
     r'''
     Single energy group linear operator.
 
@@ -143,9 +119,13 @@ class SingleGroupOperator(SingleGroupOperatorBase, MomentToMomentSingleGroup):
     be accomplished using e.g. lineax solvers. This allows for the propagation of the derivatives through the solver as well.
 
     '''
-
-
     strategy : SingleGroupStrategy
+
+    def _in_structure(self):
+        return single_group_moment_structure(self.operator_data)
+
+    def _out_structure(self):
+        return single_group_moment_structure(self.operator_data)
 
     def chain_operator(self) -> "SingleGroupChainOperator":
         r'''The chain :math:`\mathbf{C}_g = \mathbf{M}\mathbf{T}_g^{-1}\mathbf{H}\mathbf{D}` as its own
@@ -158,13 +138,25 @@ class SingleGroupOperator(SingleGroupOperatorBase, MomentToMomentSingleGroup):
         return SingleGroupSourceOperator(self.operator_data, self.energy_group, self.strategy.source_strategy())
 
 
-class SingleGroupChainOperator(SingleGroupOperatorBase, MomentToMomentSingleGroup):
+class SingleGroupChainOperator(SingleGroupOperatorBase):
     r'''The chain operator :math:`\mathbf{C}_g = \mathbf{M}\mathbf{T}_g^{-1}\mathbf{H}\mathbf{D}`, built from ``operator_data`` and the energy group.'''
     strategy : SingleGroupChainStrategy
 
-class SingleGroupSourceOperator(SingleGroupOperatorBase, DiscreteToMomentSingleGroup):
+    def _in_structure(self):
+        return single_group_moment_structure(self.operator_data)
+
+    def _out_structure(self):
+        return single_group_moment_structure(self.operator_data)
+
+class SingleGroupSourceOperator(SingleGroupOperatorBase):
     r'''The source operator :math:`\mathbf{M}\mathbf{T}_g^{-1}\mathbf{H}`, built from ``operator_data`` and the energy group.'''
     strategy : SingleGroupSourceStrategy
+
+    def _in_structure(self):
+        return single_group_angle_structure(self.operator_data)
+
+    def _out_structure(self):
+        return single_group_moment_structure(self.operator_data)
     
 
 

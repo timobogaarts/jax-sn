@@ -355,7 +355,7 @@ arrive — they slot in at the same seams.
 - **Opaque at a solve boundary (L5): no AD machinery at all.** lineax implicit diff treats
   `solver.compute` as a primal black box; it needs only a differentiable operator `mv` (for the
   `dA·sol` term) and a primal transposed solve (`solver.transpose`). This is exactly the existing
-  `TransportOperatorSolver` / `MultiGroupLowerTriangularBlockSolver` pattern, generalized.
+  `DirectInverseSolver` / `MultiGroupLowerTriangularBlockSolver` pattern, generalized.
 - **Opaque at an apply boundary (L2–L4): `fast_primal` wrapper.** Must be `custom_jvp`, **not**
   `custom_vjp` — lineax applies `jax.jvp` to the operator's `mv`, and custom_vjp functions reject
   forward-mode. Primal = fused kernel; the *entire tangent rule* = `jax.jvp` of a reference

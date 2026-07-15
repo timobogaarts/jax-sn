@@ -13,7 +13,7 @@ This includes several sub-operators which are used in other places (i.e. lifting
 Each operator carries a strategy of its matching type (full / chain / source); the composed strategies
 factor the product into the mass / discrete / moment / transport sub-operators.
 '''
-from .single_group_strategies import (
+from .single_group_operators_base import (
     SingleGroupStrategyBase,
     SingleGroupStrategy,
     SingleGroupChainStrategy,
@@ -21,7 +21,6 @@ from .single_group_strategies import (
     SingleGroupOperator,
     SingleGroupChainOperator,
     SingleGroupSourceOperator,
-    build_inscatter_operator,
     single_group_moment_structure,
     single_group_angle_structure,
 )
@@ -35,5 +34,5 @@ __all__ = [
     'SingleGroupStrategyBase', 'SingleGroupStrategy', 'SingleGroupChainStrategy', 'SingleGroupSourceStrategy',
     'SingleGroupOperator', 'SingleGroupChainOperator', 'SingleGroupSourceOperator',
     'ComposedSingleGroupStrategy', 'ComposedSingleGroupChainStrategy', 'ComposedSingleGroupSourceStrategy',
-    'build_inscatter_operator', 'single_group_moment_structure', 'single_group_angle_structure',
+    'single_group_moment_structure', 'single_group_angle_structure',
 ]
