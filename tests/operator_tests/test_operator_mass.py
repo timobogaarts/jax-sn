@@ -19,8 +19,10 @@ class TestMassOperator(BaseOperatorProperties):
     @pytest.fixture
     def operator(self, bb_mgop, strategy_cls, kwargs):
         '''The MassOperator with this strategy on the shared BB problem.'''
-        return eqx.tree_at(lambda op: op.strategy, bb_mgop[0].mass_operator, strategy_cls(**kwargs))
+        from bb_setup import mass_operator_from_mgop
+        return eqx.tree_at(lambda op: op.strategy, mass_operator_from_mgop(bb_mgop[0]), strategy_cls(**kwargs))
 
     @pytest.fixture
     def build_reference(self, bb_mgop):
-        return lambda: eqx.tree_at(lambda op: op.strategy, bb_mgop[0].mass_operator, _DEFAULT_MASS())
+        from bb_setup import mass_operator_from_mgop
+        return lambda: eqx.tree_at(lambda op: op.strategy, mass_operator_from_mgop(bb_mgop[0]), _DEFAULT_MASS())

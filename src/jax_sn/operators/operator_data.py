@@ -85,8 +85,13 @@ class OperatorData(eqx.Module):
     def n_moments(self):
         return self.angular_data.wk_ylm.shape[1]
     
-    @property 
+    @property
     def n_angles(self):
         return self.angular_data.wk_ylm.shape[0]
-    
-    
+
+    @property
+    def n_energy_groups(self):
+        '''Number of energy groups, read off the indexed cross sections (a static array shape).'''
+        return self.domain.cross_sections_indexed.n_energy_groups
+
+

@@ -11,7 +11,7 @@ from .transport_data import TransportData
 from .transport_operator_base import (
     AbstractTransportOperator, TransportOperatorSingleAngle, TransportOperatorMultiAngle,
 )
-from .multi_angle_transport_spec import MultiAngleTransportSpec
+
 from .transport_operator_strategies import (
     SingleAngleForwardStrategy, MultiAngleForwardStrategy, ComposedMultiAngleForwardStrategy,
     AbstractInversionStrategy,
@@ -39,7 +39,6 @@ __all__ = [
     'AbstractTransportOperator',
     'TransportOperatorSingleAngle',
     'TransportOperatorMultiAngle',
-    'MultiAngleTransportSpec',
     'SingleAngleForwardStrategy',
     'MultiAngleForwardStrategy',
     'ComposedMultiAngleForwardStrategy',

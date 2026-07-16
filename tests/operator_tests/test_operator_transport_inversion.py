@@ -8,7 +8,6 @@ from jax_sn.operators.transport_operator import (
 from jax_sn.operators.transport_operator.implementations.transport_operator_warp import (
     WarpSequentialSweep, WarpLevelSweep, WarpSequentialAngles, WarpLevelAngles,
 )
-from tests.conftest import bb_mgop
 
 from .operator_util import (
     BaseOperatorProperties, Spec, parametrize_strategies, parametrize_instances,
@@ -49,11 +48,11 @@ def _sweep_data(bb_mgop, sweep_data_type):
     dim, degree = _dim_degree(bb_mgop)
     key = (dim, degree, sweep_data_type.__name__)
     if key not in _SWEEP_DATA_CACHE:
-        base_sd = bb_mgop[0].transport_operator.data.sweep_data
+        base_sd = bb_mgop[0].data.sweep_data
         if isinstance(base_sd, sweep_data_type):
             _SWEEP_DATA_CACHE[key] = base_sd
         else:
-            solution_domain, quadrature_set = bb_mgop[2], bb_mgop[0].quadrature_set
+            solution_domain, quadrature_set = bb_mgop[2], bb_mgop[0].data.angular_data.quadrature_set
             _SWEEP_DATA_CACHE[key] = sweep_data_type.from_domain_quadrature_set(solution_domain.domain, quadrature_set)
     return _SWEEP_DATA_CACHE[key]
 
@@ -74,14 +73,16 @@ class TestTransportInversionSingleAngle(_TransportInversionBase):
 
     @pytest.fixture
     def operator(self, bb_mgop, strategy_cls, kwargs):
+        from bb_setup import transport_operator_from_mgop
         strategy = strategy_cls(**kwargs)
-        top = bb_mgop[0].transport_operator[_ANGLE_I]
+        top = transport_operator_from_mgop(bb_mgop[0])[_ANGLE_I]
         sweep_data = _sweep_data(bb_mgop, strategy.default_sweep_data_type())[_ANGLE_I]
         return eqx.tree_at(lambda t: (t.data.sweep_data, t.inversion_strategy), top, (sweep_data, strategy))
 
     @pytest.fixture
     def build_reference(self, bb_mgop):
-        return lambda: bb_mgop[0].transport_operator[_ANGLE_I]
+        from bb_setup import transport_operator_from_mgop
+        return lambda: transport_operator_from_mgop(bb_mgop[0])[_ANGLE_I]
 
     def test_forward_backward_identity(self, operator):
         '''T^-1(T x) == x and its transpose -- a self-contained round-trip property of the inverse.'''
@@ -95,13 +96,15 @@ class TestTransportInversionMultiAngle(_TransportInversionBase):
 
     @pytest.fixture
     def operator(self, bb_mgop, strategy):
-        top = bb_mgop[0].transport_operator
+        from bb_setup import transport_operator_from_mgop
+        top = transport_operator_from_mgop(bb_mgop[0])
         sweep_data = _sweep_data(bb_mgop, strategy.default_sweep_data_type())
         return eqx.tree_at(lambda t: (t.data.sweep_data, t.inversion_strategy), top, (sweep_data, strategy))
 
     @pytest.fixture
     def build_reference(self, bb_mgop):
-        return lambda: bb_mgop[0].transport_operator
+        from bb_setup import transport_operator_from_mgop
+        return lambda: transport_operator_from_mgop(bb_mgop[0])
 
     def test_indexing_consistency(self, operator):        
         x = _rand(operator.in_structure().shape, 10)

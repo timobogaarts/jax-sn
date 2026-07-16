@@ -32,17 +32,15 @@ from jax_sn.domain.cross_sections import CrossSectionData, CrossSectionsIndexed
 from jax_sn.solution_domain.basix_fem import BasixLagrangianSimplex
 from jax_sn.solution_domain.solution_domain import SolutionDomain
 from jax_sn.quadrature_set.quadrature_set_base import QuadratureSet
-from jax_sn.operators.transport_operator import (
-    TransportOperatorSingleAngle, TransportOperatorMultiAngle, TransportData, BatchedForward, BatchedSweep, VmapAngles, VmapAnglesForward, BasicSweepData,
-)
-from jax_sn.operators.mass_operator import MassOperator, MassData, VmapMass
-from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator, MomentData, DiscreteData, BatchedFluxMoment
-from jax_sn.operators.scatter_operator import GatherScatterOperatorBroadcasted
-from jax_sn.operators.multi_group_operator import MultiGroupOperatorScan
+from jax_sn.operators.transport_operator import BasicSweepData
+from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
+from jax_sn.operator_creation.default_strategies import DefaultMultiGroupStrategy
 from jax_sn.parametrisation.multigroup_parametrisation import (
     MultigroupOperatorParametrisedVerticesXS, MultigroupOperatorParametrisedVerticesNoToposort,
     VerticesXSTheta,
 )
+
+from bb_setup import transport_operator_from_mgop
 
 
 # --------------------------------------------------------------------------------------------------
@@ -108,23 +106,14 @@ def _solution_domain(verts, conn, element):
 
 
 def _build_mgop(solution_domain, quad, batch_size=4):
-    n_eg = solution_domain.domain.cross_sections_indexed.n_energy_groups
-    lmax = solution_domain.domain.cross_sections_indexed.l_max
-    sweep    = BasicSweepData.from_domain_quadrature_set(solution_domain.domain, quad, 100)
-    top      = TransportOperatorMultiAngle(
-        TransportData(solution_domain.spatial_data, 0, quad.angles, sweep),
-        VmapAnglesForward(BatchedForward(batch_size)), VmapAngles(BatchedSweep(batch_size)))
-    mass     = MassOperator(MassData(solution_domain.spatial_data.fem_matrices, solution_domain.spatial_data.precomputed_geometric_data),
-                            (quad.angles.shape[0],), VmapMass())
-    moment   = MomentOperator(MomentData.from_quadrature_set(quad, lmax), solution_domain.elements_basis_shape, BatchedFluxMoment())
-    discrete = DiscreteOperator(DiscreteData.from_quadrature_set(quad, lmax), solution_domain.elements_basis_shape, BatchedFluxMoment())
-    gs       = GatherScatterOperatorBroadcasted(cross_sections_indexed=solution_domain.domain.cross_sections_indexed)
-    mgop     = MultiGroupOperatorScan.from_operators(moment, discrete, top, mass, gs, quad, n_eg)
-    return mgop.convert_to_lower_block_triangular()
+    # Single energy group (n_eg=1): the multigroup operator is trivially lower-block-triangular, so no
+    # convert step is needed -- only the transport sweep order matters for this test.
+    strategy = DefaultMultiGroupStrategy.default_multi_group_strategy(batch_size=batch_size, checkpoint=False)
+    return create_multi_group_operator(solution_domain, quad, strategy)
 
 
 def _order(mgop):
-    return onp.asarray(mgop.operator_data.sweep_data.levels_argsort)
+    return onp.asarray(mgop.data.sweep_data.levels_argsort)
 
 
 # --------------------------------------------------------------------------------------------------
@@ -180,10 +169,12 @@ def test_parametrisation_resort(dim):
         assert not (_order(mgop_base) == _order(mgop_fresh)).all(), "order did not change -- increase the lift"
 
     # --- and that the stale sort actually matters: the transport sweep diverges iff the order changed ---
-    b = jnp.ones(mgop_base.transport_operator.in_structure().shape)
-    inv_with  = mgop_with.transport_operator.inv(b)
-    inv_no    = mgop_no.transport_operator.inv(b)
-    inv_fresh = mgop_fresh.transport_operator.inv(b)
+    top_base, top_with = transport_operator_from_mgop(mgop_base), transport_operator_from_mgop(mgop_with)
+    top_no, top_fresh  = transport_operator_from_mgop(mgop_no), transport_operator_from_mgop(mgop_fresh)
+    b = jnp.ones(top_base.in_structure().shape)
+    inv_with  = top_with.inv(b)
+    inv_no    = top_no.inv(b)
+    inv_fresh = top_fresh.inv(b)
 
     onp.testing.assert_allclose(inv_with, inv_fresh, atol=1e-10, rtol=1e-8)
     if dim == 1:

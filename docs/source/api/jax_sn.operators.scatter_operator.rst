@@ -12,6 +12,7 @@ Submodules
 .. toctree::
    :maxdepth: 2
 
-   jax_sn.operators.scatter_operator.gather_scatter_operator_imp
+   jax_sn.operators.scatter_operator.gather_scatter_operator_base
+   jax_sn.operators.scatter_operator.gather_scatter_operator_strategies
    jax_sn.operators.scatter_operator.scatter_operator_base
    jax_sn.operators.scatter_operator.scatter_operator_strategies

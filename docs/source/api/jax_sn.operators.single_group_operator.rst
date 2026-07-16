@@ -13,5 +13,4 @@ Submodules
    :maxdepth: 2
 
    jax_sn.operators.single_group_operator.composed_single_group_strategies
-   jax_sn.operators.single_group_operator.single_group_operators
    jax_sn.operators.single_group_operator.single_group_operators_base

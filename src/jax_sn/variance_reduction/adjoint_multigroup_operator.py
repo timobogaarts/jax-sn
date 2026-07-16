@@ -7,7 +7,9 @@ from jax_sn.operators.single_group_operator import SingleGroupOperator
 from jax_sn.operators.moment_operator import MomentOperator, DiscreteOperator
 from jax_sn.operators.transport_operator import TransportOperatorMultiAngle
 from jax_sn.operators.mass_operator import MassOperator
-from jax_sn.operators.scatter_operator import GatherScatterOperator
+# REFACTOR-MARKER(gather-scatter): GatherScatterOperator is now a lineax Data+Strategy operator; the
+# .gather_backward(x, g) calls below become gs_strategy.transpose_group(GatherScatterData(cross_sections), x, g).
+from jax_sn.operators.scatter_operator import GatherScatterOperator, GatherScatterStrategy
 import lineax as lx 
 import equinox as eqx
 from abc import abstractmethod

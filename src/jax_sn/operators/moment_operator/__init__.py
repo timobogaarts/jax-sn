@@ -3,10 +3,10 @@ from .moment_discrete_operator_base import (
     FluxMomentStrategy, FluxMomentOperator,
     MomentOperator, DiscreteOperator,
 )
-from .fluxmoment_strategies import BatchedFluxMoment, StreamingFluxMoment
+from .fluxmoment_strategies import EinsumFluxMoment, StreamingFluxMoment
 
 __all__ = [
     "MomentOperator", "DiscreteOperator", "FluxMomentOperator",
     "DiscreteMomentData", "MomentData", "DiscreteData",
-    "FluxMomentStrategy", "BatchedFluxMoment", "StreamingFluxMoment",
+    "FluxMomentStrategy", "EinsumFluxMoment", "StreamingFluxMoment",
 ]

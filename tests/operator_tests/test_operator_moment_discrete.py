@@ -1,13 +1,13 @@
 import pytest
 import equinox as eqx
 
-from jax_sn.operators.moment_operator import BatchedFluxMoment, StreamingFluxMoment
+from jax_sn.operators.moment_operator import EinsumFluxMoment, StreamingFluxMoment
 
 from .operator_util import BaseOperatorProperties, Spec, parametrize_strategies
 
-_DEFAULT_MOMENT = BatchedFluxMoment   # pure-JAX reference (pivot) every variant is compared against
+_DEFAULT_MOMENT = EinsumFluxMoment   # pure-JAX reference (pivot) every variant is compared against
 
-MOMENT_STRATEGIES = {BatchedFluxMoment: Spec(),
+MOMENT_STRATEGIES = {EinsumFluxMoment: Spec(),
                      StreamingFluxMoment: Spec()
                     }
 
@@ -17,17 +17,19 @@ class TestMomentOperator(BaseOperatorProperties):
     @pytest.fixture
     def operator(self, bb_mgop, strategy_cls, kwargs):
         '''The MomentOperator with this strategy on the shared BB problem.'''
-        return eqx.tree_at(lambda op: op.strategy, bb_mgop[0].moment_operator, strategy_cls(**kwargs))
+        from bb_setup import moment_operator_from_mgop
+        return eqx.tree_at(lambda op: op.strategy, moment_operator_from_mgop(bb_mgop[0]), strategy_cls(**kwargs))
 
     @pytest.fixture
     def build_reference(self, bb_mgop):
-        return lambda: eqx.tree_at(lambda op: op.strategy, bb_mgop[0].moment_operator, _DEFAULT_MOMENT())
+        from bb_setup import moment_operator_from_mgop
+        return lambda: eqx.tree_at(lambda op: op.strategy, moment_operator_from_mgop(bb_mgop[0]), _DEFAULT_MOMENT())
 
 
-_DEFAULT_DISCRETE = BatchedFluxMoment   # pure-JAX reference (pivot) every variant is compared against
+_DEFAULT_DISCRETE = EinsumFluxMoment   # pure-JAX reference (pivot) every variant is compared against
 
 # Same strategies as the moment operator: the direction lives in the data, not the strategy.
-DISCRETE_STRATEGIES = {BatchedFluxMoment: Spec(),
+DISCRETE_STRATEGIES = {EinsumFluxMoment: Spec(),
                        StreamingFluxMoment: Spec()
                       }
 
@@ -37,10 +39,12 @@ class TestDiscreteOperator(BaseOperatorProperties):
     @pytest.fixture
     def operator(self, bb_mgop, strategy_cls, kwargs):
         '''The DiscreteOperator with this strategy on the shared BB problem.'''
-        return eqx.tree_at(lambda op: op.strategy, bb_mgop[0].discrete_operator, strategy_cls(**kwargs))
+        from bb_setup import discrete_operator_from_mgop
+        return eqx.tree_at(lambda op: op.strategy, discrete_operator_from_mgop(bb_mgop[0]), strategy_cls(**kwargs))
 
     @pytest.fixture
     def build_reference(self, bb_mgop):
-        return lambda: eqx.tree_at(lambda op: op.strategy, bb_mgop[0].discrete_operator, _DEFAULT_DISCRETE())
+        from bb_setup import discrete_operator_from_mgop
+        return lambda: eqx.tree_at(lambda op: op.strategy, discrete_operator_from_mgop(bb_mgop[0]), _DEFAULT_DISCRETE())
 
 

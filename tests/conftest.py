@@ -92,11 +92,12 @@ def _build_bb_mgop(dim, degree):
 
 @pytest.fixture(scope='session')
 def bb_mgop(bb_mgop_dim_degree):
-    '''(MultiGroupOperatorScan, source_total, solution_domain, bb_args); built once per (dim, degree).'''
+    '''(MultiGroupOperator, source_total, solution_domain, bb_args); built once per (dim, degree).'''
     return _build_bb_mgop(*bb_mgop_dim_degree)
 
 @pytest.fixture(scope='session')
 def bb_sgop(bb_mgop):
     '''(SingleGroupOperator[group 0], source_total, solution_domain, bb_args), sharing bb_mgop.'''
+    from bb_setup import single_group_operator_from_mgop
     mgop, source_total, solution_domain, args = bb_mgop
-    return mgop.to_single_group_operator(0), source_total, solution_domain, args
+    return single_group_operator_from_mgop(mgop, 0), source_total, solution_domain, args

@@ -26,6 +26,7 @@ class TransportData(TransposableOperatorData):
     sweep_data   : SweepData
     '''Per-angle topological ordering. Ignored by forward strategies.'''
 
+
     @property
     def cross_sections(self) -> CrossSectionDataSingleGroup:
         '''Cross sections mapped to full element array for this energy group. Shape [n_elements].'''

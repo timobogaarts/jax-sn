@@ -12,9 +12,10 @@ _N_SOURCE_ITER = 300
 
 
 def test_single_group_source_iteration(bb_sgop):
+    from bb_setup import source_operator_from_sgop
     sgop, source_total, solution_domain, bb_args = bb_sgop
 
-    rhs = sgop.source_operator().mv(source_total)
+    rhs = source_operator_from_sgop(sgop).mv(source_total)
 
     @eqx.filter_jit
     def source_iterate(op, rhs):

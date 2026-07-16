@@ -80,7 +80,7 @@ giving an operator form of the multigroup, discrete-ordinates, discontinuous-Gal
 this can be used to solve for the coefficients :math:`\psi_{gkei}` given a source term :math:`q_{gkei}` in a matrix-free fashion, as desired. 
 
 Sweep Preconditioning
-----------------------
+__________________________
 A major problem is that information only propagates one element in a operator application: a element with 1 with the rest 0 will only transport that value
 one element per iteration. In a linear mesh, this thus takes :math:`N` iterations to propagate information from one end of the mesh to the other. 
 For a :math:`d` dimensional mesh, this thus takes :math:`\propto N^{1/d}` iterations to propagate information from one end of the mesh to the other.        
@@ -137,4 +137,118 @@ inflow boundaries (:math:`\Omega \cdot \mathbf{n} < 0`), the value from the neig
 Now, intuitively, if an element has no inflow boundaries, it uses no values from other elements, and thus the solution can be immediately found without 
 reference to such other elements. Then, all elements depending only on that initial element can be solved immediately afterwards, and so on. 
 
-This leads to the idea of a dependency graph.
+This leads to the idea of a dependency graph, shown below.
+
+.. image:: graph_figure.png
+
+We can use graph theory and its algorithms to find a order in which it can be solved, assuming there are no cycles in the graph (which don't really seem to happen very often).
+This topological sorting here leads a simple (non-unique) order:
+
+.. math::
+    [1,2,3,4,5,6,7,8,9,10] \text{ or }  [1, 3, 5,7,9, 2,4,6,8,10]
+
+This only requires single-element solves, which due to their very small system size, are comparable to just applying the operator.
+
+Mathematical description
+============================
+By the straight-faced assumption, each element simply contains a discrete number of straight faces where :math:`\Omega\cdot \mathbf{n}` is constant -- each face is either 
+outflow or inflow (as in the mesh above). Denote the set of inflow faces for element :math:`\epsilon` as :math:`\beta_{\epsilon}^-` (and similar for outflow).
+
+The transport operator is then
+
+.. math::
+    T[\psi_{ei}] = \mathbf{G}_{\epsilon}[\psi_{\epsilon i}] - \sum_{\beta \in \beta^{-}_{\epsilon}}  \mathbf{F}_{\epsilon \epsilon(\beta)}[\psi_{\epsilon(\beta) i}]
+
+with the single-element matrices defined as 
+
+.. math::
+    \mathbf{G}_{\epsilon}[\psi_{\epsilon i}] &=\sum_i \psi_{\epsilon i } \left[\int_{\epsilon} H_{\epsilon i}\left( \sigma H_{\epsilon j} - \Omega \cdot \nabla   H_{\epsilon j}\right)\, d V  + \sum_{\beta \in \beta^+_{\epsilon}}|\Omega \cdot \mathbf{n}_\beta|\int_{\beta} H_{\epsilon i} H_{\epsilon j} \, d A \right] \\
+    \mathbf{F}_{\epsilon \epsilon(\beta)}[\psi_{\epsilon(\beta)i}] &= \sum_{i}\psi_{\epsilon(\beta) i }|\Omega \cdot \mathbf{n}_\beta| \int_{\beta} H_{\epsilon(\beta) i} H_{\epsilon j}\, d A
+
+For element :math:`\epsilon` with all its neighbours known, the solution can be found by solving:
+
+.. math::
+    \psi_{\epsilon i} = \mathbf{G}_{\epsilon}^{-1}\left[q_{\epsilon i} +\sum_{\beta \in \beta^-_{\epsilon}}  \mathbf{F}_{\epsilon \epsilon(\beta)}[\psi_{\epsilon(\beta)i}]\right]
+
+This leads to the following algorithm for inverting the transport operator for a right-hand-side :math:`S_{gkei}`:
+
+
+.. container:: algorithm-box
+
+   **Algorithm 1: Transport operator inversion**
+
+   **Setup:** Compute topological order :math:`O_k` for all angles :math:`\Omega_k`.
+
+   :parallel:`Parallel for` :math:`g = 1, \dots, G`
+
+      :parallel:`Parallel for` :math:`k = 1, \dots, K`
+
+         :loop:`For` :math:`n = 1, \dots, N`
+
+            Get element in order:
+
+            :math:`e \gets O_k[n]`
+
+            Compute single-element matrix:
+
+            :math:`\mathbf{G}_{gke}`
+
+            Initialize:
+
+            :math:`S_{gkei} \gets 0`
+
+            :loop:`For` :math:`\beta \in \beta^-_{ek}`
+
+               :math:`S_{gkei} \mathrel{+}= 
+               \mathbf{F}_{ke,e(\beta)}
+               [\psi_{gke(\beta)i}]`
+
+            Compute:
+
+            :math:`\psi_{gkei} \gets
+            \mathbf{G}_{gke}^{-1}
+            [q_{gkei} + S_{gkei}]`
+
+We can however do better than this: this is fully sequential in all elements, while some elements do not share the same dependency: in the above mesh, element 1 and 2 could be solved in parallel. 
+This is the idea behind level-based parallelism. 
+    
+.. container:: algorithm-box
+
+   **Algorithm 2: Transport operator inversion (level-based)**
+
+   **Setup:** Compute topological order :math:`O_k` and levels :math:`L_k`.
+
+   :parallel:`Parallel for` :math:`g = 1, \dots, G`
+
+      :parallel:`Parallel for` :math:`k = 1, \dots, K`
+
+         :loop:`For` :math:`l = 1, \dots, L`
+
+            :parallel:`Parallel for` :math:`n \in L_k[l]`
+
+               Get element in order:
+
+               :math:`e \gets O_k[n]`
+
+               Compute single-element matrix:
+
+               :math:`\mathbf{G}_{gke}`
+
+               Initialize:
+
+               :math:`S_{gkei} \gets 0`
+
+               :loop:`For` :math:`\beta \in \beta^-_{ek}`
+
+                  Update:
+
+                  :math:`S_{gkei} \mathrel{+}= 
+                  \mathbf{F}_{ke,e(\beta)}
+                  [\psi_{gke(\beta)i}]`
+
+               Compute:
+
+               :math:`\psi_{gkei} \gets
+               \mathbf{G}_{gke}^{-1}
+               [q_{gkei} + S_{gkei}]`
+

@@ -14,6 +14,7 @@ Each operator carries a strategy of its matching type (full / chain / source); t
 factor the product into the mass / discrete / moment / transport sub-operators.
 '''
 from .single_group_operators_base import (
+    SingleGroupData,
     SingleGroupStrategyBase,
     SingleGroupStrategy,
     SingleGroupChainStrategy,
@@ -31,6 +32,7 @@ from .composed_single_group_strategies import (
 )
 
 __all__ = [
+    'SingleGroupData',
     'SingleGroupStrategyBase', 'SingleGroupStrategy', 'SingleGroupChainStrategy', 'SingleGroupSourceStrategy',
     'SingleGroupOperator', 'SingleGroupChainOperator', 'SingleGroupSourceOperator',
     'ComposedSingleGroupStrategy', 'ComposedSingleGroupChainStrategy', 'ComposedSingleGroupSourceStrategy',

@@ -112,6 +112,8 @@ def solve_lower_triangular(mgop : MultiGroupOperator, solver : lx.AbstractLinear
         sgop = mgop.to_single_group_operator(i)        
         
         # Scatter source for group i, swept into flux moments by the group-i chain C_i = M T_i^{-1} D H.
+        # REFACTOR-MARKER(gather-scatter): mgop.gather_scatter_operator.gather_forward is the old API;
+        # becomes gs_strategy.forward_group(GatherScatterData(cross_sections), solution, i) in the MG/solver rewrite.
         rhs_i = rhs[i] + sgop.chain_operator().mv(mgop.gather_scatter_operator.gather_forward(solution, i))
         lxsolve = lx.linear_solve(sgop, rhs_i, solver, throw = False, options = {"y0" : rhs_i}) # Solve single group system
 
@@ -226,6 +228,7 @@ def solve_upper_triangular_transpose(mgop : MultiGroupOperator, solver : lx.Abst
         
         sgop_gi = sgop_t.to_energy_group(g_i)
 
+        # REFACTOR-MARKER(gather-scatter): old API; becomes gs_strategy.transpose_group(GatherScatterData(cross_sections), xi_g, g_i).
         rhs_i   = rhs[g_i] + mgop.gather_scatter_operator.gather_backward(xi_g, g_i)
 
         def zero_rhs(rhs_i):

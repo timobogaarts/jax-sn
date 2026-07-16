@@ -6,7 +6,7 @@ import equinox as eqx
 from .moment_discrete_operator_base import FluxMomentStrategy, DiscreteMomentData
 
 
-class BatchedFluxMoment(FluxMomentStrategy):
+class EinsumFluxMoment(FluxMomentStrategy):
     '''Batched-matrix (einsum) implementation. Batches over the trailing dimensions.'''
 
     def contract(self, data: DiscreteMomentData, x, axis: int):

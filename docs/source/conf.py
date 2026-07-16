@@ -49,3 +49,11 @@ autodoc_default_options = {
 typehints_use_signature = True # show typehints in the function signature.
 autodoc_preserve_defaults = True # show default values as written in source, not repr()
 add_module_names = False # removes the long jax_sn.module.name from the docs. Can re-enable for clarity, but we don't use classes from other modules much, so in principle I don't see too much objections.
+
+rst_prolog = """
+.. role:: parallel
+   :class: parallel
+
+.. role:: loop
+   :class: loop
+"""

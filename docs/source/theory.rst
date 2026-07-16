@@ -13,3 +13,7 @@ The theory section contains an up-to-date overview of the derivation of the impl
    theory/multigroup.rst
    theory/angular_discretisation.rst
    theory/spatial_discretisation.rst
+   theory/complete_discretisation.rst
+   theory/transposition.rst
+   theory/downscattering.rst
+   theory/simplex_elements.rst

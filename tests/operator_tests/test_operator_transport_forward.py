@@ -22,10 +22,12 @@ class TestTransportForward(BaseOperatorProperties):
     @pytest.fixture
     def operator(self, bb_mgop, strategy_cls, kwargs):
         '''The single-angle TransportOperatorSingleAngle with this forward strategy on the shared BB problem.'''
-        top = bb_mgop[0].transport_operator[_ANGLE_I]
+        from bb_setup import transport_operator_from_mgop
+        top = transport_operator_from_mgop(bb_mgop[0])[_ANGLE_I]
         return eqx.tree_at(lambda o: o.strategy, top, strategy_cls(**kwargs))
 
     @pytest.fixture
     def build_reference(self, bb_mgop):
-        top = bb_mgop[0].transport_operator[_ANGLE_I]
+        from bb_setup import transport_operator_from_mgop
+        top = transport_operator_from_mgop(bb_mgop[0])[_ANGLE_I]
         return lambda: eqx.tree_at(lambda o: o.strategy, top, _DEFAULT_FORWARD())
