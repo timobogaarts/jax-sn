@@ -1,11 +1,3 @@
-'''Finite-difference check of end-to-end differentiation through the block solve.
-
-The multigroup fixed-source solve -- RHS conditioning + MultiGroupLowerTriangularBlockSolver -- is
-differentiated w.r.t. the cross sections with reverse-mode AD (lineax differentiates the solve
-implicitly through the operator's mv, so the block substitution itself need not be differentiable), and
-the resulting gradient is checked entry-by-entry against a one-sided finite difference that re-solves
-from the perturbed cross sections. Runs at a single (dim, degree) to bound cost.
-'''
 import jax
 import jax.numpy as jnp
 import numpy as onp
@@ -19,7 +11,7 @@ from jax_sn.parametrisation.multigroup_parametrisation import MultigroupOperator
 
 from bb_setup import downscattering_only as _downscattering_only
 
-_DIM_DEGREE = (1, 2)   # cheapest combo that still has a non-trivial (degree>1) FEM basis
+_DIM_DEGREE = (3, 1)   
 
 
 @pytest.mark.slow
