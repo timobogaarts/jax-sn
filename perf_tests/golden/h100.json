@@ -1,0 +1,430 @@
+{
+  "discrete.mv": {
+    "EinsumFluxMoment": {
+      "status": "ok",
+      "peak_mb": 229.77371215820312,
+      "t_ms": 0.28512567847168874,
+      "reason": ""
+    },
+    "StreamingFluxMoment": {
+      "status": "ok",
+      "peak_mb": 199.6055908203125,
+      "t_ms": 5.445912344536434,
+      "reason": ""
+    }
+  },
+  "MGOp.mv": {
+    "jax": {
+      "status": "ok",
+      "peak_mb": 3699.053367614746,
+      "t_ms": 1926.2159090139903,
+      "reason": ""
+    },
+    "jax-batched": {
+      "status": "ok",
+      "peak_mb": 929.0338516235352,
+      "t_ms": 1930.665275955107,
+      "reason": ""
+    },
+    "pallas": {
+      "status": "ok",
+      "peak_mb": 3699.053352355957,
+      "t_ms": 387.83070497447625,
+      "reason": ""
+    },
+    "pallas-batched": {
+      "status": "ok",
+      "peak_mb": 930.9564437866211,
+      "t_ms": 446.81621401105076,
+      "reason": ""
+    },
+    "warp": {
+      "status": "ok",
+      "peak_mb": 882.2264404296875,
+      "t_ms": 20.94920299714431,
+      "reason": ""
+    },
+    "warp-batched": {
+      "status": "ok",
+      "peak_mb": 882.2264404296875,
+      "t_ms": 21.063943044282496,
+      "reason": ""
+    }
+  },
+  "MGOp.Tmv": {
+    "jax": {
+      "status": "ok",
+      "peak_mb": 3995.6842651367188,
+      "t_ms": 1915.199326002039,
+      "reason": ""
+    },
+    "jax-batched": {
+      "status": "ok",
+      "peak_mb": 1225.6663970947266,
+      "t_ms": 1926.7053860239685,
+      "reason": ""
+    },
+    "pallas": {
+      "status": "ok",
+      "peak_mb": 3995.6842498779297,
+      "t_ms": 386.7625899729319,
+      "reason": ""
+    },
+    "pallas-batched": {
+      "status": "ok",
+      "peak_mb": 1227.5889892578125,
+      "t_ms": 445.71123004425317,
+      "reason": ""
+    },
+    "warp": {
+      "status": "ok",
+      "peak_mb": 1178.8589477539062,
+      "t_ms": 21.902507985942066,
+      "reason": ""
+    },
+    "warp-batched": {
+      "status": "ok",
+      "peak_mb": 1178.8589477539062,
+      "t_ms": 21.885549009311944,
+      "reason": ""
+    }
+  },
+  "SGOp.mv": {
+    "jax": {
+      "status": "ok",
+      "peak_mb": 3286.106903076172,
+      "t_ms": 480.28758401051164,
+      "reason": ""
+    },
+    "jax-batched": {
+      "status": "ok",
+      "peak_mb": 507.7081069946289,
+      "t_ms": 481.0740290558897,
+      "reason": ""
+    },
+    "pallas": {
+      "status": "ok",
+      "peak_mb": 3385.942840576172,
+      "t_ms": 96.92975599318743,
+      "reason": ""
+    },
+    "pallas-batched": {
+      "status": "ok",
+      "peak_mb": 510.1800231933594,
+      "t_ms": 111.98165995301679,
+      "reason": ""
+    },
+    "warp": {
+      "status": "ok",
+      "peak_mb": 486.7185974121094,
+      "t_ms": 5.4081590108883875,
+      "reason": ""
+    },
+    "warp-batched": {
+      "status": "ok",
+      "peak_mb": 486.7185974121094,
+      "t_ms": 5.4217890137806535,
+      "reason": ""
+    }
+  },
+  "mass.mv": {
+    "VmapMass": {
+      "status": "ok",
+      "peak_mb": 427.9657287597656,
+      "t_ms": 0.8795673202257603,
+      "reason": ""
+    },
+    "LaxMass": {
+      "status": "ok",
+      "peak_mb": 296.1297912597656,
+      "t_ms": 0.7126632688316301,
+      "reason": ""
+    },
+    "WarpMass": {
+      "status": "ok",
+      "peak_mb": 264.1297912597656,
+      "t_ms": 0.3721752829100613,
+      "reason": ""
+    }
+  },
+  "mass.mv.moment": {
+    "VmapMass": {
+      "status": "ok",
+      "peak_mb": 230.21182250976562,
+      "t_ms": 0.5087829728533203,
+      "reason": ""
+    },
+    "LaxMass": {
+      "status": "ok",
+      "peak_mb": 164.29385375976562,
+      "t_ms": 0.4407640975309399,
+      "reason": ""
+    },
+    "WarpMass": {
+      "status": "ok",
+      "peak_mb": 132.29385375976562,
+      "t_ms": 0.3061766185882417,
+      "reason": ""
+    }
+  },
+  "moment.mv": {
+    "EinsumFluxMoment": {
+      "status": "ok",
+      "peak_mb": 229.77371215820312,
+      "t_ms": 0.2576153633664503,
+      "reason": ""
+    },
+    "StreamingFluxMoment": {
+      "status": "ok",
+      "peak_mb": 199.6055908203125,
+      "t_ms": 5.871716653928161,
+      "reason": ""
+    }
+  },
+  "scatter.gather": {
+    "BroadcastedSingleGroupGather": {
+      "status": "ok",
+      "peak_mb": 1087.1512908935547,
+      "t_ms": 8.14419350354001,
+      "reason": ""
+    }
+  },
+  "transport.forward": {
+    "VmapForward": {
+      "status": "ok",
+      "peak_mb": 32.05681610107422,
+      "t_ms": 0.19697887220013982,
+      "reason": ""
+    },
+    "BatchedForward(1000)": {
+      "status": "ok",
+      "peak_mb": 22.645957946777344,
+      "t_ms": 0.9721987359961005,
+      "reason": ""
+    }
+  },
+  "transport.inv": {
+    "VmapSweep": {
+      "status": "ok",
+      "peak_mb": 67.57267761230469,
+      "t_ms": 617.8163440199569,
+      "reason": ""
+    },
+    "BatchedSweep(1000)": {
+      "status": "ok",
+      "peak_mb": 29.772972106933594,
+      "t_ms": 614.1974019701593,
+      "reason": ""
+    },
+    "VmapPallasSweep": {
+      "status": "ok",
+      "peak_mb": 69.40372467041016,
+      "t_ms": 82.39459001924843,
+      "reason": ""
+    },
+    "BatchedPallasSweep(1000)": {
+      "status": "ok",
+      "peak_mb": 29.80347442626953,
+      "t_ms": 56.54960195533931,
+      "reason": ""
+    },
+    "WarpSequentialSweep": {
+      "status": "ok",
+      "peak_mb": 29.120521545410156,
+      "t_ms": 93.30366499489173,
+      "reason": ""
+    },
+    "WarpLevelSweep": {
+      "status": "ok",
+      "peak_mb": 29.13036346435547,
+      "t_ms": 2.5423412859838987,
+      "reason": ""
+    }
+  },
+  "transport.inv.multiangle": {
+    "jax": {
+      "status": "ok",
+      "peak_mb": 3171.6697540283203,
+      "t_ms": 479.479618021287,
+      "reason": ""
+    },
+    "jax-batched": {
+      "status": "ok",
+      "peak_mb": 401.10103607177734,
+      "t_ms": 482.0084150414914,
+      "reason": ""
+    },
+    "pallas": {
+      "status": "ok",
+      "peak_mb": 3254.0672149658203,
+      "t_ms": 96.13554103998467,
+      "reason": ""
+    },
+    "pallas-batched": {
+      "status": "ok",
+      "peak_mb": 403.5729522705078,
+      "t_ms": 110.8238460146822,
+      "reason": ""
+    },
+    "warp": {
+      "status": "ok",
+      "peak_mb": 354.8429718017578,
+      "t_ms": 5.0111743427502615,
+      "reason": ""
+    },
+    "warp-batched": {
+      "status": "ok",
+      "peak_mb": 354.8429718017578,
+      "t_ms": 4.98749465138341,
+      "reason": ""
+    }
+  },
+  "grad.solve.ltri": {
+    "jax": {
+      "status": "ok",
+      "peak_mb": 641.7546701431274,
+      "t_ms": 52414.69619603595,
+      "n_iter": 133,
+      "ms_per_iter": 394.09546012057103,
+      "reason": ""
+    },
+    "jax-batched": {
+      "status": "ok",
+      "peak_mb": 333.96725940704346,
+      "t_ms": 54074.74995299708,
+      "n_iter": 133,
+      "ms_per_iter": 406.5770673157675,
+      "reason": ""
+    },
+    "pallas": {
+      "status": "ok",
+      "peak_mb": 572.9068384170532,
+      "t_ms": 14164.562791003846,
+      "n_iter": 133,
+      "ms_per_iter": 106.50047211281087,
+      "reason": ""
+    },
+    "pallas-batched": {
+      "status": "ok",
+      "peak_mb": 334.69887256622314,
+      "t_ms": 13674.198405002244,
+      "n_iter": 133,
+      "ms_per_iter": 102.81352184212213,
+      "reason": ""
+    },
+    "warp": {
+      "status": "ok",
+      "peak_mb": 323.6532793045044,
+      "t_ms": 9920.449974015355,
+      "n_iter": 133,
+      "ms_per_iter": 74.58984942868688,
+      "reason": ""
+    },
+    "warp-batched": {
+      "status": "ok",
+      "peak_mb": 323.65331745147705,
+      "t_ms": 8096.512003976386,
+      "n_iter": 133,
+      "ms_per_iter": 60.87603010508561,
+      "reason": ""
+    }
+  },
+  "solve": {
+    "jax / solve.iter": {
+      "status": "ok",
+      "peak_mb": 565.2230987548828,
+      "t_ms": 33834.374086000025,
+      "n_iter": 55,
+      "ms_per_iter": 615.1704379272732,
+      "reason": ""
+    },
+    "jax / solve.ltri": {
+      "status": "ok",
+      "peak_mb": 394.1294107437134,
+      "t_ms": 21754.6616489999,
+      "n_iter": 133,
+      "ms_per_iter": 163.5688845789466,
+      "reason": ""
+    },
+    "jax-batched / solve.iter": {
+      "status": "ok",
+      "peak_mb": 430.4574203491211,
+      "t_ms": 35525.12540604221,
+      "n_iter": 55,
+      "ms_per_iter": 645.9113710189492,
+      "reason": ""
+    },
+    "jax-batched / solve.ltri": {
+      "status": "ok",
+      "peak_mb": 197.522873878479,
+      "t_ms": 22781.683434033766,
+      "n_iter": 133,
+      "ms_per_iter": 171.2908528874719,
+      "reason": ""
+    },
+    "pallas / solve.iter": {
+      "status": "ok",
+      "peak_mb": 565.2230758666992,
+      "t_ms": 5775.444830011111,
+      "n_iter": 55,
+      "ms_per_iter": 105.00808781838383,
+      "reason": ""
+    },
+    "pallas / solve.ltri": {
+      "status": "ok",
+      "peak_mb": 394.1293954849243,
+      "t_ms": 3388.295339012984,
+      "n_iter": 133,
+      "ms_per_iter": 25.475904804608902,
+      "reason": ""
+    },
+    "pallas-batched / solve.iter": {
+      "status": "ok",
+      "peak_mb": 430.4573974609375,
+      "t_ms": 5054.547310981434,
+      "n_iter": 55,
+      "ms_per_iter": 91.90086019966243,
+      "reason": ""
+    },
+    "pallas-batched / solve.ltri": {
+      "status": "ok",
+      "peak_mb": 198.25526523590088,
+      "t_ms": 3203.812771011144,
+      "n_iter": 133,
+      "ms_per_iter": 24.08881782715146,
+      "reason": ""
+    },
+    "warp / solve.iter": {
+      "status": "ok",
+      "peak_mb": 430.6667251586914,
+      "t_ms": 1523.0467530200258,
+      "n_iter": 55,
+      "ms_per_iter": 27.69175914581865,
+      "reason": ""
+    },
+    "warp / solve.ltri": {
+      "status": "ok",
+      "peak_mb": 188.08862400054932,
+      "t_ms": 902.441561978776,
+      "n_iter": 133,
+      "ms_per_iter": 6.78527490209606,
+      "reason": ""
+    },
+    "warp-batched / solve.iter": {
+      "status": "ok",
+      "peak_mb": 430.6667251586914,
+      "t_ms": 1529.176601965446,
+      "n_iter": 55,
+      "ms_per_iter": 27.80321094482629,
+      "reason": ""
+    },
+    "warp-batched / solve.ltri": {
+      "status": "ok",
+      "peak_mb": 188.08862400054932,
+      "t_ms": 901.7847680370323,
+      "n_iter": 133,
+      "ms_per_iter": 6.780336601782198,
+      "reason": ""
+    }
+  }
+}
