@@ -19,8 +19,9 @@ accuracy tests -- are ``bb__d3`` (the external solver tetrahedralises the 3D sla
 so a like-for-like comparison isn't possible), ``transport_sweep__*`` (a localized single-angle
 sweep guard; external accuracy of the sweep is anchored by ``bb__*``), ``moment__*`` (the
 first-collision moment vector on the BB problem, guarding the higher-l projection that ``bb__*``'s
-scalar-flux oracle can't see), and ``fem__*`` (frozen from the retired in-tree FEM oracle). These
-are excluded from ``regenerate.py`` so re-running it never overwrites them.
+scalar-flux oracle can't see), ``fem__*`` (frozen from the retired in-tree FEM oracle) and
+``fwcadis__*`` (a round-trip regression pin on the FW-CADIS forward + continuous-adjoint pipeline).
+These are excluded from ``regenerate.py`` so re-running it never overwrites them.
 '''
 import os
 import numpy as onp
@@ -80,6 +81,13 @@ def key_moment(dim: int) -> str:
 
 def key_bb(dim: int) -> str:
     return f'bb__d{dim}'
+
+
+def key_fw_cadis(dim: int, degree: int) -> str:
+    '''FW-CADIS importance map (scalar-flux moment) interpolated along the BB domain diagonal,
+    self-pinned to jax-sn's own current output -- a round-trip regression guard on the forward +
+    continuous-adjoint solve pipeline, not external ground truth (see the provenance note above).'''
+    return f'fwcadis__d{dim}_deg{degree}'
 
 
 def key_fem(element: str, degree: int) -> str:

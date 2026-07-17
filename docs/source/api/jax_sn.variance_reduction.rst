@@ -12,5 +12,5 @@ Submodules
 .. toctree::
    :maxdepth: 2
 
-   jax_sn.variance_reduction.adjoint_multigroup_operator
+   jax_sn.variance_reduction.continuous_adjoint
    jax_sn.variance_reduction.fw_cadis

@@ -24,7 +24,7 @@ It is therefore often more convenient to work with the angular neutron flux, def
 
 
 Assumptions
-===============
+---------------------------
 Several assumptions are made about the nature of the neutral particle behaviour.
 
 - Particle size is small relative to problem length scales and are classical. They are described by a position :math:`\mathbf{r}` and momentum :math:`\mathbf{p}`. 

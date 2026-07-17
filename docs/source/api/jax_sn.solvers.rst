@@ -13,5 +13,4 @@ Submodules
    :maxdepth: 2
 
    jax_sn.solvers.base_solvers
-   jax_sn.solvers.lower_triangular_solver
    jax_sn.solvers.right_hand_side
