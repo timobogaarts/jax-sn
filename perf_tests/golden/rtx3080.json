@@ -1,123 +1,129 @@
 {
   "discrete.mv": {
-    "BatchedDiscrete": {
+    "EinsumFluxMoment": {
       "status": "ok",
       "peak_mb": 201.77371215820312,
-      "t_ms": 8.044835999953648,
+      "t_ms": 8.054965999690467,
+      "reason": ""
+    },
+    "StreamingFluxMoment": {
+      "status": "ok",
+      "peak_mb": 199.6055908203125,
+      "t_ms": 21.022431001256336,
       "reason": ""
     }
   },
   "MGOp.mv": {
-    "VmapSweep": {
+    "jax": {
       "status": "ok",
-      "peak_mb": 3682.5738830566406,
-      "t_ms": 5717.593365000539,
+      "peak_mb": 3682.573875427246,
+      "t_ms": 5830.503036999289,
       "reason": ""
     },
-    "BatchedSweep(1000)": {
+    "jax-batched": {
       "status": "ok",
-      "peak_mb": 929.3085174560547,
-      "t_ms": 5782.194666999203,
+      "peak_mb": 929.3085098266602,
+      "t_ms": 5691.835378000178,
       "reason": ""
     },
-    "VmapPallasSweep": {
+    "pallas": {
       "status": "ok",
-      "peak_mb": 3682.5738677978516,
-      "t_ms": 632.334099000218,
+      "peak_mb": 3682.573860168457,
+      "t_ms": 611.1747809991357,
       "reason": ""
     },
-    "BatchedPallasSweep(1000)": {
+    "pallas-batched": {
       "status": "ok",
-      "peak_mb": 931.5057678222656,
-      "t_ms": 644.4193759998598,
+      "peak_mb": 931.5057601928711,
+      "t_ms": 621.3090530000045,
       "reason": ""
     },
-    "WarpSequentialSweep": {
+    "warp": {
       "status": "ok",
-      "peak_mb": 885.5178298950195,
-      "t_ms": 3049.756871999307,
+      "peak_mb": 882.2264404296875,
+      "t_ms": 112.03395700067631,
       "reason": ""
     },
-    "WarpLevelSweep": {
+    "warp-batched": {
       "status": "ok",
-      "peak_mb": 886.226448059082,
-      "t_ms": 163.45108299992717,
+      "peak_mb": 882.2264404296875,
+      "t_ms": 112.43488099898968,
       "reason": ""
     }
   },
   "MGOp.Tmv": {
-    "VmapSweep": {
+    "jax": {
       "status": "ok",
-      "peak_mb": 3979.2064208984375,
-      "t_ms": 5663.346811999872,
+      "peak_mb": 3979.2047729492188,
+      "t_ms": 5690.008247998776,
       "reason": ""
     },
-    "BatchedSweep(1000)": {
+    "jax-batched": {
       "status": "ok",
       "peak_mb": 1225.9410552978516,
-      "t_ms": 5915.699080000195,
+      "t_ms": 5658.421182000893,
       "reason": ""
     },
-    "VmapPallasSweep": {
+    "pallas": {
       "status": "ok",
-      "peak_mb": 3979.2064056396484,
-      "t_ms": 654.2078450002009,
+      "peak_mb": 3979.2047576904297,
+      "t_ms": 610.0188569998863,
       "reason": ""
     },
-    "BatchedPallasSweep(1000)": {
+    "pallas-batched": {
       "status": "ok",
       "peak_mb": 1228.1383056640625,
-      "t_ms": 651.7867500006105,
+      "t_ms": 620.6177570002183,
       "reason": ""
     },
-    "WarpSequentialSweep": {
+    "warp": {
       "status": "ok",
-      "peak_mb": 1181.6925659179688,
-      "t_ms": 3176.611185999718,
+      "peak_mb": 1178.8589477539062,
+      "t_ms": 115.70753700107161,
       "reason": ""
     },
-    "WarpLevelSweep": {
+    "warp-batched": {
       "status": "ok",
-      "peak_mb": 1182.4011840820312,
-      "t_ms": 171.9170579999627,
+      "peak_mb": 1178.8589477539062,
+      "t_ms": 115.5598090008425,
       "reason": ""
     }
   },
   "SGOp.mv": {
-    "VmapSweep": {
+    "jax": {
       "status": "ok",
       "peak_mb": 3258.106903076172,
-      "t_ms": 1404.323075999855,
+      "t_ms": 1484.9144560012064,
       "reason": ""
     },
-    "BatchedSweep(1000)": {
+    "jax-batched": {
       "status": "ok",
       "peak_mb": 507.9827651977539,
-      "t_ms": 1417.3936880006295,
+      "t_ms": 1490.3327009997156,
       "reason": ""
     },
-    "VmapPallasSweep": {
+    "pallas": {
       "status": "ok",
       "peak_mb": 3287.065887451172,
-      "t_ms": 152.28913700047997,
+      "t_ms": 153.45291400080896,
       "reason": ""
     },
-    "BatchedPallasSweep(1000)": {
+    "pallas-batched": {
       "status": "ok",
       "peak_mb": 510.1800231933594,
-      "t_ms": 154.44739899976412,
+      "t_ms": 155.76523500021722,
       "reason": ""
     },
-    "WarpSequentialSweep": {
-      "status": "ok",
-      "peak_mb": 486.0099792480469,
-      "t_ms": 755.7272179992651,
-      "reason": ""
-    },
-    "WarpLevelSweep": {
+    "warp": {
       "status": "ok",
       "peak_mb": 486.7185974121094,
-      "t_ms": 35.08715599946299,
+      "t_ms": 28.80877099960344,
+      "reason": ""
+    },
+    "warp-batched": {
+      "status": "ok",
+      "peak_mb": 486.7185974121094,
+      "t_ms": 28.614053000637796,
       "reason": ""
     }
   },
@@ -125,35 +131,61 @@
     "VmapMass": {
       "status": "ok",
       "peak_mb": 399.9657287597656,
-      "t_ms": 13.764086999799474,
+      "t_ms": 13.527623001209577,
       "reason": ""
     },
     "LaxMass": {
       "status": "ok",
       "peak_mb": 268.1297912597656,
-      "t_ms": 12.553013999422546,
+      "t_ms": 12.558365000586491,
+      "reason": ""
+    },
+    "WarpMass": {
+      "status": "ok",
+      "peak_mb": 264.1297912597656,
+      "t_ms": 1.5952511818216988,
+      "reason": ""
+    }
+  },
+  "mass.mv.moment": {
+    "VmapMass": {
+      "status": "ok",
+      "peak_mb": 202.21182250976562,
+      "t_ms": 7.0059689996924135,
+      "reason": ""
+    },
+    "LaxMass": {
+      "status": "ok",
+      "peak_mb": 136.29385375976562,
+      "t_ms": 7.007798999438819,
+      "reason": ""
+    },
+    "WarpMass": {
+      "status": "ok",
+      "peak_mb": 132.29385375976562,
+      "t_ms": 1.462458363675978,
       "reason": ""
     }
   },
   "moment.mv": {
-    "BatchedMoment": {
+    "EinsumFluxMoment": {
       "status": "ok",
       "peak_mb": 201.77371215820312,
-      "t_ms": 5.876176333307133,
+      "t_ms": 6.962769499295973,
       "reason": ""
     },
-    "StreamingMoment": {
+    "StreamingFluxMoment": {
       "status": "ok",
       "peak_mb": 199.6055908203125,
-      "t_ms": 22.086783000304422,
+      "t_ms": 21.154525000383728,
       "reason": ""
     }
   },
   "scatter.gather": {
-    "GatherScatterOperatorBroadcasted": {
+    "BroadcastedSingleGroupGather": {
       "status": "ok",
-      "peak_mb": 330.5113983154297,
-      "t_ms": 1.486407999967317,
+      "peak_mb": 1059.1512908935547,
+      "t_ms": 25.695715001347708,
       "reason": ""
     }
   },
@@ -161,13 +193,13 @@
     "VmapForward": {
       "status": "ok",
       "peak_mb": 32.97234344482422,
-      "t_ms": 1.5029298333502084,
+      "t_ms": 1.5002686667079008,
       "reason": ""
     },
     "BatchedForward(1000)": {
       "status": "ok",
       "peak_mb": 22.654075622558594,
-      "t_ms": 1.869701333311645,
+      "t_ms": 1.8709132500589476,
       "reason": ""
     }
   },
@@ -175,283 +207,223 @@
     "VmapSweep": {
       "status": "ok",
       "peak_mb": 67.57267761230469,
-      "t_ms": 646.5659770001366,
+      "t_ms": 670.5114200012758,
       "reason": ""
     },
     "BatchedSweep(1000)": {
       "status": "ok",
       "peak_mb": 29.772972106933594,
-      "t_ms": 666.8676460003553,
+      "t_ms": 660.9908329992322,
       "reason": ""
     },
     "VmapPallasSweep": {
       "status": "ok",
       "peak_mb": 69.40372467041016,
-      "t_ms": 81.61406299950613,
+      "t_ms": 81.16887100004533,
       "reason": ""
     },
     "BatchedPallasSweep(1000)": {
       "status": "ok",
       "peak_mb": 29.80347442626953,
-      "t_ms": 74.2510919999404,
+      "t_ms": 73.68119499915338,
       "reason": ""
     },
     "WarpSequentialSweep": {
       "status": "ok",
       "peak_mb": 29.120521545410156,
-      "t_ms": 273.9419280005677,
+      "t_ms": 284.1956680003932,
       "reason": ""
     },
     "WarpLevelSweep": {
       "status": "ok",
       "peak_mb": 29.13036346435547,
-      "t_ms": 4.130849999910424,
+      "t_ms": 4.540894000456319,
       "reason": ""
     }
   },
   "transport.inv.multiangle": {
-    "VmapSweep + VmapAngles": {
+    "jax": {
       "status": "ok",
       "peak_mb": 3155.1902618408203,
-      "t_ms": 1514.7506299999804,
+      "t_ms": 1442.313360001208,
       "reason": ""
     },
-    "VmapSweep + WarpSequentialAngles": {
-      "status": "skip",
-      "peak_mb": null,
-      "t_ms": null,
-      "reason": "WarpSequentialAngles needs a single-angle operator with a WarpSequentialSweep inverse, got VmapSweep"
-    },
-    "VmapSweep + WarpLevelAngles": {
-      "status": "skip",
-      "peak_mb": null,
-      "t_ms": null,
-      "reason": "WarpLevelAngles needs a single-angle operator with a WarpLevelSweep inverse, got VmapSweep"
-    },
-    "BatchedSweep(1000) + VmapAngles": {
+    "jax-batched": {
       "status": "ok",
       "peak_mb": 401.37569427490234,
-      "t_ms": 1396.4458070004184,
+      "t_ms": 1470.7647089999227,
       "reason": ""
     },
-    "BatchedSweep(1000) + WarpSequentialAngles": {
-      "status": "skip",
-      "peak_mb": null,
-      "t_ms": null,
-      "reason": "WarpSequentialAngles needs a single-angle operator with a WarpSequentialSweep inverse, got BatchedSw"
-    },
-    "BatchedSweep(1000) + WarpLevelAngles": {
-      "status": "skip",
-      "peak_mb": null,
-      "t_ms": null,
-      "reason": "WarpLevelAngles needs a single-angle operator with a WarpLevelSweep inverse, got BatchedSweep"
-    },
-    "VmapPallasSweep + VmapAngles": {
+    "pallas": {
       "status": "ok",
       "peak_mb": 3287.0261993408203,
-      "t_ms": 133.8717500002531,
+      "t_ms": 135.40216500041424,
       "reason": ""
     },
-    "VmapPallasSweep + WarpSequentialAngles": {
-      "status": "skip",
-      "peak_mb": null,
-      "t_ms": null,
-      "reason": "WarpSequentialAngles needs a single-angle operator with a WarpSequentialSweep inverse, got VmapPalla"
-    },
-    "VmapPallasSweep + WarpLevelAngles": {
-      "status": "skip",
-      "peak_mb": null,
-      "t_ms": null,
-      "reason": "WarpLevelAngles needs a single-angle operator with a WarpLevelSweep inverse, got VmapPallasSweep"
-    },
-    "BatchedPallasSweep(1000) + VmapAngles": {
+    "pallas-batched": {
       "status": "ok",
       "peak_mb": 403.5729522705078,
-      "t_ms": 137.80403100008698,
+      "t_ms": 136.45580699994753,
       "reason": ""
     },
-    "BatchedPallasSweep(1000) + WarpSequentialAngles": {
-      "status": "skip",
-      "peak_mb": null,
-      "t_ms": null,
-      "reason": "WarpSequentialAngles needs a single-angle operator with a WarpSequentialSweep inverse, got BatchedPa"
-    },
-    "BatchedPallasSweep(1000) + WarpLevelAngles": {
-      "status": "skip",
-      "peak_mb": null,
-      "t_ms": null,
-      "reason": "WarpLevelAngles needs a single-angle operator with a WarpLevelSweep inverse, got BatchedPallasSweep"
-    },
-    "WarpSequentialSweep + WarpSequentialAngles": {
-      "status": "ok",
-      "peak_mb": 354.1343536376953,
-      "t_ms": 743.7708130000829,
-      "reason": ""
-    },
-    "WarpSequentialSweep + WarpLevelAngles": {
-      "status": "skip",
-      "peak_mb": null,
-      "t_ms": null,
-      "reason": "WarpLevelAngles needs a single-angle operator with a WarpLevelSweep inverse, got WarpSequentialSweep"
-    },
-    "WarpLevelSweep + WarpSequentialAngles": {
-      "status": "skip",
-      "peak_mb": null,
-      "t_ms": null,
-      "reason": "WarpSequentialAngles needs a single-angle operator with a WarpSequentialSweep inverse, got WarpLevel"
-    },
-    "WarpLevelSweep + WarpLevelAngles": {
+    "warp": {
       "status": "ok",
       "peak_mb": 354.8429718017578,
-      "t_ms": 15.030228000796342,
+      "t_ms": 14.981506001277012,
+      "reason": ""
+    },
+    "warp-batched": {
+      "status": "ok",
+      "peak_mb": 354.8429718017578,
+      "t_ms": 14.841877000435488,
       "reason": ""
     }
   },
   "grad.solve.ltri": {
-    "VmapSweep": {
+    "jax": {
       "status": "ok",
-      "peak_mb": 963.8003702163696,
-      "t_ms": 138104.5076350001,
+      "peak_mb": 646.2956562042236,
+      "t_ms": 146250.05078399956,
       "n_iter": 133,
-      "ms_per_iter": 1038.3797566541361,
+      "ms_per_iter": 1099.624441984959,
       "reason": ""
     },
-    "BatchedSweep(1000)": {
+    "jax-batched": {
       "status": "ok",
-      "peak_mb": 825.4176254272461,
-      "t_ms": 141426.09720200015,
+      "peak_mb": 334.40666580200195,
+      "t_ms": 152969.60006399968,
       "n_iter": 133,
-      "ms_per_iter": 1063.354114300753,
+      "ms_per_iter": 1150.1473689022532,
       "reason": ""
     },
-    "VmapPallasSweep": {
+    "pallas": {
       "status": "ok",
-      "peak_mb": 963.8003244400024,
-      "t_ms": 16481.99607100014,
+      "peak_mb": 522.0767021179199,
+      "t_ms": 16894.030778999877,
       "n_iter": 133,
-      "ms_per_iter": 123.92478248872285,
+      "ms_per_iter": 127.02278781202915,
       "reason": ""
     },
-    "BatchedPallasSweep(1000)": {
+    "pallas-batched": {
       "status": "ok",
-      "peak_mb": 825.4175491333008,
-      "t_ms": 17686.079637999683,
+      "peak_mb": 335.38241958618164,
+      "t_ms": 18795.94588600048,
       "n_iter": 133,
-      "ms_per_iter": 132.97804239097505,
+      "ms_per_iter": 141.32290139849985,
       "reason": ""
     },
-    "WarpSequentialSweep": {
+    "warp": {
       "status": "ok",
-      "peak_mb": 827.1752014160156,
-      "t_ms": 47968.948587999876,
+      "peak_mb": 323.7997627258301,
+      "t_ms": 12363.268501998391,
       "n_iter": 133,
-      "ms_per_iter": 360.6687863759389,
+      "ms_per_iter": 92.9569060300631,
       "reason": ""
     },
-    "WarpLevelSweep": {
+    "warp-batched": {
       "status": "ok",
-      "peak_mb": 827.2799530029297,
-      "t_ms": 10220.670398999573,
+      "peak_mb": 323.7997627258301,
+      "t_ms": 10068.981141999757,
       "n_iter": 133,
-      "ms_per_iter": 76.84714585713965,
+      "ms_per_iter": 75.70662512781772,
       "reason": ""
     }
   },
   "solve": {
-    "VmapSweep / solve.iter": {
+    "jax / solve.iter": {
       "status": "ok",
       "peak_mb": 566.3949737548828,
-      "t_ms": 99410.76401999999,
+      "t_ms": 110318.98726399959,
       "n_iter": 55,
-      "ms_per_iter": 1807.4684367272725,
+      "ms_per_iter": 2005.799768436356,
       "reason": ""
     },
-    "VmapSweep / solve.ltri": {
+    "jax / solve.ltri": {
       "status": "ok",
-      "peak_mb": 387.58226776123047,
-      "t_ms": 61430.826861999776,
+      "peak_mb": 387.5824165344238,
+      "t_ms": 68382.42543900014,
       "n_iter": 133,
-      "ms_per_iter": 461.8859162556374,
+      "ms_per_iter": 514.1535747293244,
       "reason": ""
     },
-    "BatchedSweep(1000) / solve.iter": {
+    "jax-batched / solve.iter": {
       "status": "ok",
       "peak_mb": 430.4574203491211,
-      "t_ms": 103362.97035699955,
+      "t_ms": 111701.84284700008,
       "n_iter": 55,
-      "ms_per_iter": 1879.3267337636282,
+      "ms_per_iter": 2030.9425972181832,
       "reason": ""
     },
-    "BatchedSweep(1000) / solve.ltri": {
+    "jax-batched / solve.ltri": {
       "status": "ok",
-      "peak_mb": 197.5227279663086,
-      "t_ms": 64651.51262299969,
+      "peak_mb": 197.52287673950195,
+      "t_ms": 69575.29100200009,
       "n_iter": 133,
-      "ms_per_iter": 486.1015986691706,
+      "ms_per_iter": 523.1224887368428,
       "reason": ""
     },
-    "VmapPallasSweep / solve.iter": {
+    "pallas / solve.iter": {
       "status": "ok",
       "peak_mb": 566.3949508666992,
-      "t_ms": 8772.812946999693,
+      "t_ms": 9264.266875999965,
       "n_iter": 55,
-      "ms_per_iter": 159.50568994544895,
+      "ms_per_iter": 168.44121592727208,
       "reason": ""
     },
-    "VmapPallasSweep / solve.ltri": {
+    "pallas / solve.ltri": {
       "status": "ok",
-      "peak_mb": 389.92601108551025,
-      "t_ms": 4242.643911999949,
+      "peak_mb": 389.92615127563477,
+      "t_ms": 4481.448378001005,
       "n_iter": 133,
-      "ms_per_iter": 31.8995782857139,
+      "ms_per_iter": 33.69510058647372,
       "reason": ""
     },
-    "BatchedPallasSweep(1000) / solve.iter": {
+    "pallas-batched / solve.iter": {
       "status": "ok",
       "peak_mb": 430.4573974609375,
-      "t_ms": 9239.559313999962,
+      "t_ms": 9271.176485999604,
       "n_iter": 55,
-      "ms_per_iter": 167.99198752727204,
+      "ms_per_iter": 168.5668451999928,
       "reason": ""
     },
-    "BatchedPallasSweep(1000) / solve.ltri": {
+    "pallas-batched / solve.ltri": {
       "status": "ok",
-      "peak_mb": 198.49925994873047,
-      "t_ms": 4906.857447999755,
+      "peak_mb": 198.49940872192383,
+      "t_ms": 4900.891743000102,
       "n_iter": 133,
-      "ms_per_iter": 36.89366502255455,
+      "ms_per_iter": 36.84881009774513,
       "reason": ""
     },
-    "WarpSequentialSweep / solve.iter": {
-      "status": "ok",
-      "peak_mb": 430.4572525024414,
-      "t_ms": 32616.2252539998,
-      "n_iter": 55,
-      "ms_per_iter": 593.0222773454509,
-      "reason": ""
-    },
-    "WarpSequentialSweep / solve.ltri": {
-      "status": "ok",
-      "peak_mb": 187.87901306152344,
-      "t_ms": 20526.61187600006,
-      "n_iter": 133,
-      "ms_per_iter": 154.3354276390982,
-      "reason": ""
-    },
-    "WarpLevelSweep / solve.iter": {
+    "warp / solve.iter": {
       "status": "ok",
       "peak_mb": 430.6667251586914,
-      "t_ms": 2924.922298000638,
+      "t_ms": 2524.698486999114,
       "n_iter": 55,
-      "ms_per_iter": 53.180405418193416,
+      "ms_per_iter": 45.903608854529345,
       "reason": ""
     },
-    "WarpLevelSweep / solve.ltri": {
+    "warp / solve.ltri": {
       "status": "ok",
-      "peak_mb": 188.08848571777344,
-      "t_ms": 1805.6134819998988,
+      "peak_mb": 188.08862686157227,
+      "t_ms": 1550.7329730007768,
       "n_iter": 133,
-      "ms_per_iter": 13.576041218044352,
+      "ms_per_iter": 11.659646413539676,
+      "reason": ""
+    },
+    "warp-batched / solve.iter": {
+      "status": "ok",
+      "peak_mb": 430.6667251586914,
+      "t_ms": 2530.3165029999946,
+      "n_iter": 55,
+      "ms_per_iter": 46.005754599999904,
+      "reason": ""
+    },
+    "warp-batched / solve.ltri": {
+      "status": "ok",
+      "peak_mb": 188.08862686157227,
+      "t_ms": 1549.8393649995705,
+      "n_iter": 133,
+      "ms_per_iter": 11.652927556387748,
       "reason": ""
     }
   }

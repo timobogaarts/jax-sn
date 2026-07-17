@@ -33,3 +33,9 @@
     padding: 0.1em 0.35em;
     font-weight: bold;
 }
+a.reference.internal code.literal {
+    font-family: inherit;
+    background: none;
+    padding: 0;
+    border: none;
+}

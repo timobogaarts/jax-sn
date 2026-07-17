@@ -47,5 +47,5 @@ class DefaultMultiGroupStrategy:
 
     @classmethod
     def default_multi_group_warp_strategy(cls, batch_size : int | None = None, checkpoint : bool = True):
-        chain = _chain(VmapAnglesForward(BatchedForward()), WarpLevelAngles(), WarpMass())
+        chain = _chain(VmapAnglesForward(BatchedForward(batch_size)), WarpLevelAngles(), WarpMass())
         return _scan(chain, checkpoint)

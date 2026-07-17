@@ -27,6 +27,6 @@ There are several topics that are still open:
 
 - We have to choose a particular finite element basis. The above formulation supports any choice, but we will use simplices in most cases.
 
-
+- For FW-CADIS we have to solve the adjoint neutron transport equation, which is not the same as the adjoint of the discrete equation.
 
 

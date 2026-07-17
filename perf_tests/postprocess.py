@@ -15,17 +15,19 @@ i.e. in moment space rather than discrete/angle space (mass and discrete commute
 factors -- so this ordering is exact, not approximate; moment space is just the smaller of the two). See
 ``bench_mass.py``'s ``mass.mv.moment`` axis, sized accordingly.
 
-The perf-test suite already benchmarks every one of those constituents standalone (``mass.mv.moment``,
-``discrete.mv``, ``moment.mv``, ``scatter.gather``, ``transport.inv.multiangle``) as well as the two
-aggregates, all keyed by the same ``SingleAngleInversionStrategy`` label -- so this script only has to look up and
-sum the matching rows of a golden JSON. It needs no jax/GPU: it is pure post-processing of
+The perf-test suite already benchmarks the transport constituent standalone at the same granularity
+(``transport.inv.multiangle``, a :class:`ComposedBench` keyed by the same hand-picked recipe labels as
+``SGOp.mv``/``MGOp.mv`` -- see ``_bench.default_multi_group_strategies``), so this script only has to look
+up and sum the matching rows of a golden JSON. It needs no jax/GPU: it is pure post-processing of
 ``perf_tests/golden/<name>.json``.
 
 Two facts are not recorded in the golden JSON itself and have to be hard-coded here:
 
-- the ``SingleAngleInversionStrategy -> natural MultiAngleInversionStrategy`` pairing that ``transport.inv.multiangle`` is keyed
-  by (mirrors ``create_multi_group_operator``'s auto-resolution: ``VmapAngles`` for a vmappable kernel,
-  else ``SingleAngleInversionStrategy.native_multi_angle()``; see ``operators/transport_operator/implementations/*.py``);
+- which single-axis benches' rows a given recipe actually uses -- ``mass`` differs by recipe
+  (``LaxMass`` for the jax/pallas recipes, ``WarpMass`` for warp), while ``discrete``/``moment``/``scatter``
+  never vary (``DefaultMultiGroupStrategy``'s ``_chain``/``_scan`` helpers always use ``EinsumFluxMoment``
+  and ``BroadcastedSingleGroupGather`` regardless of transport backend; see
+  ``operator_creation/default_strategies.py``);
 - the number of energy groups the default MV problem is built with -- the breeding-blanket
   cross-section set is always 4-group (see ``_create_problem.bb_data_dict``), independent of
   ``--n-other``/``--res-mult``/etc.
@@ -52,13 +54,18 @@ from _common import load_golden, compare_golden
 
 N_ENERGY_GROUPS = 4  # fixed by _create_problem.bb_data_dict; not swept by any --problem parameter
 
-# create_multi_group_operator's defaults for every strategy axis SGOp.mv/MGOp.mv don't override
-# (bench_machinery.py only ever passes inversion_strategy) -- the label each shows up under in its
-# own standalone bench.
-DEFAULT_STRATEGY_LABEL = dict(
-    mass="VmapMass", discrete="EinsumFluxMoment", moment="EinsumFluxMoment",
-    scatter="GatherScatterOperatorBroadcasted",
-)
+# discrete/moment/scatter never vary by recipe (see module docstring); the label each shows up under in
+# its own standalone bench.
+FIXED_STRATEGY_LABEL = dict(discrete="EinsumFluxMoment", moment="EinsumFluxMoment",
+                            scatter="BroadcastedSingleGroupGather")
+
+# mass *does* vary by recipe -- warp pairs WarpMass, every other recipe pairs LaxMass (see
+# operator_creation/default_strategies.py's default_multi_group_*_strategy classmethods).
+MASS_LABEL_BY_RECIPE = {
+    "jax": "LaxMass", "jax-batched": "LaxMass",
+    "pallas": "LaxMass", "pallas-batched": "LaxMass",
+    "warp": "WarpMass", "warp-batched": "WarpMass",
+}
 
 MASS_BENCH = "mass.mv.moment"  # moment-space sizing -- see bench_mass.py; matches actual SGOp/MGOp usage
 
@@ -76,17 +83,17 @@ def _point(golden: dict, bench: str, label: str):
     return mb, t
 
 
-def _constituents(golden: dict, inv_label: str) -> dict:
-    """``{name: (peak_mb, t_ms) | None}`` for the per-group pipeline pieces at this inversion
-    strategy. ``None`` marks a piece that's missing or skipped (e.g. an incompatible warp combo).
-    ``transport.inv.multiangle`` is keyed by the inversion label alone (each strategy uses its
-    auto-resolved natural angle inversion)."""
+def _constituents(golden: dict, recipe_label: str) -> dict:
+    """``{name: (peak_mb, t_ms) | None}`` for the per-group pipeline pieces this recipe (``jax``,
+    ``pallas``, ``warp``, batched or not -- see ``_bench.default_multi_group_strategies``) actually uses.
+    ``None`` marks a piece that's missing or skipped (e.g. an incompatible warp combo).
+    ``transport.inv.multiangle`` is keyed by the same recipe label."""
     return {
-        "mass":      _point(golden, MASS_BENCH, DEFAULT_STRATEGY_LABEL["mass"]),
-        "discrete":  _point(golden, "discrete.mv", DEFAULT_STRATEGY_LABEL["discrete"]),
-        "moment":    _point(golden, "moment.mv", DEFAULT_STRATEGY_LABEL["moment"]),
-        "scatter":   _point(golden, "scatter.gather", DEFAULT_STRATEGY_LABEL["scatter"]),
-        "transport": _point(golden, "transport.inv.multiangle", inv_label),
+        "mass":      _point(golden, MASS_BENCH, MASS_LABEL_BY_RECIPE.get(recipe_label, "LaxMass")),
+        "discrete":  _point(golden, "discrete.mv", FIXED_STRATEGY_LABEL["discrete"]),
+        "moment":    _point(golden, "moment.mv", FIXED_STRATEGY_LABEL["moment"]),
+        "scatter":   _point(golden, "scatter.gather", FIXED_STRATEGY_LABEL["scatter"]),
+        "transport": _point(golden, "transport.inv.multiangle", recipe_label),
     }
 
 
@@ -103,8 +110,8 @@ def _missing_row(name: str):
     print(f"    {name:<12} (missing)")
 
 
-def _sgop_breakdown(golden: dict, inv_label: str, parts: dict):
-    sgop = _point(golden, "SGOp.mv", inv_label)
+def _sgop_breakdown(golden: dict, recipe_label: str, parts: dict):
+    sgop = _point(golden, "SGOp.mv", recipe_label)
     if sgop is None:
         print("  SGOp.mv: skip/OOM")
         return
@@ -133,8 +140,8 @@ def _sgop_breakdown(golden: dict, inv_label: str, parts: dict):
     _time_row("unaccounted (inscatter + fusion delta)", total_t - acc_t, total_t)
 
 
-def _mgop_breakdown(golden: dict, inv_label: str, parts: dict):
-    mgop = _point(golden, "MGOp.mv", inv_label)
+def _mgop_breakdown(golden: dict, recipe_label: str, parts: dict):
+    mgop = _point(golden, "MGOp.mv", recipe_label)
     if mgop is None:
         print("  MGOp.mv: skip/OOM")
         return
@@ -165,16 +172,16 @@ def _mgop_breakdown(golden: dict, inv_label: str, parts: dict):
 
 def report(golden_name: str):
     golden = load_golden(golden_name)
-    inv_labels = sorted(set(golden.get("SGOp.mv", {})) | set(golden.get("MGOp.mv", {})))
-    if not inv_labels:
+    recipe_labels = sorted(set(golden.get("SGOp.mv", {})) | set(golden.get("MGOp.mv", {})))
+    if not recipe_labels:
         print(f"no SGOp.mv/MGOp.mv rows found in {golden_name}.json")
         return
-    for inv_label in inv_labels:
-        print(f"\n=== {inv_label} ===")
-        parts = _constituents(golden, inv_label)
-        _sgop_breakdown(golden, inv_label, parts)
+    for recipe_label in recipe_labels:
+        print(f"\n=== {recipe_label} ===")
+        parts = _constituents(golden, recipe_label)
+        _sgop_breakdown(golden, recipe_label, parts)
         print()
-        _mgop_breakdown(golden, inv_label, parts)
+        _mgop_breakdown(golden, recipe_label, parts)
 
 
 def _diff_rows(new: dict, old: dict):

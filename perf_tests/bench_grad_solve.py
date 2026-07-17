@@ -1,20 +1,20 @@
 """
-EXPENSIVE (opt-in) -- gradient through the lower-triangular solve, swept over the transport
-``SingleAngleInversionStrategy``. This is the heaviest op and the one that actually exercises the parametrisation
-module (reconstruct-operator + reverse-mode through the block solve). Records peak memory, wall time and
-the underlying solve's iteration count.
+EXPENSIVE (opt-in) -- gradient through the lower-triangular solve, swept over the hand-picked default
+composed strategies (see ``_bench.default_multi_group_strategies``: ``DefaultMultiGroupStrategy``'s
+jax/pallas/warp recipes, batched and non) -- same reasoning as ``bench_machinery.py``/``bench_solve.py``.
+This is the heaviest op and the one that actually exercises the parametrisation module
+(reconstruct-operator + reverse-mode through the block solve). Records peak memory, wall time and the
+underlying solve's iteration count.
 """
 import jax
 import jax.numpy as jnp
 import lineax as lx
 
 from _common import peak_mb, time_ms, short_exc, Measurement, LiveTable
-from _discovery import discover_variants
-from bench_transport import _INV_OVERRIDES
+from _bench import default_multi_group_strategies
 from bench_solve import _bicgstab, _n_iter
-from jax_sn.operators.transport_operator import SingleAngleInversionStrategy
-from jax_sn.operators.multi_group_operator import MultiGroupLowerTriangularBlockSolver
-from jax_sn.operators.multi_group_operator.multi_group_operator_creation import create_multi_group_operator
+from jax_sn.solvers.base_solvers import MultiGroupLowerTriangularBlockSolver
+from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
 from jax_sn.parametrisation import MultigroupOperatorParametrisedVerticesXS
 
 
@@ -24,19 +24,15 @@ class GradSolveBench:
 
     def run(self, sd, qs):
         out = {}
-        variants = discover_variants(SingleAngleInversionStrategy, _INV_OVERRIDES)
-        table = LiveTable(self.name, [v.label for v in variants], extra_header=" / n_iter")
-        for v in variants:
-            table.start(v.label)
-            if v.instance is None:
-                table.skip(v.skip_reason)
-                out[v.label] = Measurement.skip(v.skip_reason).__dict__
-                continue
+        strategies = default_multi_group_strategies()
+        table = LiveTable(self.name, list(strategies), extra_header=" / n_iter")
+        for label, make_strategy in strategies.items():
+            table.start(label)
             try:
-                mgop = create_multi_group_operator(sd, qs, inversion_strategy=v.instance)
+                mgop = create_multi_group_operator(sd, qs, make_strategy())
                 rhs = jnp.ones(mgop.in_structure().shape)
                 theta = MultigroupOperatorParametrisedVerticesXS.theta_base(mgop)
-                ltri = MultiGroupLowerTriangularBlockSolver(_bicgstab())
+                ltri = MultiGroupLowerTriangularBlockSolver.from_composed(mgop.strategy, _bicgstab())
 
                 def reconstruct_solve(th, op, b):
                     m = MultigroupOperatorParametrisedVerticesXS.reconstruct_operator(op, th)
@@ -52,7 +48,7 @@ class GradSolveBench:
             except Exception as e:
                 rec = Measurement.skip(short_exc(e)).__dict__
                 table.skip(rec["reason"])
-            out[v.label] = rec
+            out[label] = rec
         return out
 
 

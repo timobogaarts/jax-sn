@@ -45,5 +45,27 @@ the volume element integral as
     \int_{\epsilon} H_{\epsilon i}\left( \sigma H_{\epsilon j} - \Omega \cdot \nabla   H_{\epsilon j}\right)\, d V &=  \displaystyle\mathcal{J}_\epsilon \left[\sigma_\epsilon\int_{\mathcal{E}}\hat{H}_{i } \hat{H}_{j}\, d \mathbf{q}  + \sum_{uv} \Omega_v (\mathbf{J}_\epsilon)^{-1}_{uv } \int_{\mathcal{E}} -\frac{\partial \hat{H}_{j}}{\partial q_u} \hat{H}_{i}\, d \mathbf{q}\right] \nonumber \\ 
     &= \mathcal{J}_\epsilon \left[\sigma_{\epsilon} \mathcal{A}_{ij} + \sum_{uv} \Omega_{v} (\mathbf{J}_{\epsilon})^{-1}_{uv} \mathcal{B}_{iju}\right]
     
-The caligraphic matrices do not depend on the element and can be stored and retrieved from a :class:`central location <FEMMatrices>`
+The caligraphic matrices do not depend on the element and can be stored and retrieved from a :class:`central location <jax_sn.solution_domain.FEMMatrices>`.
+
+For edge integrals, the same holds: a edge of a :math:`d`-dimensional simplex is a :math:`(d-1)`-dimensional simplex, and the Jacobian determinant is constant over the edge.
+The index of the face in the reference element will be denotes as :math:`\beta`:
+
+.. math::
+    \int_{\beta(\epsilon)} H_{\epsilon i}H_{\epsilon j} \, d A = \mathcal{J}_{\beta} \int_{\beta(\mathcal{E})} \hat{H}_{i } \hat{H}_{j} \, d A  = \mathcal{J}_\beta \mathcal{C}_{\beta ij}
+
+The connected face integral is somewhat more difficult. Each node of the connected simplex can be connected to each node of the connected face, leading to :math:`(d+1)!` possilbe permutations :math:`p`.
+Then, :math:`p(\epsilon, \beta)` denotes the permutation of elemen :math:`\epsilon(\beta)` connected to element :math:`\epsilon` through face :math:`\beta`. We can precompute all permuted matrices:
+
+.. math::
+    \mathcal{D}^{p\beta}_{ij} = \int_{\beta(\mathcal{E})} \hat{H}^p_{i}\hat{H}_{j} \, d A 
+
+and the total simplex transport operator becomes
+
+.. math::
+    &T[\psi_{ei}] &&= \mathbf{G}_{\epsilon }[\psi_{\epsilon i}]  - \sum_{\beta \in \beta^-_{\epsilon}}\mathbf{F}_{\epsilon \epsilon(\beta)}[\psi_{\epsilon(\beta)i}]\\ 
+    &\mathbf{G}_{\epsilon}[\psi_{\epsilon i}] &&=\sum_{i}\psi_{\epsilon i} \left[\sigma_{\epsilon}  \mathcal{J}_\epsilon \mathcal{A}_{ij} +  \mathcal{J}_\epsilon\sum_{uv} \Omega_{v} (\mathbf{J}_{\epsilon})^{-1}_{uv} \mathcal{B}_{iju} + \sum_{\beta \ \in \beta_\epsilon^+} \mathcal{J}_\beta |\Omega \cdot \mathbf{n}_\beta|\mathcal{C}_{\beta ij} \right]\\ 
+    &\mathbf{F}_{\epsilon \epsilon(\beta)}[\psi_{\epsilon(\beta)i}] &&= \sum_{i}\psi_{\epsilon(\beta)i} |\Omega \cdot \mathbf{n}_{\beta}|\mathcal{J}_\beta \mathcal{ D}^{p(\epsilon,\beta)\beta}_{ij}
+
+This is only in terms of :class:`geometric quantities <jax_sn.solution_domain.PrecomputedGeometricData>` or in terms of :class:`precomputed fem matrices <jax_sn.solution_domain.FEMMatrices>`. 
+Thus, during sweeping, no integration needs to be done and everything is just simple matrix-vector products.
 

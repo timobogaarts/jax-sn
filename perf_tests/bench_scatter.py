@@ -1,24 +1,30 @@
-"""Gather-scatter operator: ``gather_forward`` swept over every ``GatherScatterOperator`` class.
+"""Gather-scatter operator: ``mv`` swept over every discovered ``SingleGroupGatherScatterStrategy`` kernel,
+lifted over the group axis by ``VmapGatherScatterStrategy`` (the group-axis analogue of ``VmapAnglesForward``).
 
-This axis is *class*-valued (``gather_scatter_operator_cls``), not a strategy instance, so discovery runs
-with ``instantiate=False``. The input is the 4D group-moment array the operator gathers over, so the
-bench extracts the whole MGOP to size the input from its moment structure.
+The input is the 4D group-moment array the operator gathers over, sized from the whole MGOP's
+``in_structure`` (matches ``[n_groups, n_moments, n_elements, n_basis]``, see ``GatherScatterOperator``).
 """
-import jax.numpy as jnp
+from _bench import Bench, ones_in
+from jax_sn.operators.scatter_operator import (
+    SingleGroupGatherScatterStrategy, GatherScatterData, GatherScatterOperator, VmapGatherScatterStrategy,
+)
 
-from _bench import Bench
-from jax_sn.operators.scatter_operator import GatherScatterOperator
+
+def _gather_scatter_operator(mgop) -> GatherScatterOperator:
+    gs_data = GatherScatterData(mgop.data.domain.cross_sections_indexed)
+    single_group_strategy = mgop.strategy.single_group_gather_scatter_strategy
+    return GatherScatterOperator(gs_data, VmapGatherScatterStrategy(single_group_strategy), mgop.in_structure())
 
 
 def scatter_call(mgop):
-    gso = mgop.gather_scatter_operator
-    x = jnp.ones((mgop.n_energy_groups,) + mgop.moment_operator.out_structure().shape)
-    return (lambda op, v: op.gather_forward(v, 0), (gso, x))
+    op = _gather_scatter_operator(mgop)
+    return (lambda o, v: o.mv(v), (op, ones_in(op)))
 
 
 BENCHES = [
-    Bench(name="scatter.gather", base=GatherScatterOperator, kwarg="gather_scatter_operator_cls",
-          extract=lambda m: m, make_call=scatter_call, instantiate=False),
+    Bench(name="scatter.gather", base=SingleGroupGatherScatterStrategy,
+          chain_field="single_group_gather_scatter_strategy", top_level=True,
+          extract=lambda mgop: mgop, make_call=scatter_call),
 ]
 
 if __name__ == "__main__":

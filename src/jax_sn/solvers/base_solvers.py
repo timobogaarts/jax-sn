@@ -75,12 +75,12 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver[_State]):
     diagonal_strategy   : SingleGroupStrategy
     chain_strategy      : SingleGroupChainStrategy
     gather              : SingleGroupGatherScatterStrategy
-    diagnostics         : SolverDiagnostics = SolverDiagnostics(print_sweep=False, print_single_group=True)
+    diagnostics         : SolverDiagnostics = SolverDiagnostics(print_sweep=False, print_single_group=False)
 
     # ---- construction ----------------------------------------------------------------------------
     @classmethod
     def from_composed(cls, composed_strategy: ComposedMultiGroupStrategy,
-                      single_group_solver: lx.AbstractLinearSolver, diagnostics : SolverDiagnostics = SolverDiagnostics(print_sweep=False, print_single_group=True)) -> Self:
+                      single_group_solver: lx.AbstractLinearSolver, diagnostics : SolverDiagnostics = SolverDiagnostics(print_sweep=False, print_single_group=False)) -> Self:
         r'''
         Build the solver from a ComposedMultiGroupStrategy with a ComposedSingleGroupChainStrategy. The diagonal block is assembled from the chain's sub-strategies.
         '''
@@ -156,7 +156,7 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver[_State]):
         gs = GatherScatterData(operator.data.domain.cross_sections_indexed)
 
         if self.diagnostics.print_single_group:
-            jax.debug.print("Using lower triangular transpose solver for multi-group operator with {n_groups} energy groups.", n_groups = operator.n_energy_groups)
+            jax.debug.print("Using lower triangular block solver for multi-group operator with {n_groups} energy groups.", n_groups = operator.n_energy_groups)
 
 
         def body(g: ArrayLike, state: Tuple[Array, Array]) -> Tuple[Array, Array]:

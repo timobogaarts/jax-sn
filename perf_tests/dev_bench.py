@@ -6,8 +6,8 @@ Fast single-operator, single-resolution benchmark for iterating on one strategy 
 SingleAngleInversionStrategy get faster after this change, on a mesh small enough to iterate on". This script
 pins both: one bench axis (``--bench``), optionally narrowed to one strategy class (``--strategy``),
 against a resolution you set directly (``--dim/--degree/--n-other/--res-mult/--tn-order``) instead of
-picking from the presets. It reuses each ``bench_*.py`` module's own ``Bench`` definition (extract /
-make_call / overrides), so it stays wired to the same construction path as the full suite.
+picking from the presets. It reuses each ``bench_*.py`` module's own ``Bench`` definition (chain_field /
+lift / extract / make_call / overrides), so it stays wired to the same construction path as the full suite.
 
 Examples
 --------
@@ -78,11 +78,13 @@ def main():
     args = p.parse_args()
 
     benches = {b.name: b for b in discover_benches() if hasattr(b, "base")}
-    axis_names = sorted(benches) + ["transport.inv.multiangle"]  # bespoke two-axis bench (see below)
+    axis_names = sorted(set(benches) | {"transport.inv.multiangle"})  # latter also takes --lifting (see below)
     if args.list or not args.bench:
-        print("available --bench axes (transport.inv.multiangle also takes --lifting; solve.* is not covered here):")
+        print("available --bench axes (per-strategy discovery -- transport.inv.multiangle also takes --lifting):")
         for name in axis_names:
             print(f"  {name}")
+        print("MGOp.*/SGOp.*/solve.*/grad.solve.* sweep the hand-picked composed strategies "
+              "(_bench.default_multi_group_strategies) instead and aren't covered here.")
         raise SystemExit(0)
     if args.bench == "transport.inv.multiangle":
         _run_multiangle(args)
@@ -100,7 +102,8 @@ def main():
         if not variants:
             raise SystemExit(f"no discovered variant of {bench.base.__name__} matches {args.strategy!r}")
 
-    from jax_sn.operators.multi_group_operator.multi_group_operator_creation import create_multi_group_operator
+    from _bench import compose_chain_strategy
+    from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
 
     table = LiveTable(bench.name, [v.label for v in variants])
     for v in variants:
@@ -110,8 +113,9 @@ def main():
             continue
 
         def build_fn(strat=v.instance):
-            mgop = create_multi_group_operator(sd, qs, **{bench.kwarg: strat})
-            return bench.make_call(bench._extract(mgop))
+            strategy = compose_chain_strategy(bench.chain_field, strat, bench.lift, bench.top_level)
+            mgop = create_multi_group_operator(sd, qs, strategy)
+            return bench.make_call(bench.extract(mgop))
 
         m = measure(build_fn)
         table.ok(m.peak_mb, m.t_ms) if m.status == "ok" else table.skip(m.reason)
@@ -134,16 +138,18 @@ def _multi_angle_inversion_strategy_for(lift_cls, inv_instance):
 
 def _run_multiangle(args):
     """``transport.inv`` swept over every ``SingleAngleInversionStrategy``, each using its auto-resolved natural
-    angle inversion -- mirrors ``MultiAngleInvBench.run`` in ``bench_transport_multiangle.py``, but
-    filterable via ``--strategy`` and buildable at a custom resolution. ``--lifting`` overrides the
-    angle inversion with a specific ``MultiAngleInversionStrategy`` class (a native, or a combinator wrapping the
-    inversion), so an off-default pairing like ``ScanAngles`` serialisation is benchmarkable."""
+    angle inversion -- mirrors ``bench_transport_multiangle.py``, but filterable via ``--strategy`` and buildable
+    at a custom resolution. ``--lifting`` overrides the angle inversion with a specific
+    ``MultiAngleInversionStrategy`` class (a native, or a combinator wrapping the inversion), so an off-default
+    pairing like ``ScanAngles`` serialisation is benchmarkable."""
     from bench_transport import _INV_OVERRIDES
-    from jax_sn.operators.transport_operator import SingleAngleInversionStrategy, MultiAngleInversionStrategy, BatchedForward
-    from jax_sn.operators.multi_group_operator.multi_group_operator_creation import (
-        create_multi_group_operator, _resolve_multi_angle_inversion_strategy,
+    from bench_transport_multiangle import multi_angle
+    from jax_sn.operators.transport_operator import (
+        SingleAngleInversionStrategy, MultiAngleInversionStrategy, VmapAnglesForward, BatchedForward,
     )
-    from _bench import inv_call
+    from _bench import default_multi_group_strategy, inv_call, lift_inversion
+    from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
+    import equinox as eqx
 
     sd, qs, info = _resolve_problem(args)
     print(f">>> {info}", flush=True)
@@ -161,27 +167,31 @@ def _run_multiangle(args):
         if not lift_classes:
             raise SystemExit(f"no discovered MultiAngleInversionStrategy matches --lifting {args.lifting!r}")
 
-    # (label, inversion instance, angle inversion) rows; default = auto-resolved natural lift.
+    # (label, angle inversion) rows; default = auto-resolved natural lift.
     rows = []
     for inv in invs:
         if lift_classes is None:
-            rows.append((inv.label, inv.instance, _resolve_multi_angle_inversion_strategy(inv.instance)))
+            rows.append((inv.label, lift_inversion(inv.instance)))
         else:
             for lc in lift_classes:
                 ai = _multi_angle_inversion_strategy_for(lc, inv.instance)
                 if ai is not None:
-                    rows.append((f"{inv.label} + {lc.__name__}", inv.instance, ai))
+                    rows.append((f"{inv.label} + {lc.__name__}", ai))
     if not rows:
         raise SystemExit("no (inversion, angle-inversion) row for this selection")
 
-    table = LiveTable("transport.inv.multiangle", [label for label, _, _ in rows])
-    for label, _inv, ai in rows:
+    table = LiveTable("transport.inv.multiangle", [label for label, _ in rows])
+    for label, ai in rows:
         table.start(label)
 
         def build_fn(a=ai):
-            mgop = create_multi_group_operator(
-                sd, qs, forward_strategy=BatchedForward(1000), multi_angle_inversion_strategy=a)
-            return inv_call(mgop.transport_operator)
+            base = default_multi_group_strategy()
+            strategy = eqx.tree_at(
+                lambda s: (s.single_group_chain_strategy.transport_strategy,
+                           s.single_group_chain_strategy.transport_inversion_strategy),
+                base, (VmapAnglesForward(BatchedForward(1000)), a))
+            mgop = create_multi_group_operator(sd, qs, strategy)
+            return inv_call(multi_angle(mgop))
 
         m = measure(build_fn)
         table.ok(m.peak_mb, m.t_ms) if m.status == "ok" else table.skip(m.reason)

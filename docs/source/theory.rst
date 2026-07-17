@@ -17,3 +17,4 @@ The theory section contains an up-to-date overview of the derivation of the impl
    theory/transposition.rst
    theory/downscattering.rst
    theory/simplex_elements.rst
+   theory/fw_cadis.rst

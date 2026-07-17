@@ -2,8 +2,6 @@
 Composed multi-angle strategies, which lift a single-angle strategy over the angle axis. Both axes
 (forward and inverse sweep) get the same two lifts: ``vmap`` and ``lax.map``.
 '''
-import dataclasses
-
 import jax
 import equinox as eqx
 from ..transport_data import TransportData
@@ -15,7 +13,7 @@ def _scan_over_angles(data: TransportData, leading, fn):
     '''``lax.map`` ``fn`` over the angle axis, serialising it (one angle live at a time).'''
     def one_angle(angle_sweep_v):
         angle_i, sweep_i, v_i = angle_sweep_v
-        return fn(dataclasses.replace(data, angle=angle_i, sweep_data=sweep_i), v_i)
+        return fn(eqx.tree_at(lambda a : [a.angle, a.sweep_data], data, (angle_i, sweep_i)), v_i)
     return jax.lax.map(one_angle, (data.angle, data.sweep_data, leading))
 
 def map_over_angles(data: TransportData, leading, fn):

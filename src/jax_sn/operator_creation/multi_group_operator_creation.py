@@ -1,16 +1,7 @@
-from jax_sn.operators.transport_operator import SingleAngleForwardStrategy, SingleAngleInversionStrategy, MultiAngleInversionStrategy, VmapForward, VmapSweep, VmapAngles, VmapAnglesForward
-
 from jax_sn.operators.operator_data import OperatorData, AngularData, DiscretisationData, NonDifferentiableData
-from jax_sn.operators.mass_operator import MassStrategy, VmapMass
-from jax_sn.operators.moment_operator import FluxMomentStrategy, EinsumFluxMoment
-# REFACTOR-MARKER(gather-scatter): gather-scatter is now Data+Strategy+Operator; the gather_scatter_operator_cls
-# param becomes a GatherScatterStrategy (e.g. ComposedGatherScatterStrategy(BroadcastedGatherScatterRow(), VmapGroups())).
-from jax_sn.operators.scatter_operator import (
-    GatherScatterStrategy, ComposedGatherScatterStrategy    
-)
-from jax_sn.operators.multi_group_operator import MultiGroupOperator , MultiGroupStrategyBase
+from jax_sn.operators.multi_group_operator import MultiGroupOperator, MultiGroupStrategyBase
 from jax_sn.quadrature_set import QuadratureSetBase
-from typing import Dict, Type, Protocol
+from typing import Dict, Protocol
 from jax_sn.solution_domain import SolutionDomain
 
 class DefinesDefaultSweepData(Protocol):
@@ -31,7 +22,7 @@ def create_operator_data(solution_domain : SolutionDomain, quadrature_set : Quad
     return operator_data
 
 def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set : QuadratureSetBase, multi_group_strategy : MultiGroupStrategyBase, sweep_data_kwargs : Dict = {}) -> MultiGroupOperator:
-    return MultiGroupOperator(create_operator_data(solution_domain, quadrature_set, multi_group_strategy, sweep_data_kwargs), multi_group_strategy, False)
+    return MultiGroupOperator(create_operator_data(solution_domain, quadrature_set, multi_group_strategy, sweep_data_kwargs), multi_group_strategy, transpose_bool = False)
 
 
 

@@ -1,5 +1,8 @@
 """
-EXPENSIVE (opt-in) -- iterative solves swept over the transport ``SingleAngleInversionStrategy``:
+EXPENSIVE (opt-in) -- iterative solves swept over the hand-picked default composed strategies (see
+``_bench.default_multi_group_strategies``: ``DefaultMultiGroupStrategy``'s jax/pallas/warp recipes, batched
+and non) -- not an auto-discovered per-field sweep, for the same reason as ``bench_machinery.py``: a solve
+exercises the whole pipeline, so only the actual, internally-consistent backend recipes are worth timing.
 
   - ``solve.iter`` : full-operator BiCGStab solve (each iteration ~ one ``MGOp.mv``).
   - ``solve.ltri`` : lower-triangular block solve (each iteration ~ one transport sweep, per group).
@@ -15,11 +18,9 @@ import lineax as lx
 import numpy as onp
 
 from _common import peak_mb, time_ms, safe_run, short_exc, Measurement, LiveTable
-from _discovery import discover_variants
-from bench_transport import _INV_OVERRIDES
-from jax_sn.operators.transport_operator import SingleAngleInversionStrategy
-from jax_sn.operators.multi_group_operator import MultiGroupLowerTriangularBlockSolver
-from jax_sn.operators.multi_group_operator.multi_group_operator_creation import create_multi_group_operator
+from _bench import default_multi_group_strategies
+from jax_sn.solvers.base_solvers import MultiGroupLowerTriangularBlockSolver
+from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
 
 
 def _bicgstab():
@@ -48,19 +49,20 @@ class SolveBench:
 
     def run(self, sd, qs):
         out = {}
-        variants = discover_variants(SingleAngleInversionStrategy, _INV_OVERRIDES)
-        labels = [f"{v.label} / {op}" for v in variants for op in ("solve.iter", "solve.ltri")]
+        strategies = default_multi_group_strategies()
+        labels = [f"{label} / {op}" for label in strategies for op in ("solve.iter", "solve.ltri")]
         table = LiveTable(self.name, labels, extra_header=" / n_iter")
-        for v in variants:
-            if v.instance is None:
+        for label, make_strategy in strategies.items():
+            try:
+                mgop = create_multi_group_operator(sd, qs, make_strategy())
+            except Exception as e:
                 for op in ("solve.iter", "solve.ltri"):
-                    label = f"{v.label} / {op}"
-                    table.start(label); table.skip(v.skip_reason)
-                    out[label] = Measurement.skip(v.skip_reason).__dict__
+                    row_label = f"{label} / {op}"
+                    table.start(row_label); table.skip(short_exc(e))
+                    out[row_label] = Measurement.skip(short_exc(e)).__dict__
                 continue
-            mgop = create_multi_group_operator(sd, qs, inversion_strategy=v.instance)
             rhs = jnp.ones(mgop.in_structure().shape)
-            ltri = MultiGroupLowerTriangularBlockSolver(_bicgstab())
+            ltri = MultiGroupLowerTriangularBlockSolver.from_composed(mgop.strategy, _bicgstab())
             specs = {
                 "solve.iter": (lambda op, b: jnp.sum(lx.linear_solve(op, b, _bicgstab(), throw=False).value),
                                _bicgstab(), "num_steps"),
@@ -68,15 +70,15 @@ class SolveBench:
                                ltri, "num_steps_per_group"),
             }
             for op_name, (f, niter_solver, niter_key) in specs.items():
-                label = f"{v.label} / {op_name}"
-                table.start(label)
+                row_label = f"{label} / {op_name}"
+                table.start(row_label)
                 try:
                     rec = _measure_solve(f, mgop, rhs, niter_solver, niter_key)
                     table.ok(rec["peak_mb"], rec["t_ms"], suffix=f"  n_iter={rec['n_iter']}")
                 except Exception as e:
                     rec = Measurement.skip(short_exc(e)).__dict__
                     table.skip(rec["reason"])
-                out[label] = rec
+                out[row_label] = rec
         return out
 
 
