@@ -50,10 +50,17 @@ from jax_sn.operators.single_group_operator import (
     ComposedSingleGroupChainStrategy,
 )
 from jax_sn.operators.scatter_operator import GatherScatterData, SingleGroupGatherScatterStrategy
+import equinox as eqx
 
 # lineax solver state carried between init/compute/transpose is just the (differentiable) operator.
 _State = MultiGroupOperator
 _Solution = Tuple[Array, lx.RESULTS, Dict[str, Array]]
+
+
+class SolverDiagnostics(eqx.Module):
+    print_sweep : bool 
+    print_single_group : bool
+
 
 
 class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver[_State]):
@@ -68,16 +75,14 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver[_State]):
     diagonal_strategy   : SingleGroupStrategy
     chain_strategy      : SingleGroupChainStrategy
     gather              : SingleGroupGatherScatterStrategy
+    diagnostics         : SolverDiagnostics = SolverDiagnostics(print_sweep=False, print_single_group=True)
 
     # ---- construction ----------------------------------------------------------------------------
     @classmethod
     def from_composed(cls, composed_strategy: ComposedMultiGroupStrategy,
-                      single_group_solver: lx.AbstractLinearSolver) -> Self:
+                      single_group_solver: lx.AbstractLinearSolver, diagnostics : SolverDiagnostics = SolverDiagnostics(print_sweep=False, print_single_group=True)) -> Self:
         r'''
-        Build the solver from a :class:`ComposedMultiGroupStrategy`, reusing its chain and gather and
-        assembling the full diagonal block from the chain's shared sub-strategies. This is the one place
-        the full block is reconstructed from the chain -- legitimate here because the composed strategy is
-        known to be built from a single consistent set of sub-strategies.
+        Build the solver from a ComposedMultiGroupStrategy with a ComposedSingleGroupChainStrategy. The diagonal block is assembled from the chain's sub-strategies.
         '''
         chain = composed_strategy.single_group_chain_strategy
         assert isinstance(chain, ComposedSingleGroupChainStrategy), (
@@ -97,6 +102,7 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver[_State]):
             diagonal_strategy   = diagonal,
             chain_strategy      = chain,
             gather              = composed_strategy.single_group_gather_scatter_strategy,
+            diagnostics         = diagnostics,
         )
 
     # ---- lineax plumbing -------------------------------------------------------------------------
@@ -149,11 +155,19 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver[_State]):
         index_dtype = operator.data.domain.cross_sections_indexed.indices.dtype
         gs = GatherScatterData(operator.data.domain.cross_sections_indexed)
 
+        if self.diagnostics.print_single_group:
+            jax.debug.print("Using lower triangular transpose solver for multi-group operator with {n_groups} energy groups.", n_groups = operator.n_energy_groups)
+
+
         def body(g: ArrayLike, state: Tuple[Array, Array]) -> Tuple[Array, Array]:
             sol, nsteps = state
             source = self.gather.incoming_gather(gs, sol, g)
             src = rhs[g] + self.chain_strategy.forward(SingleGroupData(operator.data, g), source)
             val, ns = self._solve_diagonal(operator, g, src)
+
+            if self.diagnostics.print_single_group:
+                jax.debug.print("Solved energy group {eg} in {n_steps} steps", eg = g, n_steps = ns)
+
             return sol.at[g].set(val), nsteps.at[g].set(ns)
 
         sol = jnp.zeros(operator.out_structure().shape, operator.out_structure().dtype)
@@ -168,12 +182,19 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver[_State]):
         index_dtype = operator.data.domain.cross_sections_indexed.indices.dtype
         gs = GatherScatterData(operator.data.domain.cross_sections_indexed)
 
+        if self.diagnostics.print_single_group:
+            jax.debug.print("Using upper triangular transpose solver for multi-group operator with {n_groups} energy groups.", n_groups = operator.n_energy_groups)
+
         def body(i: ArrayLike, state: Tuple[Array, Array, Array]) -> Tuple[Array, Array, Array]:
             sol, zeta, nsteps = state
             g = n - 1 - i
             src = rhs[g] + self.gather.outgoing_gather(gs, zeta, g)
             val, ns = self._solve_diagonal(operator, g, src)
             zeta_g = self.chain_strategy.transpose(SingleGroupData(operator.data, g), val)
+
+            if self.diagnostics.print_single_group:
+                jax.debug.print("Solved energy group {eg} in {n_steps} steps", eg = g, n_steps = ns)
+
             return sol.at[g].set(val), zeta.at[g].set(zeta_g), nsteps.at[g].set(ns)
 
         sol = jnp.zeros(operator.out_structure().shape, operator.out_structure().dtype)
