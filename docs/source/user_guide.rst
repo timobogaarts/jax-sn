@@ -9,5 +9,6 @@ This part of the documentation covers everything to get started *using* the code
    
    user_guide/basic_information.rst
    user_guide/code_structure.rst
+   user_guide/first_operator.ipynb
    
 

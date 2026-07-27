@@ -42,7 +42,7 @@ geometry = ["jax_sbgeom"]
 # Test suite (test_finite_elements pulls in sympy for the reference basis).
 test = ["pytest", "sympy"]
 # Documentation build (./build_docs.sh).
-docs = ["sphinx", "furo", "sphinx-autodoc-typehints"]
+docs = ["sphinx", "furo", "sphinx-autodoc-typehints", "myst-nb", "ipykernel", "matplotlib"]
 
 [project.urls]
 "Homepage" = "https://github.com/timobogaarts/jax-sn"

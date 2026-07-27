@@ -24,12 +24,27 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.autosummary",
     "sphinx_autodoc_typehints",
+    "myst_nb",
 ]
 
 templates_path = ['_templates']
-exclude_patterns = []
+exclude_patterns = ['**.ipynb_checkpoints']
 
 autosummary_generate = True
+
+# -- Notebooks (myst-nb) -----------------------------------------------------
+# The example notebooks under examples/ are rendered as documentation pages.
+# Execution is off by default, so the outputs committed in the .ipynb are what
+# gets published -- keep them up to date, or build with `./build_docs.sh
+# --execute` (equivalently JAXSN_DOCS_EXECUTE=1) to re-run every notebook and
+# fail the build on any cell error.
+nb_execution_mode = "cache" if os.environ.get("JAXSN_DOCS_EXECUTE") else "off"
+nb_execution_cache_path = os.path.abspath("../../.jupyter_cache")
+nb_execution_timeout = 600
+nb_execution_raise_on_error = True
+# Notebooks write LaTeX as $...$ / $$...$$ rather than :math: roles.
+myst_enable_extensions = ["dollarmath", "amsmath"]
+myst_heading_anchors = 3
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
