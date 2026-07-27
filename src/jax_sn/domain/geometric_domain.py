@@ -1,9 +1,7 @@
 import jax
-import jax.numpy as jnp 
-from dataclasses import dataclass
+import jax.numpy as jnp
 from abc import abstractmethod
 from jax_sn.tools.mesh_tools import compute_face_normal_vectors_from_3d_simplices, _compute_adjacency, _compute_face_permutations, _pad_last_dimension
-from functools import lru_cache
 from typing import Tuple
 from .cross_sections import CrossSectionDataSingleGroup
 from typing import Tuple 
@@ -35,16 +33,13 @@ def _compute_domain_setup_from_mesh(mesh : Tuple[jnp.ndarray, jnp.ndarray], face
 
 
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True, eq=False) # we use eq=False to use default (id-based) hashing.
-class GeometricDomain:
+class GeometricDomain(eqx.Module):
     '''
-    Dataclass representing a geometric domain. 
-    These contain precomputed connectivity, face normals, and adjacency information. 
-    We use id-based hasing to be able to cache BVH structures based on the domain. 
+    Module representing a geometric domain.
+    These contain precomputed connectivity, face normals, and adjacency information.
 
     '''
-    
+
     vertices      : jnp.ndarray
     '''Vertices of the domain. Shape is [n_vertices, n_dim]'''
 
@@ -142,8 +137,6 @@ class GeometricDomain:
 
 from .cross_sections import CrossSectionData, CrossSectionDataSingleGroup, CrossSectionsIndexed
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True, eq=False)
 class Domain(GeometricDomain):
     '''
     Geometric domain with indexed cross sections.
@@ -250,26 +243,7 @@ def _check_cross_section_compatibility(n_elements : int, cross_sections : CrossS
 
 
 
-@lru_cache(maxsize=16)
-def _build_bvh(geometric_domain : GeometricDomain):    
-    '''
-    Builds a BVH for the given geometric domain. 
-    This function uses caching to avoid rebuilding the BVH for the same domain multiple times.
-    Therefore, it should not be used in side jitted functions.
-
-    Parameters
-    ----------
-    geometric_domain : GeometricDomain
-        The geometric domain for which to build the BVH.    
-    Returns
-    -------
-    bvh : BVH
-        The built BVH.
-    '''
-    from jax_sn.tools.mesh_tools import create_bvh
-    return create_bvh(geometric_domain.vertices, geometric_domain.connectivity)
-
-def _containing_cell(geometric_domain : GeometricDomain, points : jnp.ndarray):    
+def _containing_cell(geometric_domain : GeometricDomain, points : jnp.ndarray):
     '''
     Containing cell for each point in points.
     Uses a cached BVH, so cannot be used in a jitted function
@@ -288,8 +262,8 @@ def _containing_cell(geometric_domain : GeometricDomain, points : jnp.ndarray):
     if isinstance(points, jax.core.Tracer):
         raise RuntimeError("The function 'containing_cell' cannot be used inside jitted functions because it relies on a cached BVH.")    
         
-    bvh = _build_bvh(geometric_domain)
-    from jax_sn.tools.mesh_tools import probe_bvh 
+    from jax_sn.tools.mesh_tools import create_bvh_cached, probe_bvh
+    bvh = create_bvh_cached(geometric_domain.vertices, geometric_domain.connectivity)
     possible_hits =  probe_bvh(bvh, points)        
     elements_containing_point = _check_point_in_element_vec(points[..., None, :], possible_hits, geometric_domain)    
     element_indices           = jnp.where(elements_containing_point, possible_hits, -1)    

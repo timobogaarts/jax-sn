@@ -21,6 +21,5 @@ Subpackages
    jax_sn.quadrature_set
    jax_sn.solution_domain
    jax_sn.solvers
-   jax_sn.source
    jax_sn.tools
    jax_sn.variance_reduction

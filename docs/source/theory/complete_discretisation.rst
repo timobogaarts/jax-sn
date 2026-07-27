@@ -1,3 +1,4 @@
+.. _complete_discretisation:
 Complete Discretisation
 --------------------------
 

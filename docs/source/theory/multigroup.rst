@@ -16,7 +16,7 @@ and integrate it over energy using the following assumptions:
 it can be shown (see :ref:`here <appendix_multigroup_derivation>` for a detailed derivation) that the resulting equation is:
 
 .. math::
-    \left[\Omega \cdot \nabla  + \sigma_g(\mathbf{r})\right]\psi_g(\mathbf{r}, \Omega) = \sum_{\ell}\sum_{\tilde{g}}Y_{\ell}(\Omega) \sigma^s_{\ell  g  \tilde{g}}(\mathbf{r})\int_{S^2}Y_{\ell} (\tilde{\Omega})&\psi_{\tilde{g}}(\mathbf{r},\tilde{\Omega}) \,\diff \tilde{\Omega} \nonumber \\ &+ q_g(\mathbf{r}, \Omega) \ \ \ \forall g
+    \left[\Omega \cdot \nabla  + \sigma_g(\mathbf{r})\right]\psi_g(\mathbf{r}, \Omega) = \sum_{\ell}\sum_{\tilde{g}}Y_{\ell}(\Omega) \sigma^s_{\ell  g  \tilde{g}}(\mathbf{r})\int_{S^2}Y_{\ell} (\tilde{\Omega})&\psi_{\tilde{g}}(\mathbf{r},\tilde{\Omega}) \,d \tilde{\Omega} \nonumber \\ &+ q_g(\mathbf{r}, \Omega) \ \ \ \forall g
 
 where :math:`\psi_{g}(\mathbf{r}, \Omega) = \int_{E_g}^{E_{g-1}} \psi(\mathbf{r}, \Omega, E) dE` is the group-integrated angular flux, :math:`Q_g(\mathbf{r}, \Omega) = \int_{E_g}^{E_{g-1}} Q(\mathbf{r}, \Omega, E) dE` is the group-integrated external source, 
 :math:`\sigma_{g}(\mathbf{r}, \Omega)` is the group-averaged total cross section,

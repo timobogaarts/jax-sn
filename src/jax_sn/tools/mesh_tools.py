@@ -1,7 +1,8 @@
-import jax 
+import jax
 import jax.numpy as jnp
 from functools import partial
 import numpy as onp
+import weakref
 from .permutation_tools import _indices_to_permutation_number
 def _pad_last_dimension(vertices):
     return jnp.pad(vertices, [(0,0)]*(vertices.ndim -1) + [(0, 3 - vertices.shape[-1])], mode='constant')        
@@ -363,6 +364,50 @@ def create_bvh(vertices: jnp.ndarray, connectivity: jnp.ndarray):
         raise ImportError("jax_sbgeom is required for BVH creation. Please install it to use this function")
     bvh = jax_sbgeom.jax_utils.raytracing.build_lbvh(_pad_last_dimension(vertices), connectivity)
     return bvh
+
+
+_bvh_cache = {}
+'''Cache for `create_bvh_cached`, keyed on (id(vertices), id(connectivity)).'''
+
+
+def create_bvh_cached(vertices: jnp.ndarray, connectivity: jnp.ndarray):
+    '''
+    Cached version of `create_bvh`, keyed on the *identity of the arrays* rather than on the
+    identity of the containing domain. A domain is frequently rebuilt around the same mesh arrays
+    (`eqx.tree_at` on the cross sections, `Domain.from_geometric_domain_and_cross_sections`, a pytree
+    flatten/unflatten round trip), and all of those still hit this cache.
+
+    Entries are evicted once either array is garbage collected, so a cached BVH never keeps its mesh
+    alive, and an `id` cannot be recycled while its entry is still present.
+
+    Building a BVH is a host-side operation on concrete arrays, so this cannot be used inside jitted
+    functions.
+
+    Parameters
+    ----------
+    vertices : jnp.ndarray [n_vertices, 3]
+        The vertices of the mesh
+    connectivity : jnp.ndarray [n_elements, n_nodes_per_element]
+        The connectivity of the mesh
+
+    Returns
+    -------
+    bvh : jax_sbgeom.jax_utils.raytracing.BVH
+        The constructed LBVH for the mesh, built on the first call for these arrays and reused afterwards.
+    '''
+    if isinstance(vertices, jax.core.Tracer) or isinstance(connectivity, jax.core.Tracer):
+        raise RuntimeError("A BVH cannot be built from traced arrays: 'create_bvh_cached' relies on a "
+                           "host-side cache and so cannot be used inside jitted functions.")
+
+    key = (id(vertices), id(connectivity))
+    if key not in _bvh_cache:
+        _bvh_cache[key] = create_bvh(vertices, connectivity)
+        # Evict as soon as either array dies: this both releases the BVH and guarantees the id pair
+        # cannot be reused by new arrays while the entry is still cached.
+        weakref.finalize(vertices,     _bvh_cache.pop, key, None)
+        weakref.finalize(connectivity, _bvh_cache.pop, key, None)
+    return _bvh_cache[key]
+
 
 def probe_bvh(bvh, points: jnp.ndarray):
     '''

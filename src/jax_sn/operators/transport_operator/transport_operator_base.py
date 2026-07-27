@@ -293,10 +293,3 @@ class TransportOperatorMultiAngle(AbstractTransportOperator):
         '''Get the single-angle transport operator for angle ``idx`` (see :meth:`to_single_angle`).'''
         return self.to_single_angle(idx)
 
-@lx.is_symmetric.register(TransportOperatorMultiAngle)
-def _(operator : TransportOperatorMultiAngle):
-    return False
-
-@lx.linearise.register(TransportOperatorMultiAngle)
-def _(operator : TransportOperatorMultiAngle):
-    return operator

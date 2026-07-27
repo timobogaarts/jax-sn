@@ -49,6 +49,8 @@ This model has been described and benchmarked in the following publications. If 
    :caption: Contents:
    
    theory.rst   
+   user_guide.rst
+   examples.rst
    api_reference.rst
    appendices.rst
 

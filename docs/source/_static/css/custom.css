@@ -4,22 +4,25 @@
 .eqno {
     float: right;
 }
+/* --tc-* variables are supplied per colour scheme via html_theme_options in
+   conf.py; the fallbacks here are only a safety net. */
 .algorithm-box {
-    border: 1px solid #888;
+    border: 1px solid var(--tc-border-strong, #888);
     border-radius: 4px;
     padding: 0.4em 0.8em;
     margin: 0.5em 0;
-    background: #fafafa;
+    background: var(--tc-box-bg, #fafafa);
 }
 
 .algorithm-box p {
     margin: 0.15em 0;
 }
 
-/* light blue */
+/* light blue -- kept blue on purpose: matches the blue algorithm keywords in
+   the thesis preamble, and reads as a complementary accent to the warm theme */
 .parallel {
-    background-color: #d7ecff;
-    color: #005b96;
+    background-color: var(--tc-chip-parallel-bg, #d7ecff);
+    color: var(--tc-chip-parallel-fg, #005b96);
     border-radius: 3px;
     padding: 0.1em 0.35em;
     font-weight: bold;
@@ -27,8 +30,8 @@
 
 /* dark blue */
 .loop {
-    background-color: #b3d1ff;
-    color: #003366;
+    background-color: var(--tc-chip-loop-bg, #b3d1ff);
+    color: var(--tc-chip-loop-fg, #003366);
     border-radius: 3px;
     padding: 0.1em 0.35em;
     font-weight: bold;
