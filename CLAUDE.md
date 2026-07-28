@@ -33,7 +33,14 @@ cache matters much more than usual). Reference numerics live in `tests/reference
 regenerated via `tests/reference_data/regenerate.py`.
 
 Docs: `./build_docs.sh` regenerates `docs/source/api` via `sphinx-apidoc` then builds
-`docs/build/html` via `sphinx`.
+`docs/build/html` via `sphinx`. Example notebooks (`examples/*.ipynb`) are copied into the docs tree
+and executed fresh on every build (`--no-execute` skips execution for a fast prose-only preview);
+`docs/source/_notebook_manifest.py` is the single source of truth for which notebooks exist and where
+they go. A notebook marked `ci: False` there (needs a GPU backend or external data hosted CI can't
+produce, e.g. an OpenMC-based FW-CADIS example) is excluded from execution and instead renders its
+committed outputs — refresh those manually via `tools/refresh_notebooks.py`. `examples/*.ipynb` have
+their outputs stripped pre-commit (`.pre-commit-config.yaml`, `nbstripout`); `ci: False` notebooks
+need a matching exclusion there so their committed outputs survive.
 
 ## Architecture
 

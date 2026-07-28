@@ -43,6 +43,8 @@ geometry = ["jax_sbgeom"]
 test = ["pytest", "sympy"]
 # Documentation build (./build_docs.sh).
 docs = ["sphinx", "furo", "sphinx-autodoc-typehints", "myst-nb", "ipykernel", "matplotlib"]
+# Repo dev tooling (pre-commit hooks, notebook output stripping).
+dev = ["pre-commit", "nbstripout"]
 
 [project.urls]
 "Homepage" = "https://github.com/timobogaarts/jax-sn"

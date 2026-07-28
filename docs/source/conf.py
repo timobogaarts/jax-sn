@@ -2,6 +2,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath("../../"))
+sys.path.insert(0, os.path.dirname(__file__))
 #
 #  Configuration file for the Sphinx documentation builder.
 #
@@ -34,11 +35,18 @@ autosummary_generate = True
 
 # -- Notebooks (myst-nb) -----------------------------------------------------
 # The example notebooks under examples/ are rendered as documentation pages.
-# Execution is off by default, so the outputs committed in the .ipynb are what
-# gets published -- keep them up to date, or build with `./build_docs.sh
-# --execute` (equivalently JAXSN_DOCS_EXECUTE=1) to re-run every notebook and
-# fail the build on any cell error.
-nb_execution_mode = "cache" if os.environ.get("JAXSN_DOCS_EXECUTE") else "off"
+# Executed fresh by default (results cached in .jupyter_cache) and the build
+# fails on any cell error -- notebooks in _notebook_manifest.NON_CI_NOTEBOOKS
+# are the exception: those can't run on a hosted CI runner (e.g. need a GPU
+# backend, or external data hosted CI can't produce) and instead render
+# whatever outputs are committed in the notebook, refreshed manually via
+# tools/refresh_notebooks.py. `./build_docs.sh --no-execute` (equivalently
+# JAXSN_DOCS_NO_EXECUTE=1) skips execution entirely for a fast local prose-only
+# preview.
+from _notebook_manifest import NON_CI_NOTEBOOKS
+
+nb_execution_mode = "off" if os.environ.get("JAXSN_DOCS_NO_EXECUTE") else "cache"
+nb_execution_excludepatterns = NON_CI_NOTEBOOKS
 nb_execution_cache_path = os.path.abspath("../../.jupyter_cache")
 nb_execution_timeout = 600
 nb_execution_raise_on_error = True

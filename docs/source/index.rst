@@ -11,7 +11,8 @@ differentiable neutron transport simulations.
 It is written in pure functional JAX primitives and uses linear operators to represent the discretised transport operator.
 
 Getting started
-================
+-------------------
+
 First install a JAX distribution, see `here <https://docs.jax.dev/en/latest/installation.html>`_. GPU support is strongly preferred.
 
 Then, 
@@ -20,18 +21,18 @@ Then,
    
    pip install .
 
-to install. For optional dependencies, :code:`jax-sbgeom` is required for location in simplex meshes, and :code:`warp-lang` 
-is used for a much faster sweep implementation. :code:`sympy` and :code:`pytest` are used in the testing suite. Install with 
+to install. For optional dependencies, :code:`jax-sbgeom` is required for location in simplex meshes, :code:`sympy` and :code:`pytest` are used in the testing suite. Install with 
 
 .. code-block:: bash
 
-   pip install .[geometry,warp,test]
+   pip install .[geometry,warp,docs]
 
 See the example problems for some instructive examples.
 
 
 Publications
-================
+--------------
+
 This model has been described and benchmarked in the following publications. If this work has been useful to you, please cite [3]:
 
 .. [1] Bogaarts, T. J., & Warmer, F. (2025). A novel discontinuous-Galerkin deterministic neutronics model for fusion applications: development and benchmarking. *Nuclear Fusion*, 65(7), 076015.
