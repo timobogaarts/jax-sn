@@ -60,6 +60,9 @@ def single_group_angle_structure(data: SingleGroupData) -> jax.ShapeDtypeStruct:
     return jax.ShapeDtypeStruct((operator_data.n_angles,) + operator_data.elements_basis_shape.shape, operator_data.angular_data.wk_ylm.dtype)
 
 class SingleGroupOperatorBase(TransposeBoolDataStrategyLinearOperator):
+    '''
+    Base operator acting on a single group.
+    '''
 
     data           : SingleGroupData
     strategy       : SingleGroupStrategyBase   # concrete real field (narrowed per concrete operator); declared before transpose_bool so field order stays data, strategy, transpose_bool
