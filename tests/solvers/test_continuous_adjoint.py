@@ -28,6 +28,7 @@ import equinox as eqx
 
 from jax_sn.operators.single_group_operator import SingleGroupData
 from jax_sn.operators.scatter_operator import GatherScatterData
+from jax_sn.operators.multi_group_operator import ComposedMultiGroupChainStrategy
 from jax_sn.solvers.right_hand_side import TotalSource, solve_multigroup_operator_rhs
 from jax_sn.variance_reduction.continuous_adjoint import solve_continuous_adjoint, _continuous_adjoint_data
 
@@ -58,7 +59,7 @@ def test_continuous_adjoint_structural(bb_mgop):
     gs_data = GatherScatterData(mgop.data.domain.cross_sections_indexed)
 
     def reference_body(g):
-        transport, moment, discrete, mass, _ = chain.all_operators(SingleGroupData(mgop.data, g))
+        transport, moment, discrete, mass = chain.all_operators(SingleGroupData(mgop.data, g))
         scatter_source = gather.outgoing_gather(gs_data, x, g)  # sum_{g'} S_{g'g} x_{g'}
         return x[g] - moment.mv(transport.transpose().inv(discrete.mv(mass.mv(scatter_source))))
 
@@ -91,7 +92,8 @@ def test_continuous_adjoint_reciprocity(bb_mgop):
 
     solver = lx.BiCGStab(rtol=1e-12, atol=1e-15, max_steps=160)
 
-    solution         = solve_multigroup_operator_rhs(mgop, rhs, solver, mgop.strategy.single_group_chain_strategy)
+    chain_strategy   = ComposedMultiGroupChainStrategy.from_composed(mgop.strategy)
+    solution         = solve_multigroup_operator_rhs(mgop, rhs, solver, chain_strategy)
     solution_adjoint = solve_continuous_adjoint(mgop, rhs_dagger, solver)
 
     line = jnp.linspace(0, jnp.max(mgop.data.spatial_data.domain.vertices), 800)[:, None]

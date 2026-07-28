@@ -4,7 +4,7 @@ strategies (see ``_bench.default_multi_group_strategies``: ``DefaultMultiGroupSt
 recipes, batched and non). Each recipe pairs its own internally-consistent transport lift (and mass
 strategy), rather than combining a per-strategy ``SingleAngleInversionStrategy`` discovery with an ad hoc
 lift + default -- the same reasoning as ``bench_machinery.py``. To sweep an off-default pairing explicitly
-(e.g. ``ScanAngles`` serialisation), use ``dev_bench.py --lifting``.
+(e.g. ``ScanAnglesInversion`` serialisation), use ``dev_bench.py --lifting``.
 """
 from _bench import ComposedBench, inv_call, single_group_operators
 

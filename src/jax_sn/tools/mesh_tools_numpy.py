@@ -15,6 +15,8 @@ import numpy as np
 from itertools import permutations as _itertools_permutations
 from typing import Tuple
 
+from jax_sn.domain.geometric_domain import _check_mesh_is_valid
+
 
 def _pad_last_dimension_numpy(vertices: np.ndarray) -> np.ndarray:
     """Zero-pad the last axis to width 3."""
@@ -230,6 +232,8 @@ def _compute_domain_setup_from_mesh_numpy(
         All as plain NumPy arrays.
     """
     assert np.asarray(face_template).ndim == 2, "face_template must be 2-D"
+    assert len(mesh) == 2, "mesh must be a tuple of (vertices, connectivity)"
+    _check_mesh_is_valid(mesh)
 
     vertices, connectivity = np.asarray(mesh[0]), np.asarray(mesh[1])
     face_template          = np.asarray(face_template)

@@ -19,7 +19,7 @@ from .transport_operator_strategies import (
 )
 from .implementations.transport_operator_forward import VmapForward, BatchedForward
 from .implementations.transport_operator_jax import VmapSweep, BatchedSweep
-from .implementations.multi_angle_inversions import VmapAngles, ScanAngles, VmapAnglesForward, ScanAnglesForward
+from .implementations.multi_angle_inversions import VmapAnglesInversion, ScanAnglesInversion, VmapAnglesForward, ScanAnglesForward
 
 
 from .implementations.transport_operator_pallas import (
@@ -50,8 +50,8 @@ __all__ = [
     'BatchedForward',
     'VmapSweep',
     'BatchedSweep',
-    'VmapAngles',
-    'ScanAngles',
+    'VmapAnglesInversion',
+    'ScanAnglesInversion',
     'VmapAnglesForward',
     'ScanAnglesForward',
     'VmapPallasSweep',

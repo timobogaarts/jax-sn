@@ -88,6 +88,10 @@ class OperatorData(eqx.Module):
     @property
     def n_angles(self):
         return self.angular_data.wk_ylm.shape[0]
+    
+    @property
+    def n_basis(self):
+        return self.elements_basis_shape.shape[-1]
 
     @property
     def n_energy_groups(self):

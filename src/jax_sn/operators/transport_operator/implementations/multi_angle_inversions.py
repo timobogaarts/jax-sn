@@ -44,19 +44,19 @@ class ScanAnglesForward(ComposedMultiAngleForwardStrategy):
 # ---------------------------------------------------------------------------
 # Inverse sweep
 # ---------------------------------------------------------------------------
-class VmapAngles(ComposedMultiAngleInversionStrategy):
+class VmapAnglesInversion(ComposedMultiAngleInversionStrategy):
     '''Lift the single-angle inverse sweep by ``vmap``-ing it over the angle axis.'''
 
     def __check_init__(self):
         assert self.inner.vmappable(), \
-            f"VmapAngles over {type(self.inner).__name__} would silently serialise (an opaque kernel is " \
-            f"invisible to vmap); use ScanAngles({type(self.inner).__name__}()) or the kernel's fused native lift."
+            f"VmapAnglesInversion over {type(self.inner).__name__} would silently serialise (an opaque kernel is " \
+            f"invisible to vmap); use ScanAnglesInversion({type(self.inner).__name__}()) or the kernel's fused native lift."
 
     def invert(self, data: TransportData, b):
         return map_over_angles(data, b, self.inner.invert)
 
 
-class ScanAngles(ComposedMultiAngleInversionStrategy):
+class ScanAnglesInversion(ComposedMultiAngleInversionStrategy):
     '''Lift the single-angle inverse sweep by ``lax.map``-ing it over the angle axis.'''
 
     def invert(self, data: TransportData, b):

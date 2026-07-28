@@ -26,7 +26,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import lineax as lx
 
-from jax_sn.operators.multi_group_operator import MultiGroupOperator
+from jax_sn.operators.multi_group_operator import MultiGroupOperator, ComposedMultiGroupChainStrategy
 from jax_sn.operators.operator_data import OperatorData
 from jax_sn.solvers.base_solvers import MultiGroupLowerTriangularBlockSolver
 from jax_sn.solvers.right_hand_side import solve_multigroup_operator_rhs
@@ -86,5 +86,5 @@ def solve_continuous_adjoint(operator: MultiGroupOperator, rhs, solver: lx.Abstr
     )
 
     adjoint_operator = eqx.tree_at(lambda o: o.data, operator, _continuous_adjoint_data(operator.data))
-    chain_strategy   = operator.strategy.single_group_chain_strategy
+    chain_strategy   = ComposedMultiGroupChainStrategy.from_composed(operator.strategy)
     return solve_multigroup_operator_rhs(adjoint_operator, rhs, solver, chain_strategy)

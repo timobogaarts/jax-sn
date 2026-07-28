@@ -6,7 +6,7 @@ from jax_sn.domain.cross_sections import CrossSectionData
 from jax_sn.tools.parametrisation_tools import ParametrisedModule, ParametrisedModuleObjective, ParametrisationValues, ParametrisedModuleTheta
 from typing import Union
 import lineax as lx
-from jax_sn.operators.multi_group_operator import MultiGroupOperator
+from jax_sn.operators.multi_group_operator import MultiGroupOperator, ComposedMultiGroupChainStrategy
 from jaxtyping import PyTree
 from abc import abstractmethod
 from lineax._misc import structure_equal
@@ -102,9 +102,9 @@ class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
         PyTree
             The solution PyTree.
         '''
-        # The chain strategy conditions the RHS per group; it lives on the composed multigroup strategy.
-        return solve_multigroup_operator_rhs(mgop_theta, self.rhs, self.multi_group_solver,
-                                             mgop_theta.strategy.single_group_chain_strategy)
+        # The chain strategy conditions the RHS per group, lifted the same way as mgop_theta.strategy.
+        chain_strategy = ComposedMultiGroupChainStrategy.from_composed(mgop_theta.strategy)
+        return solve_multigroup_operator_rhs(mgop_theta, self.rhs, self.multi_group_solver, chain_strategy)
 
     def solution(self, theta : ParametrisationValues) -> PyTree:
         '''
@@ -151,3 +151,8 @@ def reconstruct_multigroup_operator_including_toposort(operator : MultiGroupOper
             return eqx.tree_at(lambda op : op.data.sweep_data, operator_precomp, replace = sweep_data_replaced)
         else:
             return operator_precomp
+
+@eqx.filter_jit
+def reconstruct_multigroup_operator_from_vertices(operator : MultiGroupOperator, vertices : jnp.ndarray, replace_topological_sort : bool = True) -> MultiGroupOperator:
+        theta = VerticesXSTheta(vertices, operator.data.spatial_data.domain.cross_sections_indexed.cross_section_data)
+        return reconstruct_multigroup_operator_including_toposort(operator, theta, replace_topological_sort)

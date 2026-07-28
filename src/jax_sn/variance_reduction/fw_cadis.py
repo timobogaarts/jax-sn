@@ -2,7 +2,7 @@ import equinox as eqx
 import jax.numpy as jnp
 import lineax as lx
 
-from ..operators.multi_group_operator import MultiGroupOperator
+from ..operators.multi_group_operator import MultiGroupOperator, ComposedMultiGroupChainStrategy
 from ..solvers.right_hand_side import RightHandSide, TotalSource, solve_multigroup_operator_rhs
 from .continuous_adjoint import solve_continuous_adjoint
 
@@ -46,7 +46,8 @@ def fw_cadis_scalar_flux(operator: MultiGroupOperator, rhs: RightHandSide, solve
     '''
     assert isinstance(operator, MultiGroupOperator), f"operator must be an instance of MultiGroupOperator, but got {type(operator)}."
 
-    forward_result = solve_multigroup_operator_rhs(operator, rhs, solver, operator.strategy.single_group_chain_strategy)
+    chain_strategy = ComposedMultiGroupChainStrategy.from_composed(operator.strategy)
+    forward_result = solve_multigroup_operator_rhs(operator, rhs, solver, chain_strategy)
 
     integration_coeff = operator.data.spatial_data.fem_matrices.integration_coeff
     forward_average_result = jnp.einsum("gei,i->ge", forward_result.value[:, 0, ...], integration_coeff)  # scalar flux [n_groups, n_elements]

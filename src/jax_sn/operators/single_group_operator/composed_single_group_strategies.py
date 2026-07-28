@@ -43,63 +43,79 @@ def _build_transport_operator(single_group_data: SingleGroupData, forward_strate
     return TransportOperatorMultiAngle(TransportData(single_group_data.operator_data.spatial_data, single_group_data.energy_group, single_group_data.operator_data.angular_data.quadrature_set.angles, single_group_data.operator_data.sweep_data),
                                        forward_strategy, inversion_strategy)
 
-class ComposedSingleGroupBase(TransposableStrategy):
+class ComposedSingleGroupTransportBase(TransposableStrategy):
     '''
-    Composed of multiple transport operators.
+    Shared plumbing for every composed single-group strategy: the transport (forward + inversion),
+    moment and mass sub-operators every variant uses, plus the sweep-data passthrough. Chain/Full add
+    a discrete operator, and Full alone adds the within-group scatter operator -- neither belongs here
+    since Source's forward/transpose (M T^-1 H) needs neither.
     '''
     transport_strategy           : MultiAngleForwardStrategy
     transport_inversion_strategy : MultiAngleInversionStrategy
     moment_strategy              : FluxMomentStrategy
-    discrete_strategy            : FluxMomentStrategy
     mass_strategy                : MassStrategy
-    scatter_strategy             : ScatterStrategy
-    
-    def all_operators(self, single_group_data : SingleGroupData) -> Tuple[TransportOperatorMultiAngle, MomentOperator, DiscreteOperator, MassOperator, ScatterOperator]:
-        '''
-        Construct the entire chain of operators. This is a free construction in any case (after JIT): just assigning a type.
-        '''
-        transport_operator = _build_transport_operator(single_group_data, self.transport_strategy, self.transport_inversion_strategy)
-        moment_operator    = _build_moment_operator(single_group_data, self.moment_strategy)
-        discrete_operator  = _build_discrete_operator(single_group_data, self.discrete_strategy)
-        mass_operator      = _build_mass_operator(single_group_data, self.mass_strategy)
-        scatter_operator   = _build_inscatter_operator(single_group_data, single_group_data.energy_group, self.scatter_strategy)
-        return transport_operator, moment_operator, discrete_operator, mass_operator, scatter_operator
-    
+
+    def _build_transport(self, single_group_data : SingleGroupData) -> TransportOperatorMultiAngle:
+        return _build_transport_operator(single_group_data, self.transport_strategy, self.transport_inversion_strategy)
+
+    def _build_moment(self, single_group_data : SingleGroupData) -> MomentOperator:
+        return _build_moment_operator(single_group_data, self.moment_strategy)
+
+    def _build_mass(self, single_group_data : SingleGroupData) -> MassOperator:
+        return _build_mass_operator(single_group_data, self.mass_strategy)
+
     def default_sweep_data(self):
         return self.transport_inversion_strategy.default_sweep_data_type()
 
-class ComposedSingleGroupChainStrategy(ComposedSingleGroupBase, SingleGroupChainStrategy):
+class ComposedSingleGroupSourceStrategy(ComposedSingleGroupTransportBase, SingleGroupSourceStrategy):
+    '''The source operator :math:`\\mathbf{M}\\mathbf{T}_g^{-1}\\mathbf{H}` -- no discrete or scatter operator needed.'''
 
-    def forward(self, data : SingleGroupData, x):    
-        transport, moment, discrete, mass, _ = self.all_operators(data)
+    def forward(self, data : SingleGroupData, x):
+        transport, moment, mass = self._build_transport(data), self._build_moment(data), self._build_mass(data)
+        return moment.mv(transport.inv(mass.mv(x)))
+
+    def transpose(self, data : SingleGroupData, x):
+        transport, moment, mass = self._build_transport(data), self._build_moment(data), self._build_mass(data)
+        return mass.transpose().mv(transport.transpose().inv(moment.transpose().mv(x)))
+
+class ComposedSingleGroupChainStrategy(ComposedSingleGroupTransportBase, SingleGroupChainStrategy):
+    '''The chain operator :math:`\\mathbf{M}\\mathbf{T}_g^{-1}\\mathbf{H}\\mathbf{D}` -- no scatter operator needed.'''
+    discrete_strategy : FluxMomentStrategy
+
+    def all_operators(self, single_group_data : SingleGroupData) -> Tuple[TransportOperatorMultiAngle, MomentOperator, DiscreteOperator, MassOperator]:
+        return (self._build_transport(single_group_data), self._build_moment(single_group_data),
+                _build_discrete_operator(single_group_data, self.discrete_strategy), self._build_mass(single_group_data))
+
+    def forward(self, data : SingleGroupData, x):
+        transport, moment, discrete, mass = self.all_operators(data)
         return moment.mv(transport.inv(discrete.mv(mass.mv(x))))
 
     def transpose(self, data : SingleGroupData, x):
-        transport, moment, discrete, mass, _ = self.all_operators(data)
+        transport, moment, discrete, mass = self.all_operators(data)
         return mass.transpose().mv(
                 discrete.transpose().mv(
                 transport.transpose().inv(
                     moment.transpose().mv(x))))
-    
-class ComposedSingleGroupSourceStrategy(ComposedSingleGroupBase, SingleGroupSourceStrategy):
 
-    def forward(self, data : SingleGroupData, x):    
-        transport, moment, _, mass, _ = self.all_operators(data)
-        return moment.mv(transport.inv(mass.mv(x)))        
+class ComposedSingleGroupStrategy(ComposedSingleGroupTransportBase, SingleGroupStrategy):
+    '''The full :math:`\\mathbf{I} - \\mathbf{M}\\mathbf{T}_g^{-1}\\mathbf{H}\\mathbf{D}\\mathbf{S}_{gg}` operator.'''
+    discrete_strategy : FluxMomentStrategy
+    scatter_strategy  : ScatterStrategy
 
-    def transpose(self, data : SingleGroupData, x):
-        transport, moment, _, mass, _ = self.all_operators(data)
-        return mass.transpose().mv(transport.transpose().inv(moment.transpose().mv(x)))
-    
-class ComposedSingleGroupStrategy(ComposedSingleGroupBase, SingleGroupStrategy):
-    
+    def all_operators(self, single_group_data : SingleGroupData) -> Tuple[TransportOperatorMultiAngle, MomentOperator, DiscreteOperator, MassOperator, ScatterOperator]:
+        '''
+        Construct the entire chain of operators. This is a free construction in any case (after JIT): just assigning a type.
+        '''
+        return (self._build_transport(single_group_data), self._build_moment(single_group_data),
+                _build_discrete_operator(single_group_data, self.discrete_strategy), self._build_mass(single_group_data),
+                _build_inscatter_operator(single_group_data, single_group_data.energy_group, self.scatter_strategy))
 
     def forward(self, data : SingleGroupData, x):
-        transport, moment, discrete, mass, inscatter = self.all_operators(data)        
+        transport, moment, discrete, mass, inscatter = self.all_operators(data)
         return x - moment.mv(transport.inv(discrete.mv(mass.mv(inscatter.mv(x)))))
-    
+
     def transpose(self, data : SingleGroupData, x):
-        transport, moment, discrete, mass, inscatter = self.all_operators(data)            
+        transport, moment, discrete, mass, inscatter = self.all_operators(data)
         return x - inscatter.transpose().mv(
             mass.transpose().mv(
                 discrete.transpose().mv(

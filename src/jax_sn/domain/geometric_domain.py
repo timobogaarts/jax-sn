@@ -23,6 +23,7 @@ def _compute_domain_setup_from_mesh(mesh : Tuple[jnp.ndarray, jnp.ndarray], face
         A 2D array representing the face template.
     '''
     assert face_template.ndim == 2, "Face template must be a 2D array."
+    _check_mesh_is_valid(mesh)
     vertices, connectivity = mesh
 
     face_normals = compute_face_normal_vectors_from_3d_simplices(vertices[connectivity], face_template)
@@ -31,6 +32,9 @@ def _compute_domain_setup_from_mesh(mesh : Tuple[jnp.ndarray, jnp.ndarray], face
 
     return vertices, connectivity, face_normals, etoe, etof, face_perm_idx
 
+def _check_mesh_is_valid(mesh : Tuple[jnp.ndarray, jnp.ndarray]):
+    assert mesh[0].ndim == 2, f"Mesh vertices must be a 2D array of [n_vertices, n_dim]. Provided shape: {mesh[0].shape}"
+    assert mesh[1].ndim == 2, f"Mesh connectivity must be a 2D array of [n_elements, n_vertices_per_element]. Provided shape: {mesh[1].shape}"
 
 
 class GeometricDomain(eqx.Module):
@@ -60,6 +64,7 @@ class GeometricDomain(eqx.Module):
 
     face_template : jnp.ndarray
     '''Face template used to define faces of elements. Shape is [n_faces_per_element, n_vertices_per_face].'''
+    
 
     @classmethod 
     def from_mesh(cls, mesh : Tuple[jnp.ndarray, jnp.ndarray], face_template : jnp.ndarray):

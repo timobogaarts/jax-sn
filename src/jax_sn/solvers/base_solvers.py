@@ -40,7 +40,7 @@ from jaxtyping import Array, ArrayLike
 from typing_extensions import Self
 
 from jax_sn.operators.multi_group_operator import MultiGroupOperator
-from jax_sn.operators.multi_group_operator.composed_multi_group_strategies import ComposedMultiGroupStrategy
+from jax_sn.operators.multi_group_operator.composed_multi_group_strategies import MultiGroupChainGatherStrategy
 from jax_sn.operators.single_group_operator import (
     SingleGroupData,
     SingleGroupOperator,
@@ -49,7 +49,7 @@ from jax_sn.operators.single_group_operator import (
     ComposedSingleGroupStrategy,
     ComposedSingleGroupChainStrategy,
 )
-from jax_sn.operators.scatter_operator import GatherScatterData, SingleGroupGatherScatterStrategy
+from jax_sn.operators.scatter_operator import GatherScatterData, SingleGroupGatherScatterStrategy, ScatterStrategy, IndexedScatter
 import equinox as eqx
 
 # lineax solver state carried between init/compute/transpose is just the (differentiable) operator.
@@ -79,10 +79,15 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver[_State]):
 
     # ---- construction ----------------------------------------------------------------------------
     @classmethod
-    def from_composed(cls, composed_strategy: ComposedMultiGroupStrategy,
-                      single_group_solver: lx.AbstractLinearSolver, diagnostics : SolverDiagnostics = SolverDiagnostics(print_sweep=False, print_single_group=False)) -> Self:
+    def from_composed(cls, composed_strategy: MultiGroupChainGatherStrategy,
+                      single_group_solver: lx.AbstractLinearSolver, scatter_strategy: ScatterStrategy = IndexedScatter(),
+                      diagnostics : SolverDiagnostics = SolverDiagnostics(print_sweep=False, print_single_group=False)) -> Self:
         r'''
-        Build the solver from a ComposedMultiGroupStrategy with a ComposedSingleGroupChainStrategy. The diagonal block is assembled from the chain's sub-strategies.
+        Build the solver from a MultiGroupChainGatherStrategy with a ComposedSingleGroupChainStrategy. The
+        diagonal block is assembled from the chain's sub-strategies plus ``scatter_strategy`` for the
+        within-group scatter :math:`\mathbf{S}_{gg}` -- the chain strategy itself has no scatter operator
+        (:math:`C_g = \mathbf{M}\mathbf{T}_g^{-1}\mathbf{H}\mathbf{D}` doesn't need one), so it isn't
+        available to read off the chain.
         '''
         chain = composed_strategy.single_group_chain_strategy
         assert isinstance(chain, ComposedSingleGroupChainStrategy), (
@@ -95,7 +100,7 @@ class MultiGroupLowerTriangularBlockSolver(lx.AbstractLinearSolver[_State]):
             moment_strategy              = chain.moment_strategy,
             discrete_strategy            = chain.discrete_strategy,
             mass_strategy                = chain.mass_strategy,
-            scatter_strategy             = chain.scatter_strategy,
+            scatter_strategy             = scatter_strategy,
         )
         return cls(
             single_group_solver = single_group_solver,

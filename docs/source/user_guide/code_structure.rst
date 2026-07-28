@@ -75,7 +75,7 @@ strategy (i.e. writing the whole kernel in one go), or we can decompose it into 
     class FusedMultiGroupStrategy(MultiGroupStrategyBase):
         def forward(data, x):
             return compute_fused_kernel(data, x)
-    class ComposedMultiGroupStrategy(StrategyA):
+    class MultiGroupChainGatherStrategy(StrategyA):
         strategy_m : StrategyM
         strategy_tinv : StrategyTinv
         strategy_h    : StrategyH 

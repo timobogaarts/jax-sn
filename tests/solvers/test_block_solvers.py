@@ -8,7 +8,7 @@ import jax.numpy as jnp
 import numpy as onp
 import lineax as lx
 
-from jax_sn.operators.multi_group_operator import MultiGroupScanStrategy, MultiGroupVmapStrategy
+from jax_sn.operators.multi_group_operator import MultiGroupChainGatherScanStrategy, MultiGroupChainGatherVmapStrategy, ComposedMultiGroupChainStrategy
 from jax_sn.solvers.base_solvers import MultiGroupLowerTriangularBlockSolver
 
 from conftest import DIM_DEGREES
@@ -54,8 +54,8 @@ def test_multigroup_rhs_construction(bb_mgop):
     values_manual = lx.linear_solve(mgop, rhs_total, solver).value
 
     rhs_impl = IsotropicSourceSingleGroup.from_operator(mgop, source_total[0] * onp.sqrt(4.0 * onp.pi), 0)
-    values_impl = solve_multigroup_operator_rhs(mgop, rhs_impl, solver,
-                                                mgop.strategy.single_group_chain_strategy).value
+    chain_strategy = ComposedMultiGroupChainStrategy.from_composed(mgop.strategy)
+    values_impl = solve_multigroup_operator_rhs(mgop, rhs_impl, solver, chain_strategy).value
 
     onp.testing.assert_allclose(onp.array(values_impl), onp.array(values_manual), rtol=1e-12, atol=1e-12)
 
@@ -79,7 +79,8 @@ def test_multigroup_reduced_quadrature(bb_mgop):
         op  = _downscattering_only(create_multi_group_operator(solution_domain, qset, strategy))
         src = IsotropicSourceSingleGroup.from_operator(op, jnp.ones(op.out_structure().shape[2:]), 0)
         solver = _block_solver(op, lx.BiCGStab(1e-13, 1e-15, max_steps=160))
-        return solve_multigroup_operator_rhs(op, src, solver, op.strategy.single_group_chain_strategy).value
+        chain_strategy = ComposedMultiGroupChainStrategy.from_composed(op.strategy)
+        return solve_multigroup_operator_rhs(op, src, solver, chain_strategy).value
 
     result_full = _solve(full_qset)
     result_2d   = _solve(QuadratureSetReduced.from_quadrature_set(full_qset, 2))

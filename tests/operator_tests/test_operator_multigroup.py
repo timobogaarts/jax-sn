@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as onp
 import lineax as lx
 
-from jax_sn.operators.multi_group_operator import MultiGroupScanStrategy, MultiGroupVmapStrategy
+from jax_sn.operators.multi_group_operator import MultiGroupChainGatherScanStrategy, MultiGroupChainGatherVmapStrategy
 from jax_sn.solvers.base_solvers import MultiGroupLowerTriangularBlockSolver
 from .operator_util import BaseOperatorProperties
 from conftest import DIM_DEGREES
@@ -18,13 +18,13 @@ def _relift(mgop, strategy):
 
 def _scan(mgop, checkpoint):
     s = mgop.strategy
-    return _relift(mgop, MultiGroupScanStrategy(s.single_group_chain_strategy,
+    return _relift(mgop, MultiGroupChainGatherScanStrategy(s.single_group_chain_strategy,
                                                 s.single_group_gather_scatter_strategy, checkpoint=checkpoint))
 
 
 def _vmap(mgop):
     s = mgop.strategy
-    return _relift(mgop, MultiGroupVmapStrategy(s.single_group_chain_strategy,
+    return _relift(mgop, MultiGroupChainGatherVmapStrategy(s.single_group_chain_strategy,
                                                 s.single_group_gather_scatter_strategy))
 
 

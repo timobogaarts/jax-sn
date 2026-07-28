@@ -3,7 +3,7 @@ import numpy as onp
 import equinox as eqx
 
 from jax_sn.operators.transport_operator import (
-    VmapSweep, BatchedSweep, VmapPallasSweep, BatchedPallasSweep, VmapAngles, ScanAngles,
+    VmapSweep, BatchedSweep, VmapPallasSweep, BatchedPallasSweep, VmapAnglesInversion, ScanAnglesInversion,
 )
 from jax_sn.operators.transport_operator.implementations.transport_operator_warp import (
     WarpSequentialSweep, WarpLevelSweep, WarpSequentialAngles, WarpLevelAngles,
@@ -27,9 +27,9 @@ INVERSION_STRATEGIES = {
 }
 
 MULTI_ANGLE_STRATEGIES = {
-    VmapAngles(VmapSweep()):          Spec(),   
-    ScanAngles(VmapSweep()):          Spec(),   
-    VmapAngles(BatchedSweep(64)):     Spec(),   
+    VmapAnglesInversion(VmapSweep()):          Spec(),
+    ScanAnglesInversion(VmapSweep()):          Spec(),
+    VmapAnglesInversion(BatchedSweep(64)):     Spec(),
     WarpSequentialAngles():           Spec(supports=linear_tet_only),  
     WarpLevelAngles():                Spec(supports=linear_tet_only),  
 }

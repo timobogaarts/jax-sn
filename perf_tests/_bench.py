@@ -29,7 +29,8 @@ from jax_sn.operator_creation.multi_group_operator_creation import create_multi_
 from jax_sn.operators.single_group_operator import (
     SingleGroupData, SingleGroupOperator, ComposedSingleGroupStrategy,
 )
-from jax_sn.operators.transport_operator import VmapAnglesForward, VmapAngles
+from jax_sn.operators.transport_operator import VmapAnglesForward, VmapAnglesInversion
+from jax_sn.operators.scatter_operator import IndexedScatter
 
 
 def ones_in(op) -> jnp.ndarray:
@@ -76,10 +77,10 @@ def lift_forward(inner):
 
 def lift_inversion(inner):
     """A discovered ``SingleAngleInversionStrategy`` lifted the way ``create_multi_group_operator`` used
-    to auto-resolve before the factory API flattened: ``VmapAngles`` if the kernel vectorises, else its
+    to auto-resolve before the factory API flattened: ``VmapAnglesInversion`` if the kernel vectorises, else its
     fused native multi-angle lift (e.g. a Warp level sweep)."""
     if inner.vmappable():
-        return VmapAngles(inner)
+        return VmapAnglesInversion(inner)
     native = type(inner).native_multi_angle()
     if native is not None:
         return native()
@@ -87,18 +88,21 @@ def lift_inversion(inner):
 
 
 def single_group_operators(mgop, g: int = 0):
-    """``(transport, moment, discrete, mass, scatter)`` sub-operators for group ``g``, pulled from the
-    MGOp's own chain strategy -- the data+strategy layout has no per-axis properties on ``mgop`` itself."""
+    """``(transport, moment, discrete, mass)`` sub-operators for group ``g``, pulled from the MGOp's own
+    chain strategy -- the data+strategy layout has no per-axis properties on ``mgop`` itself. (The chain
+    strategy has no scatter operator -- ``C_g = M T^-1 H D`` doesn't need one -- so the within-group
+    scatter isn't available via this path; see :func:`full_single_group_strategy`.)"""
     chain = mgop.strategy.single_group_chain_strategy
     return chain.all_operators(SingleGroupData(mgop.data, g))
 
 
 def full_single_group_strategy(mgop) -> ComposedSingleGroupStrategy:
     """A :class:`ComposedSingleGroupStrategy` (the full ``I - M T^-1 H D S`` operator) sharing the MGOp's
-    chain strategy's sub-strategies -- chain and full share the same field set (``ComposedSingleGroupBase``)."""
+    chain strategy's sub-strategies, plus an ``IndexedScatter`` for the within-group scatter the chain
+    strategy doesn't carry."""
     chain = mgop.strategy.single_group_chain_strategy
     fields = {f.name: getattr(chain, f.name) for f in dataclasses.fields(chain)}
-    return ComposedSingleGroupStrategy(**fields)
+    return ComposedSingleGroupStrategy(**fields, scatter_strategy=IndexedScatter())
 
 
 def single_group_operator(mgop, g: int = 0) -> SingleGroupOperator:

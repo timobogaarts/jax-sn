@@ -365,16 +365,15 @@ def downscattering_only(mgop):
         mgop, replace_fn=jnp.tril)
 
 
-def _composed_sub_strategies(composed):
-    '''The six shared sub-strategies of any ComposedSingleGroup* strategy, as a kwargs dict.'''
-    return dict(
-        transport_strategy           = composed.transport_strategy,
-        transport_inversion_strategy = composed.transport_inversion_strategy,
-        moment_strategy              = composed.moment_strategy,
-        discrete_strategy            = composed.discrete_strategy,
-        mass_strategy                = composed.mass_strategy,
-        scatter_strategy             = composed.scatter_strategy,
-    )
+def _composed_sub_strategies(composed, target_cls, **overrides):
+    '''Kwargs to build a ``target_cls`` (some ``ComposedSingleGroup*Strategy``) from whichever of its
+    fields ``composed`` (another such strategy) already carries, plus ``overrides`` for any field
+    ``target_cls`` needs that ``composed`` doesn't have (e.g. building a full strategy's ``scatter_strategy``
+    from a chain, which has none -- ``C_g = M T_g^-1 H D`` doesn't need one).'''
+    import dataclasses
+    available = {f.name: getattr(composed, f.name) for f in dataclasses.fields(composed)}
+    needed = {f.name for f in dataclasses.fields(target_cls)}
+    return {**{k: v for k, v in available.items() if k in needed}, **overrides}
 
 
 def single_group_operator_from_mgop(mgop, energy_group=0):
@@ -382,8 +381,9 @@ def single_group_operator_from_mgop(mgop, energy_group=0):
     from jax_sn.operators.single_group_operator import (
         SingleGroupData, SingleGroupOperator, ComposedSingleGroupStrategy,
     )
+    from jax_sn.operators.scatter_operator import IndexedScatter
     chain = mgop.strategy.single_group_chain_strategy
-    full  = ComposedSingleGroupStrategy(**_composed_sub_strategies(chain))
+    full  = ComposedSingleGroupStrategy(**_composed_sub_strategies(chain, ComposedSingleGroupStrategy, scatter_strategy=IndexedScatter()))
     return SingleGroupOperator(SingleGroupData(mgop.data, energy_group), full)
 
 
@@ -401,7 +401,9 @@ def sub_operators_from_mgop(mgop, energy_group=0):
     '''(transport, moment, discrete, mass, within-group scatter) operators for one energy group, as built
     by the composed single-group strategy's ``all_operators``.'''
     from jax_sn.operators.single_group_operator import SingleGroupData, ComposedSingleGroupStrategy
-    full = ComposedSingleGroupStrategy(**_composed_sub_strategies(mgop.strategy.single_group_chain_strategy))
+    from jax_sn.operators.scatter_operator import IndexedScatter
+    chain = mgop.strategy.single_group_chain_strategy
+    full = ComposedSingleGroupStrategy(**_composed_sub_strategies(chain, ComposedSingleGroupStrategy, scatter_strategy=IndexedScatter()))
     return full.all_operators(SingleGroupData(mgop.data, energy_group))
 
 
@@ -422,7 +424,7 @@ def source_operator_from_sgop(sgop):
     from jax_sn.operators.single_group_operator import (
         SingleGroupSourceOperator, ComposedSingleGroupSourceStrategy,
     )
-    source = ComposedSingleGroupSourceStrategy(**_composed_sub_strategies(sgop.strategy))
+    source = ComposedSingleGroupSourceStrategy(**_composed_sub_strategies(sgop.strategy, ComposedSingleGroupSourceStrategy))
     return SingleGroupSourceOperator(sgop.data, source)
 
 
@@ -431,7 +433,7 @@ def chain_operator_from_sgop(sgop):
     from jax_sn.operators.single_group_operator import (
         SingleGroupChainOperator, ComposedSingleGroupChainStrategy,
     )
-    chain = ComposedSingleGroupChainStrategy(**_composed_sub_strategies(sgop.strategy))
+    chain = ComposedSingleGroupChainStrategy(**_composed_sub_strategies(sgop.strategy, ComposedSingleGroupChainStrategy))
     return SingleGroupChainOperator(sgop.data, chain)
 
 

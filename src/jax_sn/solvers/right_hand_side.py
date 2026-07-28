@@ -4,8 +4,7 @@ import lineax as lx
 import equinox as eqx
 from abc import abstractmethod
 
-from jax_sn.operators.multi_group_operator import MultiGroupOperator
-from jax_sn.operators.single_group_operator import SingleGroupData, SingleGroupChainStrategy
+from jax_sn.operators.multi_group_operator import MultiGroupOperator, MultiGroupChainStrategyBase
 
 
 class RightHandSide(eqx.Module):
@@ -81,7 +80,7 @@ def _to_struct(x) -> jax.ShapeDtypeStruct:
 @eqx.filter_jit
 def solve_multigroup_operator_rhs(operator : MultiGroupOperator, rhs : RightHandSide,
                                   solver : lx.AbstractLinearSolver,
-                                  chain_strategy : SingleGroupChainStrategy):
+                                  chain_strategy : MultiGroupChainStrategyBase):
     r'''
     Solve :math:`\mathbf{A}\psi = \mathbf{C}[b]` for the multi-group operator ``operator``.
 
@@ -93,8 +92,9 @@ def solve_multigroup_operator_rhs(operator : MultiGroupOperator, rhs : RightHand
         The physical right-hand side (or a bare array of matching structure).
     solver : lx.AbstractLinearSolver
         The lineax solver applied to the preconditioned system.
-    chain_strategy : SingleGroupChainStrategy
-        The per-group chain used to precondition the source.
+    chain_strategy : MultiGroupChainStrategyBase
+        Per-group chain, lifted over groups, used to precondition the source. Build via
+        ``ComposedMultiGroupChainStrategy.from_composed(operator.strategy)`` to match the operator's own lift.
 
     Returns
     -------
@@ -103,8 +103,5 @@ def solve_multigroup_operator_rhs(operator : MultiGroupOperator, rhs : RightHand
     assert _to_struct(rhs) == operator.out_structure(), \
         f"RHS structure {_to_struct(rhs)} does not match operator structure {operator.out_structure()}."
 
-    def body_fn(_, g_i):
-        return None, chain_strategy.forward(SingleGroupData(operator.data, g_i), rhs[g_i])
-
-    rhs_conditioned = jax.lax.scan(jax.checkpoint(body_fn), None, jnp.arange(operator.n_energy_groups))[1]
+    rhs_conditioned = chain_strategy.forward(operator.data, rhs)
     return lx.linear_solve(operator, rhs_conditioned, solver)

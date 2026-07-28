@@ -15,9 +15,8 @@ import jax.numpy as jnp
 from typing import List
 import equinox as eqx
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class CrossSectionDataSingleGroup:
+
+class CrossSectionDataSingleGroup(eqx.Module):
     '''
     Dataclass to hold cross section data for a single energy group.
     Batched over leading dimensions
@@ -30,9 +29,7 @@ class CrossSectionDataSingleGroup:
     '''scattering cross section moments, batched arbitrarily over leading dimensions. Shape is [..., n_L]'''
 
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class CrossSectionData:
+class CrossSectionData(eqx.Module):
     '''
     Dataclass to hold cross section data for multiple energy groups.
     Batched over leading dimensions.

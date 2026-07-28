@@ -20,7 +20,7 @@ Solving this adjoint equation works exactly the same as the forward equation, ex
 (not the gathering operator!). 
 
 .. math::
-    \mathbf{I} - \mathbf{M}\mathbf{T}^{-1} \mathbf{H}\mathbf{D}\mathbf{S} \to \mathbf{I} - \mathbf{M}\mathbf{T}^{-1} \mathbf{H}\mathbf{D}\mathbf{S}^T
+    \mathbf{I} - \mathbf{M}\mathbf{T}^{-1} \mathbf{H}\mathbf{D}\mathbf{S} \to \mathbf{I} - \mathbf{M}\mathbf{T}^{-T} \mathbf{H}\mathbf{D}\mathbf{S}^T
 
 Ideally we want to re-use all the machinery from the forward solve. We can do this by after computing the relevant matrices for the :math:`\mathbf{D}, \mathbf{M}` operators (which take the normal angles), just reversing the 
 angles (and topological inversion order) and swapping the scatter matrix out and incoming groups. Given this new data, the forward operator is exactly the same as the 

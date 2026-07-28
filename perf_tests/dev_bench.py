@@ -24,7 +24,7 @@ Examples
     python dev_bench.py --bench transport.forward --problem tiny-d1
 
     # one inversion with an explicit angle inversion (combinator wraps the inversion; native stands alone)
-    python dev_bench.py --bench transport.inv.multiangle --strategy MySweep --lifting ScanAngles
+    python dev_bench.py --bench transport.inv.multiangle --strategy MySweep --lifting ScanAnglesInversion
 
     # Warp example
     python dev_bench.py --bench transport.inv.multiangle \
@@ -123,8 +123,8 @@ def main():
 
 def _multi_angle_inversion_strategy_for(lift_cls, inv_instance):
     """Build an :class:`MultiAngleInversionStrategy` of class ``lift_cls`` for a single-angle inversion instance: a
-    native (e.g. warp) default-constructs; a combinator (``VmapAngles``/``ScanAngles``) wraps the
-    inversion as its ``inner``. Returns ``None`` if the pairing is illegal (e.g. ``VmapAngles`` over an
+    native (e.g. warp) default-constructs; a combinator (``VmapAnglesInversion``/``ScanAnglesInversion``) wraps the
+    inversion as its ``inner``. Returns ``None`` if the pairing is illegal (e.g. ``VmapAnglesInversion`` over an
     opaque kernel, which ``__check_init__`` rejects)."""
     try:
         return lift_cls()                 # native: owns no inner
@@ -133,7 +133,7 @@ def _multi_angle_inversion_strategy_for(lift_cls, inv_instance):
     try:
         return lift_cls(inv_instance)     # combinator: wrap this inversion
     except Exception:
-        return None                       # illegal pairing (e.g. VmapAngles over opaque)
+        return None                       # illegal pairing (e.g. VmapAnglesInversion over opaque)
 
 
 def _run_multiangle(args):
@@ -141,7 +141,7 @@ def _run_multiangle(args):
     angle inversion -- mirrors ``bench_transport_multiangle.py``, but filterable via ``--strategy`` and buildable
     at a custom resolution. ``--lifting`` overrides the angle inversion with a specific
     ``MultiAngleInversionStrategy`` class (a native, or a combinator wrapping the inversion), so an off-default
-    pairing like ``ScanAngles`` serialisation is benchmarkable."""
+    pairing like ``ScanAnglesInversion`` serialisation is benchmarkable."""
     from bench_transport import _INV_OVERRIDES
     from bench_transport_multiangle import multi_angle
     from jax_sn.operators.transport_operator import (

@@ -69,8 +69,8 @@ def parametrize_strategies(strategies: Dict[Type, Spec], dim_degrees=DIM_DEGREES
 
 
 def instance_label(instance) -> str:
-    '''Readable, collision-free test id for a strategy *instance*: ``VmapAngles(VmapSweep())`` ->
-    ``VmapAngles-VmapSweep``, a native ``WarpSequentialAngles()`` -> ``WarpSequentialAngles``. Composed
+    '''Readable, collision-free test id for a strategy *instance*: ``VmapAnglesInversion(VmapSweep())`` ->
+    ``VmapAnglesInversion-VmapSweep``, a native ``WarpSequentialAngles()`` -> ``WarpSequentialAngles``. Composed
     strategies carry the wrapped kernel in ``.inner``; native ones have no inner so the class name alone
     is unambiguous.'''
     name = type(instance).__name__
