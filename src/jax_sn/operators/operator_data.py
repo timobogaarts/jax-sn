@@ -6,7 +6,7 @@ Common data structures for all operators, containing differentiable and non-diff
 import equinox as eqx
 import jax.numpy as jnp
 
-from jax_sn.solution_domain import SpatialData
+from jax_sn.solution_domain import SolutionDomain, SpatialData
 from jax_sn.quadrature_set import QuadratureSetBase
 from jax_sn.operators.sweep_data import SweepData
 
@@ -76,6 +76,11 @@ class OperatorData(eqx.Module):
     @property
     def domain(self):
         return self.discretisation_data.spatial.domain
+
+    @property
+    def solution_domain(self) -> SolutionDomain:
+        '''Reconstruct the :class:`SolutionDomain` this operator data was built from (e.g. for interpolation).'''
+        return SolutionDomain(self.discretisation_data.spatial)
 
     @property
     def elements_basis_shape(self):

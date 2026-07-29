@@ -137,8 +137,9 @@ def reconstruct_multigroup_operator_including_toposort(operator : MultiGroupOper
             replace = [theta.vertices, face_normals, theta.cross_section_data])
         operator_dom = eqx.tree_at(lambda op : op.data.spatial_data.domain, operator, replace = domain_replaced)
 
-        # 3. precomputed geometric data
-        precomputed_geometric_data_comp = jax_sn.solution_domain.basix_fem._precompute_jacobians_simplex(domain_replaced)
+        # 3. precomputed geometric data [via the element's jittable `compute_geometric_data`, so this
+        # is not hardcoded to simplex elements]
+        precomputed_geometric_data_comp = operator.data.spatial_data.element.compute_geometric_data(domain_replaced)
         operator_precomp = eqx.tree_at(lambda op : op.data.spatial_data.precomputed_geometric_data, operator_dom, replace = precomputed_geometric_data_comp)
 
         # 4. sweep data [only used for inversion, so the gradient should not flow through it -- hence the

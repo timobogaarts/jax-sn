@@ -38,11 +38,11 @@ class SpatialData(eqx.Module):
 
     '''
 
-    domain                       : Domain        
+    domain                       : Domain
     '''
-        The geometric domain on which to solve the transport equation. 
+        The geometric domain on which to solve the transport equation.
     '''
-    fem_matrices                 : FEMMatrices   
+    fem_matrices                 : FEMMatrices
     '''
         The finite element matrices for the domain.
     '''
@@ -50,8 +50,15 @@ class SpatialData(eqx.Module):
     '''
         The precomputed geometric data for the domain.
     '''
+    element                      : Element = eqx.field(static=True)
+    '''
+        The finite element used to compute ``fem_matrices``/``precomputed_geometric_data``. Static:
+        not JIT-compatible (can involve e.g. a non-jax Basix element), and never referenced by the
+        differentiable operator machinery -- kept only so a :class:`SolutionDomain` can be
+        reconstructed (e.g. for interpolation) from data that has passed through operator creation.
+    '''
 
-    def __iter__(self):        
+    def __iter__(self):
         yield self.domain
         yield self.fem_matrices
         yield self.precomputed_geometric_data
@@ -75,16 +82,18 @@ class SolutionDomain(eqx.Module):
     Convenience class to bundle all data required to solve the transport equation on a domain
     Is not fully JIT-compatible due to the Element class. Its methods are also available as standalone functions.
     '''
-    spatial_data : SpatialData     
-    element              : Element  = eqx.field(static=True) # NOT JIT-compatible [can involve e.g. Basix element which is non-jax]
+    spatial_data : SpatialData
 
     @classmethod
-    def from_element_and_domain(cls, element : Element, domain : Domain) -> "SolutionDomain":        
+    def from_element_and_domain(cls, element : Element, domain : Domain) -> "SolutionDomain":
         assert isinstance(domain, Domain), f"domain must be an instance of Domain but got {type(domain)}"
         assert isinstance(element, Element), f"element must be an instance of Element but got {type(element)}"
-        return cls(SpatialData(domain, *compute_setup_for_solution_domain(element, domain)),
-            element)
-        
+        return cls(SpatialData(domain, *compute_setup_for_solution_domain(element, domain), element))
+
+    @property
+    def element(self) -> Element:
+        return self.spatial_data.element
+
     def interpolate(self, points : jnp.ndarray, solution : jnp.ndarray):
         assert points.ndim == 2 and points.shape[1] == self.dimension, f"Points must be of shape (n_points, dimension) but got {points.shape} with domain dimension {self.dimension}"
         assert solution.shape[-2:] == self.elements_basis_shape.shape, f"Solution must be of shape {self.elements_basis_shape} but got {solution.shape}"

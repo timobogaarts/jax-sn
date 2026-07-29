@@ -9,4 +9,4 @@ repos:
         # external data), so their committed outputs *are* the published
         # docs output -- don't strip them. Add an alternation branch here to
         # match, e.g. |^examples/fw_cadis\.ipynb$ excluded via `exclude:`.
-        exclude: ^$
+        exclude: ^examples/fw_cadis\.ipynb$

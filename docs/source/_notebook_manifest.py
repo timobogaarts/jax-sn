@@ -18,6 +18,10 @@ does not strip its committed outputs.
 NOTEBOOKS = {
     # docs-tree path (relative to docs/source): {"source": examples/ path, "ci": bool}
     "user_guide/first_operator.ipynb": {"source": "examples/first_operator.ipynb", "ci": True},
+    # Needs OpenMC + downloaded FENDL cross-section data (via mcbb) -- hosted CI can't
+    # produce that, so this keeps committed outputs; refresh locally via
+    # tools/refresh_notebooks.py.
+    "user_guide/fw_cadis.ipynb": {"source": "examples/fw_cadis.ipynb", "ci": False},
 }
 
 NON_CI_NOTEBOOKS = [docs_path for docs_path, meta in NOTEBOOKS.items() if not meta["ci"]]

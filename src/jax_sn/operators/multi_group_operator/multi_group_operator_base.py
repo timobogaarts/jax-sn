@@ -136,6 +136,11 @@ class MultiGroupOperator(TransposeBoolDataStrategyLinearOperator):
     def n_energy_groups(self) -> int:
         '''Number of energy groups, derived from ``operator_data``'s cross sections.'''
         return self.data.n_energy_groups
+
+    @property
+    def solution_domain(self):
+        '''Reconstruct the :class:`SolutionDomain <jax_sn.solution_domain.SolutionDomain>` this operator was built from (e.g. for interpolation).'''
+        return self.data.solution_domain
     
     def _group_structure(self) -> jax.ShapeDtypeStruct:
         '''Full operand structure: the group axis over a single-group moment array.'''        
