@@ -18,6 +18,7 @@ does not strip its committed outputs.
 NOTEBOOKS = {
     # docs-tree path (relative to docs/source): {"source": examples/ path, "ci": bool}
     "user_guide/first_operator.ipynb": {"source": "examples/first_operator.ipynb", "ci": True},
+    "user_guide/slab_single_angle.ipynb": {"source": "examples/slab_single_angle.ipynb", "ci": True},
     # Needs OpenMC + downloaded FENDL cross-section data (via mcbb) -- hosted CI can't
     # produce that, so this keeps committed outputs; refresh locally via
     # tools/refresh_notebooks.py.

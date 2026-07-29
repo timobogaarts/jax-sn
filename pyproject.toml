@@ -37,10 +37,13 @@ dependencies = [
 [project.optional-dependencies]
 # Mesh/BVH and Cartesian-setup helpers (mesh_tools, domain_generation).
 geometry = ["jax_sbgeom"]
+# Domain visualization (tools/plotly.py). Not imported eagerly by jax_sn.tools, so this is
+# only needed if you actually call jax_sn.tools.plotly.plot_domain.
+viz = ["plotly<6.0"]
 # Test suite (test_finite_elements pulls in sympy for the reference basis).
 test = ["pytest", "sympy"]
 # Documentation build (./build_docs.sh).
-docs = ["sphinx", "furo", "sphinx-autodoc-typehints", "myst-nb", "ipykernel", "matplotlib"]
+docs = ["sphinx", "furo", "sphinx-autodoc-typehints", "myst-nb", "ipykernel", "matplotlib", "plotly<6.0"]
 # Repo dev tooling (pre-commit hooks, notebook output stripping).
 dev = ["pre-commit", "nbstripout"]
 

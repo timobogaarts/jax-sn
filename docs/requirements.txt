@@ -6,3 +6,4 @@ myst-nb
 # only needed for ./build_docs.sh --execute (re-running the example notebooks)
 ipykernel
 matplotlib
+plotly<6.0
