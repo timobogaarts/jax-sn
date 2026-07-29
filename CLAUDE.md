@@ -15,7 +15,7 @@ API reference) are at https://timobogaarts.github.io/jax-sn/, built from `docs/s
 Developed against a conda env (see `.vscode/settings.json` — `python-envs.defaultEnvManager: conda`).
 Install editable with test extras: `pip install -e ".[test]"`. Optional extras:
 - `warp` — GPU warp-kernel transport sweep (`transport_operator_warp`, `linear_tetrahedron_warp_kernel`); guarded by try/except at import, so it's silently absent without the extra.
-- `geometry` — mesh/BVH + Cartesian domain-setup helpers (`mesh_tools`, `domain_generation`); depends on `jax_sbgeom`, distributed via git rather than PyPI.
+- `geometry` — mesh/BVH + Cartesian domain-setup helpers (`mesh_tools`, `domain_generation`); depends on `jax_sbgeom` (on PyPI).
 
 ## Commands
 

@@ -36,8 +36,6 @@ dependencies = [
 
 [project.optional-dependencies]
 # Mesh/BVH and Cartesian-setup helpers (mesh_tools, domain_generation).
-# jax_sbgeom is currently distributed via git, not PyPI; install it directly
-# from its repository if `pip install jax-sn[geometry]` cannot resolve it.
 geometry = ["jax_sbgeom"]
 # Test suite (test_finite_elements pulls in sympy for the reference basis).
 test = ["pytest", "sympy"]
