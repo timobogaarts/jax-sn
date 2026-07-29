@@ -4,7 +4,7 @@ Transport operator transposition
 =======================================================
 
 Here we prove that the transport operator :math:`\mathbf{T}` as defined in
-:class:`jax_sn.operators.transport_operator.TransportOperator`
+:class:`jax_sn.operators.transport_operator.TransportOperatorSingleAngle`
 has as transpose the operator :math:`\mathbf{T}^T` defined by reversing the
 direction of travel :math:`\Omega_k \rightarrow - \Omega_k` in the
 definition of :math:`\mathbf{T}`.

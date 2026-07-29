@@ -216,8 +216,7 @@ class BasixLagrangianSimplex(Element):
         return True
             
     
-    def precompute_geometric_data(self, geometric_domain):
-        self.assert_compatible(geometric_domain)
+    def compute_geometric_data(self, geometric_domain):
         return _precompute_jacobians_simplex(geometric_domain)
     
     def local_coordinates(self, real_coordinates : jnp.ndarray, element_indices : jnp.ndarray, geometric_domain : GeometricDomain, precomputed_geometric_data : PrecomputedGeometricData):

@@ -1,31 +1,60 @@
-from .transport_operator_base import TransportOperator, TransportOperatorMultipleAngles
-from .transport_operator_base import TransportOperatorBatched, TransportOperatorVmap, TransportOperatorBatchedPallas, TransportOperatorVmapPallas, TransportOperatorMultipleAnglesVmap
-from .transport_operator_imp import (
-    transport_inverse_sweep_complete_vmap,
-    transport_inverse_sweep_batched,
-    transport_inverse_sweep_multiple_angles_batched,
+'''
+Transport operator implementations; both single angle and multi-angle. 
+
+
+transport_operator_base defines the single-angle and multi-angle lineax operators, strategies, and data.
+'''
+
+from .sweep_data_implementations import SweepData, BasicSweepData, LeveledSweepData, LevelBasedParallelism, ProvidesLevels
+
+from .transport_data import TransportData
+from .transport_operator_base import (
+    AbstractTransportOperator, TransportOperatorSingleAngle, TransportOperatorMultiAngle,
 )
 
-from . import transport_operator_levels, transport_operator_pallas
+from .transport_operator_strategies import (
+    SingleAngleForwardStrategy, MultiAngleForwardStrategy, ComposedMultiAngleForwardStrategy,
+    AbstractInversionStrategy,
+    SingleAngleInversionStrategy, MultiAngleInversionStrategy, ComposedMultiAngleInversionStrategy,
+)
+from .implementations.transport_operator_forward import VmapForward, BatchedForward
+from .implementations.transport_operator_jax import VmapSweep, BatchedSweep
+from .implementations.multi_angle_inversions import VmapAnglesInversion, ScanAnglesInversion, VmapAnglesForward, ScanAnglesForward
 
-try:
-    from . import transport_operator_warp
-    _warp_available = True
-except ImportError:
-    _warp_available = False
+
+from .implementations.transport_operator_pallas import (
+    VmapPallasSweep, BatchedPallasSweep,
+)
+
+
+from .implementations import transport_operator_warp
 
 __all__ = [
-    'TransportOperator',
-    'TransportOperatorMultipleAngles',
-    'TransportOperatorBatched',
-    'TransportOperatorVmap',
-    'TransportOperatorBatchedPallas',
-    'TransportOperatorVmapPallas',
-    'TransportOperatorMultipleAnglesVmap',
-    'transport_inverse_sweep_complete_vmap',
-    'transport_inverse_sweep_batched',
-    'transport_inverse_sweep_multiple_angles_batched',
-    'transport_operator_levels',
-    'transport_operator_pallas',
+    'SweepData',
+    'BasicSweepData',
+    'LeveledSweepData',
+    'LevelBasedParallelism',
+    'ProvidesLevels',
+    'TransportData',
+    'AbstractTransportOperator',
+    'TransportOperatorSingleAngle',
+    'TransportOperatorMultiAngle',
+    'SingleAngleForwardStrategy',
+    'MultiAngleForwardStrategy',
+    'ComposedMultiAngleForwardStrategy',
+    'AbstractInversionStrategy',
+    'SingleAngleInversionStrategy',
+    'MultiAngleInversionStrategy',
+    'ComposedMultiAngleInversionStrategy',
+    'VmapForward',
+    'BatchedForward',
+    'VmapSweep',
+    'BatchedSweep',
+    'VmapAnglesInversion',
+    'ScanAnglesInversion',
+    'VmapAnglesForward',
+    'ScanAnglesForward',
+    'VmapPallasSweep',
+    'BatchedPallasSweep',
     'transport_operator_warp'
 ]

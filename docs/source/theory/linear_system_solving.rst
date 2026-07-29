@@ -12,7 +12,7 @@ where :math:`\mathbf{A}` is a linear operator, :math:`x` is the unknown solution
 :math:`x` is a very large vector (since it contains the solution at all discretised points in six-dimensional phase space, often billions of DOF). Therefore, 
 assembling the full representation of the linear operator :math:`\mathbf{A}` will be extremely memory intensive (most likely impossible).
 
-Direct solvers will require assembly of the full matrix representation of :math:`\mathbf{A}`, which will not be feasible in most cases. 
+Direct solvers will require assembly of the full matrix representation of :math:`\mathbf{A}`, which will not be feasible in most cases, even using a sparse representation. 
 Luckily, an efficient class of solvers exist, namely, materix-free-iterative solvers (e.g. GMRES or BiCGSTAB) exist, that only require matrix-vector products (i.e. :math:`\mathbf{A} x`). These do not 
 require assembly of the full matrix, and thus lend itself well to the solution of large linear systems such as the one obtained from discretisation of the neutron transport equation.
 
@@ -148,8 +148,42 @@ For our neutron transport equation to be efficiently solvable, we have to implem
 if we want our solver to be efficiently differentiable, we only need to ensure that the application of the linear operator :math:`A` is differentiable and its transpose is available and differentiable.
 Then, any kind of external solver can be used.
 
+Below is some additional information about the usage of vector-jacobian-products and jacobian-vector-products; they are not necessary to understand the transport solver,
+but do help for understanding the differentiability in a more general sense.
 
+VJP and JVP
+~~~~~~~~~~~~~~
+In fact, there is a more general way to compute derivatives and Jacobians. This involves only the definition of a Vector-Jacobian Product (VJP) and a Jacobian-Vector Product (JVP). 
+For a particular function :math:`f: \mathbb{R}^n \to \mathbb{R}^m`, the JVP is defined as:
 
+.. math::
+    \text{JVP}_f(x, v) = J_f(x) \cdot v
 
+where :math:`J_f` is the :math:`(m \times n)` Jacobian of :math:`f`. These are very cheap to compute: generally comparable to a single function application (the cheap gradient principle). 
+For a linear function, this is exactly the same as a function appliction. 
+In fact, this has the meaning of applying the *linearisation* of the function :math:`f` at :math:`x` to the vector :math:`v`. 
 
-    
+The full Jacobian at the point :math:`x` can be reconstructed by applying the JVP to each of the :math:`n` basis vectors, requiring again :math:`n` function applications (similar to the direct method).
+
+Similarly, the VJP is defined as the transpose:
+
+.. math::
+    \text{VJP}_f(x, v) = v^T \cdot J_f(x)
+
+and the full Jacobian can be reconstructed by applying the VJP to each of the :math:`m` basis vectors, requiring :math:`m` function applications (similar to the adjoint method). This has the meaning
+of applying the transpose of the linearisation of the function :math:`f` at :math:`x` to the vector :math:`v`.
+
+Given a function :math:`g(f(h(x)))`, we can use the chain rule to define the VJP and JVP of :math:`g` in terms of the VJP and JVP of :math:`f` and :math:`g`:
+
+.. math::
+    \text{JVP}_{g(f(h(x)))}(x, v) = J_g(f(h(x))) \cdot J_f(h(x)) \cdot J_h(x) \cdot v\\
+    \text{VJP}_{g(f(h(x)))}(x, v) = v^T \cdot J_g(f(h(x))) \cdot J_f(h(x)) \cdot J_h(x)
+
+Since every function in a computer program is a composition of smaller functions, which in the end have a JVP and VJP trivially defined, the chain rule can be used 
+to define a VJP and JVP for every function (and thus the full Jacobian) -- this is the basis of automatic differentiation.
+
+The JVP can be run forward: after applying a function and its JVP, the intermediate result (the linearisation point) can be discarded. 
+The VJP has to be run backwards: each linearisation point needs to be stored until the VJP is applied. This poses a problem for iterative solvers, which have 
+massive intermediate storage requirements. The adjoint method can then be used to define the VJP (and the direct to define the JVP) of a linear solve, which does not have this problem.
+
+If every function then has a VJP and JVP, the entire program can be differentiated using the chain rule.

@@ -1,4 +1,12 @@
-from .moment_operator_imp import MomentOperator, MomentOperatorTransposed
-from .discrete_operator_imp import DiscreteOperator, DiscreteOperatorTransposed
+from .moment_discrete_operator_base import (
+    DiscreteMomentData, MomentData, DiscreteData,
+    FluxMomentStrategy, FluxMomentOperator,
+    MomentOperator, DiscreteOperator,
+)
+from .fluxmoment_strategies import EinsumFluxMoment, StreamingFluxMoment
 
-__all__ = ["MomentOperator", "MomentOperatorTransposed", "DiscreteOperator", "DiscreteOperatorTransposed"]
+__all__ = [
+    "MomentOperator", "DiscreteOperator", "FluxMomentOperator",
+    "DiscreteMomentData", "MomentData", "DiscreteData",
+    "FluxMomentStrategy", "EinsumFluxMoment", "StreamingFluxMoment",
+]

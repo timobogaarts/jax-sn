@@ -1,0 +1,12 @@
+repos:
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.7.1
+    hooks:
+      - id: nbstripout
+        files: ^examples/.*\.ipynb$
+        # Notebooks listed as ci: False in docs/source/_notebook_manifest.py
+        # can't be re-executed on hosted CI (e.g. need a GPU backend or
+        # external data), so their committed outputs *are* the published
+        # docs output -- don't strip them. Add an alternation branch here to
+        # match, e.g. |^examples/fw_cadis\.ipynb$ excluded via `exclude:`.
+        exclude: ^examples/fw_cadis\.ipynb$

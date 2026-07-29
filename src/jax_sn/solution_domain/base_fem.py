@@ -279,12 +279,16 @@ class Element(ABC):
 
 
     @abstractmethod
-    def precompute_geometric_data(self, geometric_domain : GeometricDomain) -> PrecomputedGeometricData:
+    def compute_geometric_data(self, geometric_domain : GeometricDomain) -> PrecomputedGeometricData:
         '''
-        Computes the Jacobians for the element given a geometric domain.
+        Computes the Jacobians for the element given a geometric domain. Must be jittable/traceable:
+        unlike :meth:`precompute_geometric_data`, this must NOT call :meth:`assert_compatible` (or
+        otherwise touch ``geometric_domain`` in a non-traceable way), since it is also used to
+        recompute geometric data under ``jit``/``grad`` when the domain vertices are perturbed (e.g.
+        by a parametrisation reconstructing the operator after a geometry deformation).
 
-        This is required to be dependent on the element: a different coordinate interpretation (i.e. a different 
-        standard element) in the type of finite element leads to a different reference-element-to-element mapping, and thus a different 
+        This is required to be dependent on the element: a different coordinate interpretation (i.e. a different
+        standard element) in the type of finite element leads to a different reference-element-to-element mapping, and thus a different
         Jacobian.
 
         Parameters
@@ -294,7 +298,7 @@ class Element(ABC):
 
         Returns
         -------
-        
+
         PrecomputedGeometricData
             The precomputed geometric data for all elements [does not depend on direction or energy group so is the same for all angles and energy groups]
         '''
@@ -370,7 +374,28 @@ class Element(ABC):
         geometric_domain : GeometricDomain
             The geometric domain to check compatibility with.
         '''
-        assert self.compatible(geometric_domain), "Element is not compatible with the given geometric domain." 
+        assert self.compatible(geometric_domain), "Element is not compatible with the given geometric domain."
+
+    def precompute_geometric_data(self, geometric_domain : GeometricDomain) -> PrecomputedGeometricData:
+        '''
+        Asserts that ``geometric_domain`` is compatible with this element, then computes its geometric
+        data. NOT jittable (the compatibility check is not traceable) -- this is meant for the initial,
+        untraced setup of a :class:`~jax_sn.solution_domain.SolutionDomain`. If you need to recompute
+        geometric data for an already-validated, possibly-traced domain (e.g. after perturbing
+        vertices under ``jit``/``grad``), call :meth:`compute_geometric_data` directly instead.
+
+        Parameters
+        ----------
+        geometric_domain : GeometricDomain
+            The geometric domain to precompute geometric data for.
+
+        Returns
+        -------
+        PrecomputedGeometricData
+            The precomputed geometric data for all elements.
+        '''
+        self.assert_compatible(geometric_domain)
+        return self.compute_geometric_data(geometric_domain)
 
 
     def interpolate_from_local_coordinate(self, local_coordinates : jnp.ndarray, element_indices : jnp.ndarray, values_array : jnp.ndarray) :

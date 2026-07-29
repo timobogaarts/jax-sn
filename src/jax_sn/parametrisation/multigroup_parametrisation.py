@@ -6,15 +6,15 @@ from jax_sn.domain.cross_sections import CrossSectionData
 from jax_sn.tools.parametrisation_tools import ParametrisedModule, ParametrisedModuleObjective, ParametrisationValues, ParametrisedModuleTheta
 from typing import Union
 import lineax as lx
-from jax_sn.operators.multi_group_operator import MultiGroupOperator
+from jax_sn.operators.multi_group_operator import MultiGroupOperator, ComposedMultiGroupChainStrategy
 from jaxtyping import PyTree
 from abc import abstractmethod
 from lineax._misc import structure_equal
-from jax_sn.operators.multi_group_operator.multi_group_operator_imp import _solve_multigroup_operator_rhs_scan
+from jax_sn.solvers.right_hand_side import _to_struct, solve_multigroup_operator_rhs
 from typing import Tuple
 
 class VerticesXSTheta(eqx.Module):
-    vertices : jnp.ndarray 
+    vertices : jnp.ndarray
     cross_section_data: CrossSectionData
 
 
@@ -24,21 +24,21 @@ class MultigroupOperatorParametrisedVerticesXS(ParametrisedModule):
     '''
     @staticmethod
     def theta_base(operator : MultiGroupOperator ):
-        return VerticesXSTheta(operator.transport_operator.solution_domain_data.domain.vertices, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data)
-    
+        return VerticesXSTheta(operator.data.spatial_data.domain.vertices, operator.data.spatial_data.domain.cross_sections_indexed.cross_section_data)
+
     @staticmethod
     def reconstruct_operator(operator : MultiGroupOperator, theta : VerticesXSTheta) -> MultiGroupOperator:
         return reconstruct_multigroup_operator_including_toposort(operator, theta)
-    
+
 
 class MultigroupOperatorParametrisedXS(ParametrisedModule):
     '''
-    Parametrisation case for a MultiGroupOperator parameterised by both the vertices and the cross section data.
+    Parametrisation case for a MultiGroupOperator parameterised by only the cross section data.
     '''
     @staticmethod
     def theta_base(operator : MultiGroupOperator ):
-        return operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data
-    
+        return operator.data.spatial_data.domain.cross_sections_indexed.cross_section_data
+
     @staticmethod
     def reconstruct_operator(operator : MultiGroupOperator, theta : CrossSectionData) -> MultiGroupOperator:
         return reconstruct_multigroup_operator_xs(operator, theta)
@@ -52,41 +52,44 @@ class MultigroupOperatorParametrisedVertices(ParametrisedModule):
     '''
     @staticmethod
     def theta_base(operator : MultiGroupOperator ):
-        return operator.transport_operator.solution_domain_data.domain.vertices
-    
+        return operator.data.spatial_data.domain.vertices
+
     @staticmethod
     def reconstruct_operator(operator : MultiGroupOperator, theta : jnp.ndarray) -> MultiGroupOperator:
-        vertices_xs_theta = VerticesXSTheta(theta, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data)
+        vertices_xs_theta = VerticesXSTheta(theta, operator.data.spatial_data.domain.cross_sections_indexed.cross_section_data)
         return reconstruct_multigroup_operator_including_toposort(operator, vertices_xs_theta)
-    
+
 class MultigroupOperatorParametrisedVerticesNoToposort(ParametrisedModule):
     '''
-    Parametrisation case for a MultiGroupOperator parameterised by the vertices only, without replacing the topological sort. This is only 
+    Parametrisation case for a MultiGroupOperator parameterised by the vertices only, without replacing the topological sort. This is only
     useful in 1D or when computing sensitivities without changing the geometry.
     '''
     @staticmethod
     def theta_base(operator : MultiGroupOperator ):
-        return operator.transport_operator.solution_domain_data.domain.vertices
-    
+        return operator.data.spatial_data.domain.vertices
+
     @staticmethod
     def reconstruct_operator(operator : MultiGroupOperator, theta : jnp.ndarray) -> MultiGroupOperator:
-        vertices_xs_theta = VerticesXSTheta(theta, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data)
+        vertices_xs_theta = VerticesXSTheta(theta, operator.data.spatial_data.domain.cross_sections_indexed.cross_section_data)
         return reconstruct_multigroup_operator_including_toposort(operator, vertices_xs_theta, False)
-    
+
 class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
 
     rhs : PyTree
     multi_group_solver : lx.AbstractLinearSolver
 
-    def __check_init(self):
+    def __check_init__(self):
         assert isinstance(self.multi_group_solver, lx.AbstractLinearSolver), "multi_group_solver must be an instance of lx.AbstractLinearSolver"
-        assert structure_equal(self.rhs, self.theta_parametrised_module.base_module.in_structure()), "rhs must have the same structure as the module's in_structure"
+        # Normalise the rhs to its ShapeDtypeStruct before comparing: rhs may be a RightHandSide module
+        # (e.g. IsotropicSourceSingleGroup) rather than a bare array, and structure_equal on the raw
+        # module vs a ShapeDtypeStruct is never tree-equal. Mirrors _to_struct in solve_multigroup_operator_rhs.
+        assert structure_equal(_to_struct(self.rhs), self.theta_parametrised_module.base_module.in_structure()), "rhs must have the same structure as the module's in_structure"
 
     @abstractmethod
     def objective_and_constraints(self, theta : ParametrisationValues) -> Tuple[Union[float, PyTree]]:
         ...
-    
-    def _to_solution(self, mgop_theta : MultiGroupOperator) -> PyTree:        
+
+    def _to_solution(self, mgop_theta : MultiGroupOperator) -> PyTree:
         '''
         Internal function to solve the multi-group operator for given :class:`MultiGroupOperator`.
 
@@ -99,57 +102,58 @@ class MultigroupOperatorParametrisedObjective(ParametrisedModuleObjective):
         PyTree
             The solution PyTree.
         '''
-        return _solve_multigroup_operator_rhs_scan(mgop_theta, self.rhs, self.multi_group_solver)
-        
+        # The chain strategy conditions the RHS per group, lifted the same way as mgop_theta.strategy.
+        chain_strategy = ComposedMultiGroupChainStrategy.from_composed(mgop_theta.strategy)
+        return solve_multigroup_operator_rhs(mgop_theta, self.rhs, self.multi_group_solver, chain_strategy)
+
     def solution(self, theta : ParametrisationValues) -> PyTree:
         '''
         Obtain the solution for a given parametrisation values theta.
         '''
-        mgop = self.to_module(theta)        
+        mgop = self.to_module(theta)
         return self._to_solution(mgop)
 
 
 
 @eqx.filter_jit
 def reconstruct_multigroup_operator_xs(operator : MultiGroupOperator, cross_section_data : CrossSectionData) -> MultiGroupOperator:
-        xs_idxed             = eqx.tree_at(lambda xs_idx : xs_idx.cross_section_data, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed, replace = cross_section_data)                
-        operator_xs_replaced =  eqx.tree_at(operator.cross_sections_indexed_loc, operator, replace_fn= lambda _ :  xs_idxed)
-        return operator_xs_replaced
+        # Single canonical location: transport + gather-scatter both derive their cross sections from `setup`.
+        return eqx.tree_at(lambda op : op.data.spatial_data.domain.cross_sections_indexed.cross_section_data, operator, replace = cross_section_data)
 
-    
 
 @eqx.filter_jit
 def reconstruct_multigroup_operator_including_toposort(operator : MultiGroupOperator, theta : VerticesXSTheta, replace_topological_sort : bool = True) -> MultiGroupOperator:
         import jax_sn
 
-        # We have to replace:
-        # 1. cross sections
-        xs_idxed             = eqx.tree_at(lambda xs_idx : xs_idx.cross_section_data, operator.transport_operator.solution_domain_data.domain.cross_sections_indexed, replace = theta.cross_section_data)                
-        operator_xs_replaced =  eqx.tree_at(operator.cross_sections_indexed_loc, operator, replace_fn= lambda _ :  xs_idxed)
+        # Everything the sub-operators draw on lives in one canonical `setup`, so each replacement is a
+        # single tree_at on a canonical location (no *_loc tuples, no per-operator special-casing).
+        domain = operator.data.spatial_data.domain
 
-        # 2. domain itself
-        domain                   = operator_xs_replaced.transport_operator.solution_domain_data.domain
-        #       -  Face normals in the domain & vertices in the domain (although they don't do anything anymore i think...)
-        face_normals             = jax_sn.domain.geometric_domain.compute_face_normal_vectors_from_3d_simplices(theta.vertices[domain.connectivity], domain.face_template)
-        domain_replaced          = eqx.tree_at(lambda d : [d.vertices, d.face_normals], domain, replace = [theta.vertices, face_normals])        
-        operator_xs_dom_replaced = eqx.tree_at(lambda op : op.transport_operator.transport_operator.solution_domain_data.domain, operator_xs_replaced, replace = domain_replaced)
+        # 1. + 2. cross sections, vertices, and the face normals derived from them -- in one domain rebuild.
+        face_normals    = jax_sn.domain.geometric_domain.compute_face_normal_vectors_from_3d_simplices(theta.vertices[domain.connectivity], domain.face_template)
+        domain_replaced = eqx.tree_at(
+            lambda d : [d.vertices, d.face_normals, d.cross_sections_indexed.cross_section_data],
+            domain,
+            replace = [theta.vertices, face_normals, theta.cross_section_data])
+        operator_dom = eqx.tree_at(lambda op : op.data.spatial_data.domain, operator, replace = domain_replaced)
 
-        # 3. precomputed geometric data
-        precomputed_geometric_data_comp = jax_sn.solution_domain.basix_fem._precompute_jacobians_simplex(domain_replaced)        
-        operator_xs_dom_precomp_replaced =  eqx.tree_at(operator_xs_dom_replaced.precomputed_geometric_data_loc, operator_xs_dom_replaced, replace_fn= lambda _ : precomputed_geometric_data_comp)
+        # 3. precomputed geometric data [via the element's jittable `compute_geometric_data`, so this
+        # is not hardcoded to simplex elements]
+        precomputed_geometric_data_comp = operator.data.spatial_data.element.compute_geometric_data(domain_replaced)
+        operator_precomp = eqx.tree_at(lambda op : op.data.spatial_data.precomputed_geometric_data, operator_dom, replace = precomputed_geometric_data_comp)
 
-        # 4. topological sorts [they are only used for inversion, so the gradient should not flow through them. In principle, we could completley remove it here, put it directly in the inverse (which doesn't get 'gradded' anyway, but this saves 
-        # recomputation for multiple energy groups)]
-        # In some cases we don't want to replace the topological sort, e.g. when we are only changing cross-sections but not the geometry or when we are using a 1D geometry where the toposort is fixed anyway.
-        if replace_topological_sort:        
-            if isinstance(operator.transport_operator, jax_sn.operators.transport_operator.transport_operator_warp.TransportOperatorLevelsWarpMultipleAngles): # TODO make this a unified interface instead of case-by-case.
-                topological_sorts_replaced         = jax.lax.stop_gradient(jax_sn.domain.TopologicalSortedAngle.from_domain_quadrature_set(domain_replaced, operator_xs_dom_precomp_replaced.moment_operator.quadrature_set))
-                levelbasedparallelism_replaced     = jax.lax.stop_gradient(jax_sn.domain.LevelBasedParallelism.from_topological_sorted_angle(topological_sorts_replaced, operator.transport_operator.transport_operator.levelsetup.n_levels))
-                levelbasedparallelism_replaced_rev = jax.lax.stop_gradient(jax_sn.domain.LevelBasedParallelism.from_topological_sorted_angle(topological_sorts_replaced.reverse, operator.transport_operator.transport_operator.levelsetup.n_levels))
-                return eqx.tree_at(lambda op : [op.transport_operator.transport_operator.topological_sorted_angle, op.transport_operator.transport_operator.levelsetup, op.transport_operator.transport_operator.levelsetup_reverse], operator_xs_dom_precomp_replaced, replace = [topological_sorts_replaced, levelbasedparallelism_replaced, levelbasedparallelism_replaced_rev])
-
-            else:
-                topological_sorts_replaced = jax.lax.stop_gradient(jax_sn.domain.TopologicalSortedAngle.from_domain_quadrature_set(domain_replaced, operator_xs_dom_precomp_replaced.moment_operator.quadrature_set))
-                return eqx.tree_at(lambda op : op.transport_operator.transport_operator.topological_sorted_angle, operator_xs_dom_precomp_replaced, replace = topological_sorts_replaced)
+        # 4. sweep data [only used for inversion, so the gradient should not flow through it -- hence the
+        # stop_gradient. In some cases we don't replace it: only changing cross-sections, or a 1D geometry
+        # where the sweep is fixed anyway.]
+        if replace_topological_sort:
+            # The sweep data knows how to recompute itself for the deformed domain, reusing its own stored
+            # angles and preserving its concrete type. So this needs no operator/sweep-class special-casing.
+            sweep_data_replaced = jax.lax.stop_gradient(operator.data.sweep_data.reconstruct(domain_replaced, operator.data.angular_data.quadrature_set.angles))
+            return eqx.tree_at(lambda op : op.data.sweep_data, operator_precomp, replace = sweep_data_replaced)
         else:
-            return operator_xs_dom_precomp_replaced
+            return operator_precomp
+
+@eqx.filter_jit
+def reconstruct_multigroup_operator_from_vertices(operator : MultiGroupOperator, vertices : jnp.ndarray, replace_topological_sort : bool = True) -> MultiGroupOperator:
+        theta = VerticesXSTheta(vertices, operator.data.spatial_data.domain.cross_sections_indexed.cross_section_data)
+        return reconstruct_multigroup_operator_including_toposort(operator, theta, replace_topological_sort)

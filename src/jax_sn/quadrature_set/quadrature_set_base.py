@@ -1,4 +1,5 @@
-import jax 
+import jax
+import abc
 from dataclasses import dataclass
 import jax.numpy as jnp
 from typing import Literal, Tuple
@@ -6,11 +7,17 @@ from functools import partial
 import equinox as eqx
 
 
-class QuadratureSet(eqx.Module):
+class QuadratureSetBase(eqx.Module):
     r'''
-    Represents a quadrature set with angles and weights. This class provides methods to compute spherical harmonics expansions based on the quadrature set.    
+    Abstract base for quadrature sets. Holds the shared state -- the ``angles`` and ``weights``
+    -- and defines the spherical-harmonics interface that every quadrature set must provide:
+    the unweighted and the weighted real spherical harmonics evaluated at the set's angles.
+
+    The two harmonic methods are left abstract: the *meaning* of the angles/weights is shared,
+    but how the (weighted) harmonics are computed from them is up to each concrete subclass (a
+    reduced set, for instance, accumulates the weights over collapsed angles).
     '''
-    
+
     angles : jnp.ndarray
     '''        The angles of the quadrature set in Cartesian coordinates. Shape [n_angles, dimension].'''
 
@@ -21,69 +28,88 @@ class QuadratureSet(eqx.Module):
         assert self.angles.shape[-1] == 3, f"Only three-dimensional quadrature sets are currently supported but got {self.angles.shape[-1]}. The angles should be given in Cartesian coordinates (x,y,z) on the unit sphere."
         assert self.angles.shape[0] == self.weights.shape[0], f"The number of angles and weights must be the same but got {self.angles.shape[0]} angles and {self.weights.shape[0]} weights."
 
-    @property 
+    @property
     def n_angles(self) -> int:
         return self.angles.shape[0]
-    
-    def __getitem__(self, idx):
-        return self.angles[idx], self.weights[idx]
-    
+
+    @abc.abstractmethod
     def wk_ylm_real(self, l_max : int) -> jnp.ndarray:
         r'''
         Compute the weighted real spherical harmonic expansion coefficients :math:`\sqrt{w_k} Y_{lm}(\Omega_k)` for this quadrature set up to degree l_max.
         See :func:`compute_3d_wk_yklm_real_from_quadrature_set` for details.
-        '''        
-        return compute_3d_wk_yklm_real_from_quadrature_set(self, l_max)
-        
+        '''
+        ...
+
+    @abc.abstractmethod
     def ylm_real(self, l_max : int) -> jnp.ndarray:
         r'''
         Compute the real spherical harmonic expansion coefficients :math:`Y_{lm}(\Omega_k)` for this quadrature set up to degree l_max.
         See :func:`compute_3d_yklm_real_from_quadrature_set` for details.
-        '''        
-        return compute_3d_yklm_real_from_quadrature_set(self, l_max)
-    
+        '''
+        ...
 
-class QuadratureSetReduced(QuadratureSet):
+
+class QuadratureSet(QuadratureSetBase):
+    r'''
+    The standard concrete quadrature set: the stored ``weights`` are exactly the integration
+    weights for the stored ``angles``, so the (weighted) harmonics are evaluated directly on them.
+    Additionally supports single-angle indexing via ``__getitem__``.
+    '''
+
+    def __getitem__(self, idx):
+        return self.angles[idx], self.weights[idx]
+
+    def wk_ylm_real(self, l_max : int) -> jnp.ndarray:
+        return compute_3d_wk_yklm_real_from_quadrature_set(self, l_max)
+
+    def ylm_real(self, l_max : int) -> jnp.ndarray:
+        return compute_3d_yklm_real_from_quadrature_set(self, l_max)
+
+
+class QuadratureSetReduced(QuadratureSetBase):
     r'''
     Represents a reduced quadrature set, where only unique angles are stored. The original quadrature set can be reconstructed from the unique angles and the indices to reconstruct the original set from the unique set.
-    '''    
+
+    Note that this does *not* subclass :class:`QuadratureSet`: a reduced set cannot return a single
+    angle/weight pair (the weights are accumulated over collapsed angles), so it does not support
+    ``__getitem__``. It only implements the spherical-harmonics interface of :class:`QuadratureSetBase`.
+    '''
     angles_original         : jnp.ndarray
     weights_original        : jnp.ndarray
     original_angles_indices : jnp.ndarray
 
-    def __getitem__(self, idx):
-        raise ValueError("Cannot get a single angle from a QuadratureSetReduced!")
-        return super().__getitem__(idx)
-    
+    def __check_init__(self):
+        assert self.angles_original.shape[0] == self.weights_original.shape[0] == self.original_angles_indices.shape[0], "The original angles, weights and reconstruction indices must all have the same length."
+
     @classmethod
-    def from_quadrature_set(cls, quadrature_set : QuadratureSet, n_dim : Literal[1,2,3], rounding_tolerance : int = 10):
+    def from_quadrature_set(cls, quadrature_set : QuadratureSetBase, n_dim : Literal[1,2,3], rounding_tolerance : int = 10):
         return cls(*_extract_nD_quadrature_set(quadrature_set, n_dim, rounding_tolerance))
 
-    
-    def wk_ylm_real(self, l_max : int) -> jnp.ndarray:        
+    def ylm_real(self, l_max : int) -> jnp.ndarray:
+        r'''
+        Compute the real spherical harmonics :math:`Y_{lm}(\Omega_k)` at the *reduced* angles. The
+        harmonics are unweighted, so they are evaluated directly on the reduced angles.
+        '''
+        return compute_3d_yklm_real_from_quadrature_set(QuadratureSet(self.angles, self.weights), l_max)
+
+    def wk_ylm_real(self, l_max : int) -> jnp.ndarray:
         wk_yklm_real_original = compute_3d_wk_yklm_real_from_quadrature_set(QuadratureSet(self.angles_original, self.weights_original), l_max)
 
         wk_yklm_reduced = jnp.zeros((self.n_angles, wk_yklm_real_original.shape[1]))
         wk_yklm_reduced = wk_yklm_reduced.at[self.original_angles_indices].add(wk_yklm_real_original)
         return wk_yklm_reduced
 
-def _extract_nD_quadrature_set(quadrature_set : QuadratureSet, n_dim : Literal[1,2,3], rounding_tolerance : int = 10):        
+def _extract_nD_quadrature_set(quadrature_set : QuadratureSet, n_dim : Literal[1,2,3], rounding_tolerance : int = 10):
     unique_angles        = jnp.unique(quadrature_set.angles[:, :n_dim].round(rounding_tolerance), return_index=True, return_inverse= True, axis=0) 
-    # angles [n_unique, n_dim], indices of unique angles in original set [n_unique], indices to reconstruct original set from unique set [n_angles]        
     angles_red  = quadrature_set.angles[unique_angles[1]]
-    weights_red = quadrature_set.weights[unique_angles[1]]
-
-    #onp.testing.assert_allclose(weights_red[unique_angles[2]], quadrature_set.weights, rtol=1e-10)
-    
-    weights_red = quadrature_set.weights[unique_angles[1]]
-    
+    weights_red = quadrature_set.weights[unique_angles[1]]    
     return angles_red, weights_red, quadrature_set.angles,quadrature_set.weights, unique_angles[2]
 #===========================================================================================================================================================================
 # Functions to compute spherical harmonics expansions from quadrature sets
 #===========================================================================================================================================================================
     
 @partial(jax.jit, static_argnums= 1)
-def compute_3d_yklm_real_from_quadrature_set(quadrature_set : QuadratureSet, l_max : int) -> jnp.ndarray:
+def compute_3d_yklm_real_from_quadrature_set(quadrature_set : QuadratureSetBase, l_max : int) -> jnp.ndarray:
     r'''
     Compute the real spherical harmonic expansion coefficients :math:`Y_{lm}` for a given quadrature set up to degree l_max.
 
@@ -111,7 +137,7 @@ def compute_3d_yklm_real_from_quadrature_set(quadrature_set : QuadratureSet, l_m
     return Yklm
 
 @partial(jax.jit, static_argnums= 1)
-def compute_3d_wk_yklm_real_from_quadrature_set(quadrature_set : QuadratureSet, l_max : int) -> jnp.ndarray:
+def compute_3d_wk_yklm_real_from_quadrature_set(quadrature_set : QuadratureSetBase, l_max : int) -> jnp.ndarray:
     r'''
     Compute the weighted real spherical harmonic expansion coefficients :math:`w_k Y_{lm}(\Omega_k)` for a given quadrature set up to degree l_max.
 

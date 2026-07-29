@@ -7,11 +7,11 @@ class TransportOperatorSigmaParametrised(ParametrisedModule):
     '''
     @staticmethod
     def theta_base(operator ):
-        return operator.solution_domain_data.domain.cross_sections_indexed.cross_section_data.total
-    
+        return operator.data.spatial_data.domain.cross_sections_indexed.cross_section_data.total
+
     @staticmethod
     def reconstruct_operator(operator, theta):
-        return eqx.tree_at(lambda op : op.solution_domain_data.domain.cross_sections_indexed.cross_section_data.total, operator, replace = theta)
+        return eqx.tree_at(lambda op : op.data.spatial_data.domain.cross_sections_indexed.cross_section_data.total, operator, replace = theta)
     
 
 

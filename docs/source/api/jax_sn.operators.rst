@@ -26,3 +26,5 @@ Submodules
    :maxdepth: 2
 
    jax_sn.operators.base_linear_operator
+   jax_sn.operators.operator_data
+   jax_sn.operators.sweep_data

@@ -152,8 +152,6 @@ def compute_levels_iterative(dependency_matrix : jnp.ndarray, n_iterations_per_l
             raise RuntimeError("No new elements are in the next level while not all elements can be computed. Graph cannot be computed: there are cycles present in the graph.")
         n_elements_computed = n_elements_computed_new
 
-    print(n_elements_computed_new)
-    
     return _levels_including_dummy_to_levels(levels)
         
 
@@ -208,34 +206,6 @@ def compute_levels_iterative_jax(dependency_matrix : jnp.ndarray, n_iterations_p
     return _levels_including_dummy_to_levels(state[0])
 
 import numpy as onp
-
-def _multiple_angle_level_bounds_np(levels_np: onp.ndarray, levels_argsort_np: onp.ndarray) -> tuple[onp.ndarray, onp.ndarray, onp.ndarray]:
-    """Return (first_occ, ends, sizes) each of shape [n_angles, max_levels], padded with -1.
-
-    levels_np        : [n_angles, n_elem]  element levels per angle
-    levels_argsort_np: [n_angles, n_elem]  argsort of levels per angle
-    """
-    sorted_levels = onp.take_along_axis(levels_np, levels_argsort_np, axis=-1)
-
-    n_angles = sorted_levels.shape[0]
-
-    first_occ = [onp.unique(sorted_levels[i], return_index=True)[1] for i in range(n_angles)]
-    ends      = [onp.append(occ[1:], sorted_levels.shape[-1]) for occ in first_occ]
-    sizes     = [end - occ for end, occ in zip(ends, first_occ)]
-
-    n_levels_per_angle = onp.array([len(occ) for occ in first_occ])
-    max_levels = int(max(n_levels_per_angle))
-
-    padded_first_occ = onp.full((n_angles, max_levels), -1, dtype=int)
-    padded_ends      = onp.full((n_angles, max_levels), -1, dtype=int)
-    padded_sizes     = onp.full((n_angles, max_levels), -1, dtype=int)
-    for i in range(n_angles):
-        n = n_levels_per_angle[i]
-        padded_first_occ[i, :n] = first_occ[i]
-        padded_ends[     i, :n] = ends[i]
-        padded_sizes[    i, :n] = sizes[i]
-
-    return padded_first_occ, padded_ends, padded_sizes
 
 
 @eqx.filter_jit
@@ -296,20 +266,5 @@ def multiple_angle_level_bounds_safe(levels: jnp.ndarray, levels_argsort: jnp.nd
         max_levels = int(jnp.max(levels)) + 1    
     return _multiple_angle_level_bounds(levels, levels_argsort, max_levels)
 
-
-def _multiple_angle_level_bounds_dynamic(
-    levels: jnp.ndarray,
-    levels_argsort: jnp.ndarray,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    """Non-JIT wrapper that infers max_levels from the data.
-
-    Since levels are 0-indexed integers, max_levels = jnp.max(levels) + 1.
-    Not suitable for use inside jax.jit.
-
-    To use inside jit, call _multiple_angle_level_bounds directly with a pre-chosen
-    static max_levels (e.g. the next power of two above the current true maximum).
-    """
-    max_levels = int(jnp.max(levels)) + 1    
-    return _multiple_angle_level_bounds(levels, levels_argsort, max_levels)
 
 

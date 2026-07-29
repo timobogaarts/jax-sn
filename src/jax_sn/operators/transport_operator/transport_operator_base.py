@@ -1,67 +1,162 @@
-import jax 
+from abc import abstractmethod
+from typing import Self, Tuple
+
+import jax
 import jax.numpy as jnp
 
-from dataclasses import dataclass   
-from abc import ABC, abstractmethod
-
-from jax_sn.solution_domain import SolutionDomainData
-from jax_sn.domain.geometric_domain import TopologicalSortedAngle
-from jax_sn.source import Source
 import equinox as eqx
 import lineax as lx
-from jax_sn.operators.base_linear_operator import AbstractLinearOperator_sn
+from jax_sn.operators.base_linear_operator import (
+    DataTransposeDataStrategyLinearOperator, DirectlyInvertibleOperator, Strategy
+)
+from typing import Type
+from .sweep_data_implementations import SweepData, BasicSweepData
+from .transport_data import TransportData
 
-class TransportOperatorSolver(lx.AbstractLinearSolver):
+
+class SingleAngleForwardStrategy(Strategy):
+    '''    
     '''
-    Class that implements a linear solver for TransportOperator and TransportOperatorMultipleAngles using the internal sweep inversion.
-    Serves as an interface between Lineax and the internal inversion methods of the TransportOperator classes.
 
-    Has no members or state.
+    @abstractmethod
+    def forward(self, data: TransportData, x):
+        ...
 
+    @classmethod
+    def native_multi_angle(cls) -> Type["MultiAngleForwardStrategy"]:
+        '''The fused multi-angle lift of this kernel, if it has one. ``None`` (the default) means the
+        only lift is a combinator over the single-angle forward.'''
+        return None
+
+
+class MultiAngleForwardStrategy(Strategy):
+    '''How to apply the forward operator over the angle axis. Consumes a batched :class:`TransportData`
+    (angle axis leading). Mirrors :class:`MultiAngleInversionStrategy`.'''
+
+    @abstractmethod
+    def forward(self, data: TransportData, x):
+        ...
+
+    @abstractmethod
+    def single_angle_strategy(self) -> SingleAngleForwardStrategy:
+        '''The single-angle :class:`SingleAngleForwardStrategy` this angle lift corresponds to.'''
+        ...
+
+
+class AbstractInversionStrategy(eqx.Module):
     '''
-    def __init__(self):
-        '''
-        Initializes the TransportOperatorSolver, does nothing.
-        '''
-        pass
+    How to sweep-invert the operator, and the sweep-data precondition that inversion declares. Shared
+    by the single- and multi-angle hierarchies, which differ only in whether ``data`` carries an angle
+    axis -- so this is what a transport operator types its inversion strategy against.
+    '''
 
-    def init(self, operator : "TransportOperator", options):
-        '''
-        Initializes the solver state for a given TransportOperator. Does nothing except check that the operator is of the correct type.
-        The solver state is simply the operator.
-        '''
-        assert isinstance(operator, (TransportOperator, TransportOperatorMultipleAngles)), "TransportOperatorSolver can only be used with TransportOperator or TransportOperatorMultipleAngles"
-        return operator
-        
-    def compute(self, solver_state, rhs, options):
-        '''
-        Computes the solution to the linear system for the given rhs using the internal inversion method of the TransportOperator. Is always by definition succesfull.
-        '''
-        return solver_state._invert_internal(rhs), lx.RESULTS.successful, {}
+    @abstractmethod
+    def invert(self, data: TransportData, b):
+        ...
 
-    def assume_full_rank(self):
-        '''
-        Assumes that the operator is full rank, which is true for the transport operator.
-        '''
-        return True
-    
-    def transpose(self, solver_state, options):
-        '''
-        Returns the transposed solver state and options. (the solver_state is simply the operator here, so that is what is transposed).
-        '''
-        return solver_state.transpose(), options
-    
-    def conj(self, solver_state, options):
-        '''
-        Returns the conjugated solver state and options. (the solver_state is simply the operator here, so that is what is conjugated).
-        '''
-        return solver_state.conj(), options
+    def required_capabilities(self) -> Tuple[type, ...]:
+        '''Sweep-data capability interfaces this strategy requires (e.g. ``(ProvidesLevels,)``). Empty
+        (the default) means any :class:`~jax_sn.operators.transport_operator.SweepData` is acceptable.'''
+        return ()
+
+    def default_sweep_data_type(self) -> Type[SweepData]:
+        '''The concrete, minimal sweep-data type a creation helper should build for this strategy.
+        Default: the plain sort (provides no extra capability).'''
+        return BasicSweepData
+
+    def check_compatible(self, data: TransportData):
+        '''Assert the data's sweep data provides every capability in :meth:`required_capabilities`.
+        Permissive: a richer sweep data (more capabilities) passes. Run from the operator's
+        ``__check_init__``, so it fires at construction and on every ``eqx.tree_at``.'''
+        for capability in self.required_capabilities():
+            assert isinstance(data.sweep_data, capability), \
+                f"{type(self).__name__} requires sweep data providing {capability.__name__}, " \
+                f"but got {type(data.sweep_data).__name__}. Build it via " \
+                f"{type(self).__name__}.default_sweep_data_type().from_domain_quadrature_set(...)."
 
 
-class TransportOperator(AbstractLinearOperator_sn):
+class SingleAngleInversionStrategy(AbstractInversionStrategy):
+    '''
+    How to sweep-invert the single-angle operator.
+    '''
+
+    @classmethod
+    @abstractmethod
+    def vmappable(cls) -> bool:
+        '''Whether an outer ``vmap`` over this inversion vectorises.'''
+        ...
+
+    @classmethod
+    def native_multi_angle(cls) -> Type["MultiAngleInversionStrategy"]:
+        '''The fused multi-angle lift of this kernel, if it has one. ``None`` (the default) means the
+        only lift is a combinator over the single-angle sweep.'''
+        return None
+
+
+class MultiAngleInversionStrategy(AbstractInversionStrategy):
+    '''
+    How to sweep-invert over the angle axis. Consumes a batched :class:`TransportData` (angle axis leading).
+    '''
+
+    @abstractmethod
+    def invert(self, data: TransportData, b):
+        '''Invert over the angle axis: ``data`` is a batched :class:`TransportData` (angle axis leading).'''
+        ...
+
+    @abstractmethod
+    def single_angle_strategy(self) -> SingleAngleInversionStrategy:
+        '''The single-angle :class:`SingleAngleInversionStrategy` this angle inversion corresponds to (used for composited strategy, error if does not exist)'''
+        ...
+
+
+class AbstractTransportOperator(DataTransposeDataStrategyLinearOperator, DirectlyInvertibleOperator):
+    r'''
+    Shared for single-angle and multi-angle transport operators (and even for future multi-group transport operators).
+    '''
+
+    data               : eqx.AbstractVar[TransportData]
+    '''Transport Data'''
+
+    strategy           : eqx.AbstractVar[Strategy]
+    '''How to apply the forward operator.'''
+
+    inversion_strategy : eqx.AbstractVar[AbstractInversionStrategy]
+    '''How to invert the operator'''
+
+    def __check_init__(self):
+        '''Checks whether the sweep data is compatible with the inversion strategy (just typing information)'''
+        self.inversion_strategy.check_compatible(self.data)
+
+    def _invert_internal(self, b : jnp.ndarray) -> jnp.ndarray:
+        return self.inversion_strategy.invert(self.data, b)
+
+    def to_energy_group(self, energy_group : int) -> "AbstractTransportOperator":
+        '''Derive a new transport operator for a different energy group, keeping the same strategies.'''
+        return eqx.tree_at(lambda t : t.data.energy_group, self, energy_group)
+
+    @abstractmethod
+    def _leading_shape(self) -> Tuple[int, ...]:
+        '''Shape prefixed to ``(n_elements, n_basis)``: the angle axis, if this operator has one.'''
+        ...
+
+    def _structure(self):
+        spatial_data = self.data.spatial_data
+        return jax.ShapeDtypeStruct(self._leading_shape() + (spatial_data.n_elements, spatial_data.n_basis),
+                                    spatial_data.fem_matrices.mass_matrix.dtype)
+
+    @property
+    @abstractmethod
+    def n_angles(self) -> int:
+        '''Number of angles this operator covers.'''
+        ...
+
+
+class TransportOperatorSingleAngle(AbstractTransportOperator):
     r'''
     Base class for transport operators.
     Since the implementation of the transport operator can vary (e.g., vmap-based, batched, Pallas, etc.), this is an abstract base class that defines the interface for transport operators.
+
+    This operator can be constructed on its own or through a :class:`MultiAngleTransportSpec` and a :class:`OperatorData`. The spec defines the strategies, the ``operator_data`` provides the data, and the energy group is passed to :meth:`MultiAngleTransportSpec.build`.
 
     Mathematical description
     ---------------------------
@@ -86,7 +181,7 @@ class TransportOperator(AbstractLinearOperator_sn):
     where :math:`\gamma` denotes a face of element :math:`e`, with :math:`n_{\gamma}` the outward normal of that face, and :math:`e(\gamma)` the neighboring element on the other side of face :math:`\gamma`. 
     :math:`\gamma^+` and :math:`\gamma^-` denote the faces where the dot product with the angle direction is positive (outflow) and negative (inflow) respectively.
 
-    The required geometric factors and finite elements are provided through the :class:`SolutionDomainData` object.
+    The required geometric factors and finite elements are provided through the :class:`SpatialData` object.
 
     Inversion
     ---------------------------
@@ -116,228 +211,27 @@ class TransportOperator(AbstractLinearOperator_sn):
     See :ref:`here <transport_operator_transposition>` for a detailed proof of this fact.
 
     The transpose of the inverse is obtained by the inverse of the transpose, i.e., by performing a sweep in reverse topological order with reversed angles.
-
-    
-
         
     '''
 
-    solution_domain_data      : SolutionDomainData 
-    '''Data for the solution domain, including geometric factors, finite element matrices, cross sections, etc.'''
+    data                      : TransportData
+    strategy                  : SingleAngleForwardStrategy
+    inversion_strategy        : SingleAngleInversionStrategy    
 
-    topological_sorted_angle  : TopologicalSortedAngle    #[this does not *require* a topological sorted angle for the forward operator. however, since the inverse does require it, we just require it here.]
-    '''Angle directions along with topological sorting information for the elements.'''
+    def _leading_shape(self) -> Tuple[int, ...]:
+        return ()
 
-    energy_group              : int
-    '''Energy group index for which this transport operator is defined.'''
-
-    def _assert_shape_base(self):
-        assert self.topological_sorted_angle.ndim==1, "topological_sorted_angle must be 1D for base TransportOperator"
-    
-    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        return self._mv_op_args(*self._forward_args(x))
-    
-    def _invert_internal(self, b : jnp.ndarray) -> jnp.ndarray:
-        return self._inv_op_args(*self._inv_args(b))
-        
     @property
-    @abstractmethod
-    def _mv_op_args(self):
-        ...
-
-    @property 
-    @abstractmethod
-    def _inv_op_args(self):
-        ...
-    
-
-    def transpose(self):
-        return eqx.tree_at(lambda t_operator : t_operator.topological_sorted_angle, self, self.topological_sorted_angle.reverse)
-    
-    def inv(self, b : jnp.ndarray) -> jnp.ndarray:
-        r'''
-        Solves the system :math:`\mathbf{T} x = b` for `x` using the internal sweep inversion.
-
-        Parameters
-        ----------
-        b : jnp.ndarray
-            Right-hand side array.
-        Returns
-        -------
-        jnp.ndarray
-            Solution array `x`.
-        '''
-        solver = TransportOperatorSolver()
-        return lx.linear_solve(self, b, solver, throw=False).value
-  
-    def in_structure(self):        
-        return self._shape_inout
-    
-    def out_structure(self):
-        return self._shape_inout
-    
-    @property 
-    def _shape_inout(self):
-        n_elements = self.solution_domain_data.domain.n_elements
-        n_basis = self.solution_domain_data.fem_matrices.n_basis        
-        return jax.ShapeDtypeStruct((n_elements, n_basis), self.solution_domain_data.fem_matrices.mass_matrix.dtype)
-    
-    def _base_forward_args(self, x):
-        return (
-            *self.solution_domain_data,
-            self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(self.energy_group),
-            self.topological_sorted_angle.angle,
-            x
-        )
-    def _base_inv_args(self, x):
-        return (
-            *self.solution_domain_data,
-            self.solution_domain_data.domain.cross_sections_indexed.map_to_full_array(self.energy_group),
-            self.topological_sorted_angle,
-            x
-        )    
-    
-    def _forward_args(self, x):
-        return self._base_forward_args(x)
-    
-    def _inv_args(self, b):
-        return self._base_inv_args(b)
-    
-    @property
-    def _vmap_for_forward_multiple_angles(self):
-        return (None, None, None, None, 0,0)
-    
-    @property
-    def _vmap_for_inv_multiple_angles(self):
-        return (None, None, None, None, 0,0)
-    
-    @property 
-    def n_angles(self):
+    def n_angles(self) -> int:
         '''
         Number of angles in the transport operator. Here is just one.
         '''
         return 1
-    
 
-    
-@lx.is_symmetric.register(TransportOperator)
-def _(operator : TransportOperator):
-    return False
 
-@lx.linearise.register(TransportOperator)
-def _(operator : TransportOperator):
-    return operator
-
-from .transport_operator_imp import transport_inverse_sweep_batched, transport_inverse_sweep_complete_vmap, transport_inverse_sweep_multiple_angles_batched, transport_inverse_sweep_multiple_angles_complete_vmap
-from .transport_operator_forward import forward_transport_operator_vmap, forward_transport_operator_multiple_angles_vmap, forward_transport_operator_batch, forward_transport_operator_multiple_angles_batch
-
-class TransportOperatorVmap(TransportOperator):
+class TransportOperatorMultiAngle(AbstractTransportOperator):
     r'''
-    Transport operator using vmap over all elements. This computes the :math:`G_{ij}^{-1}` and :math:`D_{e \gamma, ij}` for all elements using vmap, and then computes the sweep using a fori loop.
-
-    Takes significant memory for large problems due to storing all :math:`G_{ij}^{-1}` and :math:`D_{e \gamma, ij}` matrices.
-
-    Is not significantly faster than the batched version for batch sizes > 1000 (since parallelisation is limited).
-
-    '''
-
-    @property
-    def _mv_op_args(self):
-        return forward_transport_operator_vmap
-    
-    @property
-    def _inv_op_args(self):
-        return transport_inverse_sweep_complete_vmap
-
-class TransportOperatorBatched(TransportOperator):
-    r'''
-    Transport operator using batched sweeps. This computes the :math:`G_{ij}^{-1}` and :math:`D_{e \gamma, ij}` for a batch of elements, performs the sweep over that batch, and then moves to the next batch.
-
-    '''
-    batch_size : int = None
-    '''
-    Batch size for the batched sweeps. If None, this reproduces the non-batched version.
-    '''
-    
-    @property
-    def _mv_op_args(self):
-        return forward_transport_operator_batch
-
-    @property 
-    def _inv_op_args(self):
-        return transport_inverse_sweep_batched
-
-    def _forward_args(self, x):
-        return (*self._base_forward_args(x), self.batch_size)
-    
-    def _inv_args(self, b):
-        return (*self._base_inv_args(b), self.batch_size)
-    
-    @property
-    def _vmap_for_forward_multiple_angles(self):
-        return (None, None, None, None, 0,0, None)
-    
-    @property
-    def _vmap_for_inv_multiple_angles(self):
-        return (None, None, None, None, 0,0, None)
-
-from .transport_operator_pallas import transport_inverse_sweep_batched_pallas, transport_inverse_sweep_complete_vmap_pallas, transport_inverse_sweep_multiple_angles_batched_pallas, transport_inverse_sweep_multiple_angles_complete_vmap_pallas, _next_power_of_two
-
-class TransportOperatorVmapPallas(TransportOperatorVmap):
-    '''
-    Transport operator using vmap sweeps with Pallas. Similar to :class:`TransportOperatorVmap`, but uses Pallas for the matrix operations. This can be significantly faster on GPUs that support it.
-
-    '''  
-    @property 
-    def _inv_op_args(self):
-        return transport_inverse_sweep_complete_vmap_pallas
-    
-
-class TransportOperatorBatchedPallas(TransportOperatorBatched):
-    '''
-    Transport operator using batched sweeps with Pallas. Similar to :class:`TransportOperatorBatched`, but uses Pallas for the matrix operations. This can be significantly faster on GPUs that support it.
-
-    '''    
-    
-    @property 
-    def _inv_op_args(self):
-        return transport_inverse_sweep_batched_pallas
-
-
-#===============================================================================================================================================
-# Batching angles
-#===============================================================================================================================================
-@eqx.filter_jit
-def vmap_multiple_angles_forward(transport_operator : TransportOperator, x : jnp.ndarray) -> jnp.ndarray:
-    r'''
-    Computes the forward operation of the transport operator for multiple angles using vmap.
-    In other words, computes
-
-    .. math::
-        \mathbf{T}_{gk}[\psi_{gk, ej}] 
-    for multiple angles :math:`k` using vmap.
-    '''
-    args = transport_operator._forward_args(x)
-    f_vmap = jax.vmap(transport_operator._mv_op_args, in_axes=transport_operator._vmap_for_forward_multiple_angles)
-    return f_vmap(*args)
-
-@eqx.filter_jit
-def vmap_multiple_angles_inv(transport_operator : TransportOperator, b : jnp.ndarray) -> jnp.ndarray:
-    r'''
-    Computes the forward operation of the transport operator for multiple angles using vmap.
-    In other words, computes
-
-    .. math::
-        \mathbf{T}^{-1}_{gk}[\psi_{gk, ej}] 
-    for multiple angles :math:`k` using vmap.
-    '''
-    args = transport_operator._inv_args(b)
-    f_vmap = jax.vmap(transport_operator._inv_op_args, in_axes=transport_operator._vmap_for_inv_multiple_angles)
-    return f_vmap(*args)
-
-class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):    
-    r'''
-    Transport operator for multiple angles. Wraps a :class:`TransportOperator` and extends it to multiple angles by batching or vmapping over the angles.
+    Transport operator for multiple angles.
 
     Mathematical description
     --------------------------- 
@@ -348,7 +242,7 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
         &\mathbf{T}_g = \bigoplus_{k} \mathbf{T}_{gk}
 
     where :math:`\mathcal{F} = \mathcal{E}\otimes \mathcal{B}` is the space of elements and basis functions, and :math:`\mathcal{D}` is the space of discrete angles.
-    The :math:`\mathbf{T}_{gk}` are the single-angle transport operators defined in :class:`TransportOperator`.
+    The :math:`\mathbf{T}_{gk}` are the single-angle transport operators defined in :class:`TransportOperatorSingleAngle`.
     
     Therefore, we have for an angular flux :math:`\psi_g \in \mathcal{D} \otimes \mathcal{F}` with components :math:`\psi_{gk} \in \mathcal{F}` for each angle :math:`k`:
 
@@ -364,126 +258,38 @@ class TransportOperatorMultipleAngles(AbstractLinearOperator_sn):
     
     Transpose
     ---------------------------
-    The transpose of the multiple-angle transport operator is obtained by transposing each single-angle transport operator, as in :class:`TransportOperator`.
+    The transpose of the multiple-angle transport operator is obtained by transposing each single-angle transport operator, as in :class:`TransportOperatorSingleAngle`.
 
     Structure
     ---------------------------
     Since this is by definition a block-diagonal operator with the single-angle transport operators on the diagonal, this operator does not couple angles and can be computed independently for each angle (and thus in parallel)
     '''
 
-    transport_operator : TransportOperator
-    '''Single-angle transport operator that is extended to multiple angles.'''
-
-    def _assert_shape_base(self):
-        assert self.transport_operator.topological_sorted_angle.angle.ndim==2, "topological_sorted_angle must be 2D for base TransportOperatorMultipleAngles"
-
-    @abstractmethod
-    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        ...
-
-    @abstractmethod
-    def _invert_internal(self, b : jnp.ndarray) -> jnp.ndarray:
-        ...
-
-
-    def _base_inv_args(self, b : jnp.ndarray):
-        return self.transport_operator._base_inv_args(b)
-
-    def inv(self, b : jnp.ndarray) -> jnp.ndarray:
-        r'''
-        Solves the system :math:`\mathbf{T}_g x = b` for `x` using the internal sweep inversion for multiple angles.
-        '''
-        solver = TransportOperatorSolver()
-        return lx.linear_solve(self, b, solver, throw=False).value
-    
-    def transpose(self):
-        return eqx.tree_at(lambda op: op.transport_operator, self, self.transport_operator.transpose())
-    
-    
-    def in_structure(self):        
-        return self._shape_inout
-    
-    def out_structure(self):
-        return self._shape_inout
-    
-    def to_energy_group(self, energy_group : int) -> "TransportOperatorMultipleAngles":
-        '''
-        Converts this operator to a different energy group by changing the energy group of the underlying transport operator. Since this is just a integer (no recomputation required), this is a cheap operation.
-        '''
-        return eqx.tree_at(lambda t_operator : t_operator.transport_operator.energy_group, self, energy_group)
-    
-    @property
-    def solution_domain_data(self):
-        '''
-        Solution domain data used by this transport operator.
-        '''
-        return self.transport_operator.solution_domain_data
-    
-    @property 
-    def energy_group(self):
-        '''
-        Energy group index for which this transport operator is defined.
-        '''
-        return self.transport_operator.energy_group
-
-    @property 
-    def topological_sorted_angle(self):
-        '''
-        Topological sorted angle information used by this transport operator.
-        '''
-        return self.transport_operator.topological_sorted_angle
+    data                      : TransportData    
+    strategy                  : MultiAngleForwardStrategy    
+    inversion_strategy        : MultiAngleInversionStrategy    
         
-    
-    @property 
-    def _shape_inout(self):
-        self._assert_shape_base()
-        n_angles   = self.transport_operator.topological_sorted_angle.angle.shape[0]
-        n_elements = self.transport_operator.solution_domain_data.domain.n_elements
-        n_basis    = self.transport_operator.solution_domain_data.fem_matrices.n_basis        
-        return jax.ShapeDtypeStruct((n_angles, n_elements, n_basis), self.transport_operator.solution_domain_data.fem_matrices.mass_matrix.dtype)
-    
+    def _leading_shape(self) -> Tuple[int, ...]:
+        return (self.n_angles,)
+
     @property
-    def n_angles(self):
+    def n_angles(self) -> int:
         '''
         Number of angles in the transport operator.
         '''
-        return self.transport_operator.topological_sorted_angle.angle.shape[0]
-    
-    def __getitem__(self, idx):
-        '''
-        Get a transport operator for a specific angle by indexing.
+        return self.data.angle.shape[0]
 
-        Parameters
-        ----------
-        idx : int
-            Energy group index.
+    def to_single_angle(self, idx) -> "TransportOperatorSingleAngle":
+        '''Derive the genuine single-angle transport operator for angle ``idx``, slicing the angle and the
+        sweep ordering in lockstep and using the natural single-angle inversion named by
+        :attr:`inversion_strategy`.'''
+        return TransportOperatorSingleAngle(
+            self.data.single_angle(idx),
+            self.strategy.single_angle_strategy(),
+            self.inversion_strategy.single_angle_strategy(),
+        )
 
-        Returns
-        -------
-        TransportOperator
-            Transport operator for the specified energy group.
-        '''        
-        return eqx.tree_at(lambda t_operator : t_operator.topological_sorted_angle, self.transport_operator, self.transport_operator.topological_sorted_angle[idx])
+    def __getitem__(self, idx) -> "TransportOperatorSingleAngle":
+        '''Get the single-angle transport operator for angle ``idx`` (see :meth:`to_single_angle`).'''
+        return self.to_single_angle(idx)
 
-@lx.is_symmetric.register(TransportOperatorMultipleAngles)
-def _(operator : TransportOperator):
-    return False
-
-@lx.linearise.register(TransportOperatorMultipleAngles)
-def _(operator : TransportOperator):
-    return operator
-
-class TransportOperatorMultipleAnglesVmap(TransportOperatorMultipleAngles):
-    '''
-    Transport operator for multiple angles using vmap over angles.
-    '''
-
-    def mv(self, x : jnp.ndarray) -> jnp.ndarray:
-        return vmap_multiple_angles_forward(self.transport_operator, x)
-    
-    def _invert_internal(self, b : jnp.ndarray) -> jnp.ndarray:
-        return vmap_multiple_angles_inv(self.transport_operator, b)
-    
-
-
-        

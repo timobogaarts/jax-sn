@@ -24,14 +24,27 @@ classifiers = [
 dependencies = [
     "jax>=0.4.0",
     "jaxlib>=0.4.0",
-    "numpy",          
-    "h5py",          
+    "numpy",
     "scipy",
     "fenics-basix>=0.7.0",
     "equinox",
-    "lineax"
+    "lineax",
+    "warp-lang",
+    # typing_extensions.Self: typing.Self is 3.11+, requires-python is >=3.9.
+    "typing_extensions"
 ]
 
+[project.optional-dependencies]
+# Mesh/BVH and Cartesian-setup helpers (mesh_tools, domain_generation).
+# jax_sbgeom is currently distributed via git, not PyPI; install it directly
+# from its repository if `pip install jax-sn[geometry]` cannot resolve it.
+geometry = ["jax_sbgeom"]
+# Test suite (test_finite_elements pulls in sympy for the reference basis).
+test = ["pytest", "sympy"]
+# Documentation build (./build_docs.sh).
+docs = ["sphinx", "furo", "sphinx-autodoc-typehints", "myst-nb", "ipykernel", "matplotlib"]
+# Repo dev tooling (pre-commit hooks, notebook output stripping).
+dev = ["pre-commit", "nbstripout"]
 
 [project.urls]
 "Homepage" = "https://github.com/timobogaarts/jax-sn"

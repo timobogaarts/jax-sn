@@ -12,8 +12,5 @@ Submodules
 .. toctree::
    :maxdepth: 2
 
-   jax_sn.operators.multi_group_operator.adjoint_multigroup_operator
-   jax_sn.operators.multi_group_operator.lower_triangular_solver
-   jax_sn.operators.multi_group_operator.multi_group_operator_creation
-   jax_sn.operators.multi_group_operator.multi_group_operator_imp
-   jax_sn.operators.multi_group_operator.right_hand_side
+   jax_sn.operators.multi_group_operator.composed_multi_group_strategies
+   jax_sn.operators.multi_group_operator.multi_group_operator_base
