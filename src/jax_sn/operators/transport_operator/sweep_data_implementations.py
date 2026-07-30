@@ -34,28 +34,33 @@ class BasicSweepData(SweepData):
     @classmethod
     def from_domain_angle(cls, geometric_domain : GeometricDomain, angle : jnp.ndarray, n_iterations_per_loop : int = 100):
         '''
-        Computes a (plain) topological sort for the given angle and geometric domain. The ``angle`` is
-        used to compute the order but is *not* stored (it lives in the angular setup).
+        Computes a (plain) topological sort for the given domain and angle(s). The ``angle`` is used to
+        compute the order but is *not* stored (it lives in the angular setup). Accepts either a single
+        angle or a batch of angles (dispatched on ``angle.ndim``), so this is the single generic
+        entry point a creation helper can call without knowing which case it has.
 
-        Can throw if there are cycles using equinox.         
+        Can throw if there are cycles using equinox.
 
         Parameters
         ----------
         geometric_domain : GeometricDomain
             The geometric domain for which to compute the topological sort.
-        angle : jnp.ndarray [n_dim]
-            The angle for which to compute the topological sort.
+        angle : jnp.ndarray [n_dim] or [n_angles, n_dim]
+            The angle(s) for which to compute the topological sort.
         n_iterations_per_loop : int, optional
             The number of iterations per loop for the level computation. The default is 100.
 
         Returns
         -------
         sweep_data : BasicSweepData
-            The computed sweep data.
+            The computed sweep data, batched over angles iff ``angle`` was.
         '''
-        from jax_sn.domain.graph_generation import compute_levels_domain_safe_jax
-        levels = compute_levels_domain_safe_jax(geometric_domain, angle, n_iterations_per_loop)
-        levels_argsort = jnp.argsort(levels)
+        if angle.ndim == 1:
+            from jax_sn.domain.graph_generation import compute_levels_domain_safe_jax
+            levels = compute_levels_domain_safe_jax(geometric_domain, angle, n_iterations_per_loop)
+            levels_argsort = jnp.argsort(levels)
+        else:
+            levels, levels_argsort = _levels_argsort_from_domain_angles(geometric_domain, angle, n_iterations_per_loop)
         return cls(levels=levels, levels_argsort=levels_argsort)
     
     @classmethod
@@ -187,9 +192,19 @@ class LeveledSweepData(SweepData, ProvidesLevels):
     def from_domain_quadrature_set(cls, geometric_domain : GeometricDomain, quadrature_set : QuadratureSetBase, maximum_number_of_levels : Union[int, None] = None, n_iterations_per_loop : int = 100) -> "LeveledSweepData":
         '''
         Build leveled sweep data for all angles in a quadrature set directly from a domain (the level
-        computation runs once), padding the level arrays to ``maximum_number_of_levels``.        
+        computation runs once), padding the level arrays to ``maximum_number_of_levels``.
         '''
         plain = BasicSweepData.from_domain_quadrature_set(geometric_domain, quadrature_set, n_iterations_per_loop)
+        return cls.from_basic_sweep_data(plain, maximum_number_of_levels)
+
+    @classmethod
+    def from_domain_angle(cls, geometric_domain : GeometricDomain, angle : jnp.ndarray, maximum_number_of_levels : Union[int, None] = None, n_iterations_per_loop : int = 100) -> "LeveledSweepData":
+        '''
+        Build leveled sweep data directly from a domain and angle(s) (single or batched, dispatched on
+        ``angle.ndim`` -- see :meth:`BasicSweepData.from_domain_angle`), padding the level arrays to
+        ``maximum_number_of_levels``.
+        '''
+        plain = BasicSweepData.from_domain_angle(geometric_domain, angle, n_iterations_per_loop)
         return cls.from_basic_sweep_data(plain, maximum_number_of_levels)
 
     def __getitem__(self, idx : int) -> "LeveledSweepData":

@@ -87,19 +87,38 @@ def _element_levels(domain, graph_angle):
                                                    n_iterations_per_loop=n_elements))
 
 
+def _element_topological_order(domain, graph_angle):
+    '''
+    Each element's position in the sweep's topological order (0 = computed first), the inverse
+    permutation of `jnp.argsort(levels)` -- exactly how `BasicSweepData.levels_argsort` is built
+    from the same per-element `levels` for a single angle (see `sweep_data.py`). Unlike
+    `_element_levels`, which groups mutually-independent (same-level) elements under one shared
+    number, this gives every element its own distinct rank, ties within a level broken by
+    (stable-sort) element index -- the actual sequential order a serial sweep computes them in.
+    '''
+    levels = _element_levels(domain, graph_angle)
+    return onp.argsort(onp.argsort(levels, kind="stable"), kind="stable")
+
+
 def _bearing_degrees(delta):
     '''Compass bearing (0 = +y/"up", clockwise) matching `marker.angle`'s default `angleref="up"`,
     so a `symbol="triangle-up"` rotated by this angle points along `delta`.'''
     return (90.0 - onp.degrees(onp.arctan2(delta[:, 1], delta[:, 0]))) % 360.0
 
 
-def _add_angle_compass(fig, dim, domain, angle):
+def _add_angle_compass(fig, dim, domain, angle, *, z=None):
     '''
     A small arrow, legend-labelled "Angle", showing the overall sweep direction `angle` itself
     (as opposed to the per-edge arrowheads, which show the resulting element dependencies).
     Placed just outside the domain's bounding box, scaled to its extent, as a real trace (so it
     gets a legend entry, unlike a paper-space annotation) -- in 3D this also means it rotates
     correctly with the scene camera.
+
+    `z`, if given, overrides the tail/tip height and forces the `Scatter3d`+`Cone` (3D-scene)
+    rendering regardless of `dim` -- for `plot_2d_solution`, whose figure is always a 3D `scene`
+    (even for a flat, `elevate=False` field) so the plain 2D `Scatter` this function otherwise
+    draws for `dim` 1/2 (`plot_domain`'s own, non-scene figures) wouldn't render inside it. A 2D
+    domain has no inherent z extent to place the compass at, hence the override.
     '''
     direction = _pad_to_3d(angle)[0]
     norm = onp.linalg.norm(direction)
@@ -116,11 +135,14 @@ def _add_angle_compass(fig, dim, domain, angle):
         bbox_min, bbox_max = vertices_3d.min(axis=0), vertices_3d.max(axis=0)
         extent = max(float(onp.max(bbox_max - bbox_min)), 1e-9)
         tail   = bbox_min - 0.05 * extent
+    if z is not None:
+        tail = tail.copy()
+        tail[2] = z
     tip = tail + direction * 0.08 * extent
 
     angle_color = "red"  # matches the default plotly qualitative palette's first color
 
-    if dim == 3:
+    if dim == 3 or z is not None:
         fig.add_trace(go.Scatter3d(
             x=[tail[0], tip[0]], y=[tail[1], tip[1]], z=[tail[2], tip[2]], mode="lines",
             line=dict(width=4, color=angle_color), name="Angle", legendgroup="angle",
@@ -143,13 +165,20 @@ def _add_angle_compass(fig, dim, domain, angle):
         ))
 
 
-def _add_graph_and_levels(fig, dim, domain, *, show_graph, graph_angle, show_levels):
+def _add_graph_and_levels(fig, dim, domain, *, show_graph, graph_angle, show_levels, graph_color,
+                           level_mode):
     '''
-    Overlay the element-adjacency graph and/or per-element sweep levels.
+    Overlay the element-adjacency graph and/or per-element sweep levels/order, all in
+    `graph_color` so the overlay reads as one layer distinct from the (black-outlined) mesh
+    underneath.
 
-    Nodes: a plain black dot if `show_levels` is False, otherwise a white/black-outlined circle
-    with the element's sweep level (topological-sort group, from `compute_levels_domain_safe`)
-    as text inside it -- `show_levels` requires `graph_angle` (levels are angle-dependent).
+    Nodes: a plain dot if `show_levels` is False, otherwise a white/`graph_color`-outlined circle
+    with a number inside it -- `show_levels` requires `graph_angle` (both are angle-dependent).
+    `level_mode` picks what that number is: `"levels"` is the sweep level (topological-sort
+    *group* -- elements in the same level are mutually independent and solved in parallel,
+    from `compute_levels_domain_safe`), `"order"` is each element's own position in the
+    topological sort (0 = computed first, see `_element_topological_order`) -- the actual
+    per-element sequential order a serial sweep processes them in.
 
     Edges (only when `show_graph`): with `graph_angle` given, the directed sweep-dependency graph
     for that angle (upstream -> downstream), with a small arrowhead at the midpoint of each edge
@@ -174,7 +203,7 @@ def _add_graph_and_levels(fig, dim, domain, *, show_graph, graph_angle, show_lev
             edge_y += [p0[1], p1[1], None]
             edge_z += [p0[2], p1[2], None]
         fig.add_trace(_trace(edge_x, edge_y, edge_z, mode="lines",
-                              line=dict(width=1.5, color="black"), name="graph edges"))
+                              line=dict(width=1.5, color=graph_color), name="graph edges"))
 
         if directed and len(edges) > 0:
             src, dst = centroids[edges[:, 0]], centroids[edges[:, 1]]
@@ -184,33 +213,34 @@ def _add_graph_and_levels(fig, dim, domain, *, show_graph, graph_angle, show_lev
                 # offset toward the downstream element instead of a true oriented triangle.
                 tip = src * 0.25 + dst * 0.75
                 fig.add_trace(_trace(tip[:, 0], tip[:, 1], tip[:, 2], mode="markers",
-                                      marker=dict(size=4, color="black", symbol="circle"),
+                                      marker=dict(size=4, color=graph_color, symbol="circle"),
                                       name="sweep direction"))
             else:
                 bearing = _bearing_degrees(dst - src)
                 fig.add_trace(_trace(mid[:, 0], mid[:, 1], None, mode="markers",
-                                      marker=dict(size=9, color="black", symbol="triangle-up",
+                                      marker=dict(size=9, color=graph_color, symbol="triangle-up",
                                                   angle=bearing),
                                       name="sweep direction"))
             _add_angle_compass(fig, dim, domain, graph_angle)
 
     if show_levels:
-        levels = _element_levels(domain, graph_angle)
+        values = (_element_levels(domain, graph_angle) if level_mode == "levels"
+                  else _element_topological_order(domain, graph_angle))
         fig.add_trace(_trace(
             centroids[:, 0], centroids[:, 1], centroids[:, 2], mode="markers+text",
-            marker=dict(size=20, color="white", line=dict(color="black", width=1.5), symbol="circle"),
-            text=[str(level) for level in levels], textposition="middle center",
-            textfont=dict(size=10, color="black"), name="levels",
+            marker=dict(size=20, color="white", line=dict(color=graph_color, width=1.5), symbol="circle"),
+            text=[str(v) for v in values], textposition="middle center",
+            textfont=dict(size=10, color=graph_color), name=level_mode,
         ))
     elif show_graph:
         fig.add_trace(_trace(
             centroids[:, 0], centroids[:, 1], centroids[:, 2], mode="markers",
-            marker=dict(size=5, color="black", symbol="circle"), name="graph nodes",
+            marker=dict(size=5, color=graph_color, symbol="circle"), name="graph nodes",
         ))
 
 
 def _plot_domain_1d(domain, *, color_by_material, show_element_boundaries, colors, material_names,
-                     show_graph, graph_angle, show_levels):
+                     show_graph, graph_angle, show_levels, graph_color, mesh_opacity, level_mode):
     vertices     = onp.asarray(domain.vertices)[:, 0]
     connectivity = onp.asarray(domain.connectivity)
     materials    = _material_indices(domain, color_by_material)
@@ -226,7 +256,7 @@ def _plot_domain_1d(domain, *, color_by_material, show_element_boundaries, color
         fig.add_trace(go.Scatter(
             x=x, y=y, mode="lines+markers" if show_element_boundaries else "lines",
             line=dict(width=4, color=_color(colors, color_idx)),
-            marker=dict(size=6, color=_color(colors, color_idx)),
+            marker=dict(size=6, color=_color(colors, color_idx)), opacity=mesh_opacity,
             name=_material_label(material, material_names), showlegend=color_by_material,
         ))
 
@@ -237,7 +267,7 @@ def _plot_domain_1d(domain, *, color_by_material, show_element_boundaries, color
             tick_x += [v, v, None]
             tick_y += [-0.5, 0.5, None]
         fig.add_trace(go.Scatter(
-            x=tick_x, y=tick_y, mode="lines",
+            x=tick_x, y=tick_y, mode="lines", opacity=mesh_opacity,
             line=dict(width=1, color="black"), showlegend=False, hoverinfo="skip",
         ))
 
@@ -245,12 +275,12 @@ def _plot_domain_1d(domain, *, color_by_material, show_element_boundaries, color
     fig.update_layout(xaxis_title="x", margin=dict(l=0, r=0, t=40, b=40))
     if show_graph or show_levels:
         _add_graph_and_levels(fig, 1, domain, show_graph=show_graph, graph_angle=graph_angle,
-                               show_levels=show_levels)
+                               show_levels=show_levels, graph_color=graph_color, level_mode=level_mode)
     return fig
 
 
 def _plot_domain_2d(domain, *, color_by_material, show_element_boundaries, colors, material_names,
-                     show_graph, graph_angle, show_levels):
+                     show_graph, graph_angle, show_levels, graph_color, mesh_opacity, level_mode):
     vertices     = onp.asarray(domain.vertices)
     connectivity = onp.asarray(domain.connectivity)
     materials    = _material_indices(domain, color_by_material)
@@ -263,7 +293,7 @@ def _plot_domain_2d(domain, *, color_by_material, show_element_boundaries, color
             x = list(tri[:, 0]) + [tri[0, 0]]
             y = list(tri[:, 1]) + [tri[0, 1]]
             fig.add_trace(go.Scatter(
-                x=x, y=y, mode="lines", fill="toself",
+                x=x, y=y, mode="lines", fill="toself", opacity=mesh_opacity,
                 line=dict(width=1 if show_element_boundaries else 0, color="black"),
                 fillcolor=_color(colors, color_idx),
                 name=_material_label(material, material_names), legendgroup=f"material-{material}",
@@ -272,7 +302,7 @@ def _plot_domain_2d(domain, *, color_by_material, show_element_boundaries, color
     fig.update_xaxes(scaleanchor="y", scaleratio=1)
     if show_graph or show_levels:
         _add_graph_and_levels(fig, 2, domain, show_graph=show_graph, graph_angle=graph_angle,
-                               show_levels=show_levels)
+                               show_levels=show_levels, graph_color=graph_color, level_mode=level_mode)
     return fig
 
 
@@ -314,7 +344,8 @@ def _triangle_edges(vertices, faces):
 
 
 def _plot_domain_3d(domain, *, color_by_material, show_element_boundaries, show_material_interfaces,
-                     colors, material_names, show_graph, graph_angle, show_levels):
+                     colors, material_names, show_graph, graph_angle, show_levels, graph_color,
+                     mesh_opacity, level_mode):
     vertices = onp.asarray(domain.vertices)
     groups   = _extract_faces(domain, color_by_material=color_by_material,
                                show_material_interfaces=show_material_interfaces)
@@ -324,19 +355,357 @@ def _plot_domain_3d(domain, *, color_by_material, show_element_boundaries, show_
         fig.add_trace(go.Mesh3d(
             x=vertices[:, 0], y=vertices[:, 1], z=vertices[:, 2],
             i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
-            color=_color(colors, color_idx), opacity=0.6, flatshading=True,
+            color=_color(colors, color_idx), opacity=0.6 * mesh_opacity, flatshading=True,
             name=_material_label(material, material_names), showlegend=color_by_material,
         ))
         if show_element_boundaries:
             edge_x, edge_y, edge_z = _triangle_edges(vertices, faces)
             fig.add_trace(go.Scatter3d(
-                x=edge_x, y=edge_y, z=edge_z, mode="lines",
+                x=edge_x, y=edge_y, z=edge_z, mode="lines", opacity=mesh_opacity,
                 line=dict(width=2, color="black"), showlegend=False, hoverinfo="skip",
             ))
     fig.update_layout(scene=dict(aspectmode="data"))
     if show_graph or show_levels:
         _add_graph_and_levels(fig, 3, domain, show_graph=show_graph, graph_angle=graph_angle,
-                               show_levels=show_levels)
+                               show_levels=show_levels, graph_color=graph_color, level_mode=level_mode)
+    return fig
+
+
+def _dg_element_profile(solution_domain, solution, n_points_per_element):
+    '''
+    Sample `solution` (one `[n_elements, n_basis]` coefficient array) at `n_points_per_element`
+    points local to *each* element independently -- never through `SolutionDomain.interpolate`,
+    whose `containing_cell` search picks a single owning element per point and so silently
+    smears any jump at a shared node/face across two neighbours. Returns flat `(x, y)` lists
+    with a `None` inserted between elements, so a single Plotly `Scatter(mode="lines")` trace
+    draws each element as its own segment and leaves a true gap -- rather than a connecting
+    line -- at every discontinuity.
+    '''
+    element      = solution_domain.element
+    domain       = solution_domain.domain
+    n_elements   = solution_domain.n_elements
+    vertices     = onp.asarray(domain.vertices)[:, 0]
+    connectivity = onp.asarray(domain.connectivity)
+
+    xi = jnp.linspace(0.0, 1.0, n_points_per_element)
+    local_coordinates = jnp.tile(xi[:, None], (n_elements, 1))
+    element_indices   = jnp.repeat(jnp.arange(n_elements), n_points_per_element)
+    values = onp.asarray(element.interpolate_from_local_coordinate(
+        local_coordinates, element_indices, solution)).reshape(n_elements, n_points_per_element)
+
+    v0, v1 = vertices[connectivity[:, 0]], vertices[connectivity[:, 1]]
+    x = v0[:, None] + onp.asarray(xi)[None, :] * (v1 - v0)[:, None]
+
+    x_flat, y_flat = [], []
+    for e in range(n_elements):
+        x_flat += list(x[e]) + [None]
+        y_flat += list(values[e]) + [None]
+    return x_flat, y_flat
+
+
+def plot_1d_solution(solution_domain, solution, *, reference=None, n_points_per_element=20,
+                      n_reference_points=200, solution_names=None, reference_name="Analytical",
+                      colors=None, xaxis_title="x", yaxis_title="ψ", width=None, height=None):
+    '''
+    Plot one or more DG solution profiles on a 1D `SolutionDomain`, optionally against a
+    continuous analytical reference curve. Each element is sampled and drawn independently
+    (see `_dg_element_profile`) so that jumps across element faces render as real gaps in the
+    line, instead of `SolutionDomain.interpolate` on a shared grid, which would silently
+    connect across the discontinuity.
+
+    Parameters
+    ----------
+    solution_domain : jax_sn.solution_domain.SolutionDomain
+        Must be 1D (`solution_domain.dimension == 1`).
+    solution : jnp.ndarray [n_elements, n_basis] or [n_solutions, n_elements, n_basis]
+        One or more solution coefficient arrays (e.g. `psi` from a transport-operator solve).
+    reference : Callable[[jnp.ndarray], jnp.ndarray], optional
+        A closed-form reference, called as `reference(x)` with `x` of shape `[n_reference_points, 1]`
+        and expected to return values broadcastable to `[n_reference_points]`; drawn as a
+        continuous dashed black line (analytical solutions have no element-wise discontinuities
+        to preserve, so they're sampled on one shared dense grid instead of per element).
+    n_points_per_element : int
+        Points sampled per element for each `solution` row.
+    n_reference_points : int
+        Points sampled (uniformly over the domain's vertex extent) for `reference`.
+    solution_names : Sequence[str], optional
+        Legend label per row of `solution`; defaults to "Numerical" for a single profile,
+        else "solution {i}".
+    reference_name : str
+        Legend label for `reference`.
+    colors : Sequence[str], optional
+        Colour palette to cycle through per solution profile; defaults to plotly's
+        qualitative `Plotly` palette.
+    xaxis_title, yaxis_title : str
+        Axis labels.
+    width, height : int, optional
+        Figure size in pixels; either/both may be given. Left `None` (default) plotly
+        autosizes to its container.
+
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
+    '''
+    assert solution_domain.dimension == 1, f"plot_1d_solution requires a 1D solution_domain, got dimension {solution_domain.dimension}"
+    solution = onp.atleast_3d(onp.asarray(solution).reshape((-1,) + solution_domain.elements_basis_shape.shape))
+
+    fig = go.Figure()
+    if reference is not None:
+        vertices = onp.asarray(solution_domain.domain.vertices)[:, 0]
+        x_ref = jnp.linspace(vertices.min(), vertices.max(), n_reference_points)[:, None]
+        fig.add_trace(go.Scatter(
+            x=x_ref[:, 0], y=onp.asarray(reference(x_ref)).reshape(-1), mode="lines",
+            line=dict(width=2, color="black", dash="dash"), name=reference_name,
+        ))
+    for idx, solution_i in enumerate(solution):
+        if solution_names is not None:
+            name = solution_names[idx]
+        else:
+            name = "Numerical" if solution.shape[0] == 1 else f"solution {idx}"
+        x, y = _dg_element_profile(solution_domain, solution_i, n_points_per_element)
+        fig.add_trace(go.Scatter(
+            x=x, y=y, mode="lines", line=dict(width=3, color=_color(colors, idx)), name=name,
+        ))
+
+    fig.update_layout(xaxis_title=xaxis_title, yaxis_title=yaxis_title, margin=dict(l=0, r=0, t=40, b=40),
+                       width=width, height=height)
+    return fig
+
+
+def _reference_triangle_subdivision(n_subdivisions):
+    '''
+    Uniformly refine the reference triangle (local coordinates (0,0), (1,0), (0,1), matching
+    `connectivity`'s per-element vertex order -- see `_real_coordinate_simplex` in `basix_fem.py`)
+    into `n_subdivisions ** 2` congruent sub-triangles. `n_subdivisions=1` is a no-op: just the
+    triangle's own 3 corners, one sub-triangle -- exact for a P1 field, since `Mesh3d` linearly
+    (Gouraud) interpolates colour between a face's vertices. Higher values sample more points
+    per element, needed for a visually smooth gradient from higher-degree fields.
+
+    Returns
+    -------
+    local_coordinates : onp.ndarray [n_local_points, 2]
+    triangles : onp.ndarray [n_local_triangles, 3]
+        Index triples into `local_coordinates`.
+    '''
+    n = n_subdivisions
+    i, j = onp.mgrid[0:n + 1, 0:n + 1]
+    mask = (i + j) <= n
+    i, j = i[mask], j[mask]
+    local_coordinates = onp.stack([i, j], axis=1) / n
+
+    index = -onp.ones((n + 1, n + 1), dtype=int)
+    index[i, j] = onp.arange(len(i))
+
+    triangles = []
+    for a in range(n):
+        for b in range(n - a):
+            triangles.append([index[a, b], index[a + 1, b], index[a, b + 1]])
+            if a + b < n - 1:
+                triangles.append([index[a + 1, b], index[a + 1, b + 1], index[a, b + 1]])
+    return local_coordinates, onp.array(triangles)
+
+
+def _dg_element_field_2d(solution_domain, solution, n_subdivisions):
+    '''
+    Sample `solution` (one `[n_elements, n_basis]` coefficient array) on a fine, per-element
+    sub-triangulation of the reference triangle (`_reference_triangle_subdivision`), evaluated
+    independently for *each* element -- exactly as `_dg_element_profile` does for 1D -- so the
+    returned `triangles` never index a vertex shared between two elements. A `Mesh3d` built from
+    this therefore renders each element as its own disconnected coloured patch, preserving jumps
+    across element faces instead of blending them the way `SolutionDomain.interpolate`'s
+    single-owner `containing_cell` lookup would.
+
+    Returns
+    -------
+    x, y : onp.ndarray [n_elements * n_local_points]
+        Real-space coordinates of every sampled point.
+    values : onp.ndarray [n_elements * n_local_points]
+        `solution` evaluated at each point.
+    triangles : onp.ndarray [n_elements * n_local_triangles, 3]
+        Index triples into `x`/`y`/`values`.
+    '''
+    element    = solution_domain.element
+    domain     = solution_domain.domain
+    n_elements = solution_domain.n_elements
+
+    local_coords, local_triangles = _reference_triangle_subdivision(n_subdivisions)
+    n_local = local_coords.shape[0]
+
+    local_coordinates = jnp.tile(jnp.asarray(local_coords), (n_elements, 1))
+    element_indices   = jnp.repeat(jnp.arange(n_elements), n_local)
+
+    values = onp.asarray(element.interpolate_from_local_coordinate(
+        local_coordinates, element_indices, solution))
+    real = onp.asarray(element.real_coordinates(
+        local_coordinates, element_indices, domain, solution_domain.precomputed_geometric_data))
+
+    offsets   = (onp.arange(n_elements) * n_local)[:, None, None]
+    triangles = (local_triangles[None, :, :] + offsets).reshape(-1, 3)
+    return real[:, 0], real[:, 1], values, triangles
+
+
+def plot_2d_solution(solution_domain, solution, *, n_subdivisions=4, colorscale="Viridis",
+                      colorbar_title="ψ", show_element_boundaries=False, elevate=False, z_scale=1.0,
+                      zmin=None, zmax=None, xaxis_title="x", yaxis_title="y", zaxis_title="ψ",
+                      show_domain_mesh=False, show_domain_mesh_boundaries=True, color_by_material=True,
+                      domain_mesh_colors=None, material_names=None, domain_mesh_opacity=0.6,
+                      angle=None, width=None, height=None):
+    '''
+    Plot a DG solution field on a 2D `SolutionDomain` as a colour map, shaded smoothly within
+    each element and discontinuous across element faces (see `_dg_element_field_2d`).
+z
+    Rendered as a `Mesh3d` -- plotly has no native "coloured triangle mesh" trace outside its 3D
+    scene types, but `Mesh3d`'s per-vertex (`intensitymode="vertex"`) colouring does exactly the
+    Gouraud-shaded triangle fill a colour map needs, so it's reused here. By default (`elevate=False`)
+    the mesh is flat (`z=0`) and the camera is locked to a top-down orthographic view, so it reads
+    as a plain 2D colour map; the scene can still be freely rotated/zoomed like any other plotly
+    3D plot. With `elevate=True`, `z` is `solution` itself (still colour-mapped the same way), giving
+    an actual height-field surface -- the only way a 3D view of a 2D field is informative rather than
+    a flat plane seen edge-on -- and the camera switches to a normal angled 3D view instead.
+
+    Parameters
+    ----------
+    solution_domain : jax_sn.solution_domain.SolutionDomain
+        Must be 2D (`solution_domain.dimension == 2`).
+    solution : jnp.ndarray [n_elements, n_basis]
+        One solution coefficient array (e.g. `psi` from a transport-operator solve, for one
+        angle/energy-group).
+    n_subdivisions : int
+        Sub-triangles per element per side (see `_reference_triangle_subdivision`); `1` is exact
+        for a P1 field, higher values give a smoother-looking gradient/surface for higher-degree
+        fields at the cost of a bigger mesh.
+    colorscale : str or list
+        Plotly colourscale name (or explicit scale) for `solution`'s values.
+    colorbar_title : str
+        Title of the colour bar.
+    show_element_boundaries : bool
+        Overlay a black wireframe along element edges (following the surface when `elevate=True`).
+    show_domain_mesh : bool
+        Draw `solution_domain.domain`'s mesh, coloured by material exactly like `plot_domain`
+        (same `_color`/qualitative-palette scheme), as a flat floor beneath the solution surface
+        -- at `z=0` when `elevate=False` (partially transparent, so it still shows through/around
+        the solution surface sitting right on top of it) or just below the surface's lowest point
+        when `elevate=True` (so the surface visibly floats above its own geometry/material footprint).
+    show_domain_mesh_boundaries : bool
+        On top of the floor itself, also overlay a black wireframe along its element edges (every
+        triangle's 3 edges, so a shared interior edge between two same-material elements is still
+        drawn -- consistent with `show_element_boundaries` elsewhere in this module). Ignored
+        unless `show_domain_mesh=True`.
+    color_by_material, domain_mesh_colors, material_names : optional
+        Forwarded to the floor's material colouring; see `plot_domain`'s parameters of the same
+        name. Ignored unless `show_domain_mesh=True`.
+    domain_mesh_opacity : float
+        Opacity of the floor mesh. Ignored unless `show_domain_mesh=True`.
+    angle : jnp.ndarray, optional
+        If given (a direction `[n_dim]`, as passed to e.g. `plot_domain`'s `graph_angle`), draws
+        a small red "Angle" compass arrow (see `_add_angle_compass`) at the domain's corner,
+        sitting at the same baseline height as the floor (whether or not `show_domain_mesh` is
+        actually on).
+    elevate : bool
+        If True, plot `solution` as height (`z`) as well as colour, and switch to an angled 3D
+        camera. If False (default), `z=0` for every point and the camera is a locked top-down
+        view, i.e. a flat colour map.
+    z_scale : float
+        Multiplies `solution` before using it as `z`, when `elevate=True`. Vertical exaggeration
+        for fields whose value range is small relative to the domain's spatial extent; ignored
+        when `elevate=False`.
+    zmin, zmax : float, optional
+        Colour scale bounds (and, when `elevate=True`, the z-axis range before `z_scale`); left
+        `None` (default), plotly scales to `solution`'s min/max.
+    xaxis_title, yaxis_title, zaxis_title : str
+        Axis labels; `zaxis_title` only shown when `elevate=True` (the z axis is hidden otherwise).
+    width, height : int, optional
+        Figure size in pixels; either/both may be given. Left `None` (default) plotly autosizes
+        to its container.
+
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
+    '''
+    assert solution_domain.dimension == 2, f"plot_2d_solution requires a 2D solution_domain, got dimension {solution_domain.dimension}"
+    solution = onp.asarray(solution)
+    assert solution.shape == solution_domain.elements_basis_shape.shape, \
+        f"solution must be of shape {solution_domain.elements_basis_shape.shape} but got {solution.shape}"
+
+    x, y, values, triangles = _dg_element_field_2d(solution_domain, solution, n_subdivisions)
+    z = values * z_scale if elevate else onp.zeros_like(values)
+
+    # Baseline height for anything that sits "under" the solution surface -- the floor (if drawn)
+    # and the angle compass (if drawn), whether or not the floor itself is shown -- so the compass
+    # stays at a consistent place regardless of `show_domain_mesh`. Two nearby levels: `floor_z`
+    # for the floor's filled triangles, `floor_wire_z` (a touch closer to the surface) for its
+    # wireframe, so the wireframe doesn't z-fight with the filled floor underneath it.
+    if elevate:
+        z_span       = float(onp.max(z) - onp.min(z))
+        z_span       = z_span if z_span > 0 else 1.0
+        floor_z      = float(onp.min(z)) - 0.08 * z_span
+        floor_wire_z = float(onp.min(z)) - 0.078 * z_span
+    else:
+        domain_xy    = onp.asarray(solution_domain.domain.vertices)
+        extent       = float(onp.max(domain_xy.max(axis=0) - domain_xy.min(axis=0)))
+        extent       = extent if extent > 0 else 1.0
+        floor_z      = -1e-3 * extent
+        floor_wire_z = -0.5e-3 * extent
+
+    fig = go.Figure()
+
+    if show_domain_mesh:
+        domain = solution_domain.domain
+        floor_vertices = _pad_to_3d(onp.asarray(domain.vertices))
+        floor_vertices[:, 2] = floor_z
+        connectivity = onp.asarray(domain.connectivity)
+        materials    = _material_indices(domain, color_by_material)
+        for color_idx, material in enumerate(onp.unique(materials)):
+            faces = connectivity[materials == material]
+            fig.add_trace(go.Mesh3d(
+                x=floor_vertices[:, 0], y=floor_vertices[:, 1], z=floor_vertices[:, 2],
+                i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
+                color=_color(domain_mesh_colors, color_idx), opacity=domain_mesh_opacity,
+                flatshading=True, name=_material_label(material, material_names),
+                showlegend=color_by_material,
+            ))
+        if show_domain_mesh_boundaries:
+            floor_wire_vertices = floor_vertices.copy()
+            floor_wire_vertices[:, 2] = floor_wire_z
+            edge_x, edge_y, edge_z = _triangle_edges(floor_wire_vertices, connectivity)
+            fig.add_trace(go.Scatter3d(
+                x=edge_x, y=edge_y, z=edge_z, mode="lines",
+                line=dict(width=2, color="black"), showlegend=False, hoverinfo="skip",
+            ))
+
+    if angle is not None:
+        _add_angle_compass(fig, 2, solution_domain.domain, angle, z=floor_z)
+
+    fig.add_trace(go.Mesh3d(
+        x=x, y=y, z=z,
+        i=triangles[:, 0], j=triangles[:, 1], k=triangles[:, 2],
+        intensity=values, intensitymode="vertex", colorscale=colorscale, cmin=zmin, cmax=zmax,
+        showscale=True, colorbar=dict(title=colorbar_title), flatshading=False,
+        lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0), name="solution",
+    ))
+
+    if show_element_boundaries:
+        # a coarse (element-corner-only, i.e. n_subdivisions=1) copy of the same field, used only
+        # to draw the 3 edges of each element, nudged just off the surface to avoid z-fighting.
+        corner_x, corner_y, corner_values, corner_triangles = _dg_element_field_2d(solution_domain, solution, 1)
+        corner_z = corner_values * z_scale if elevate else onp.zeros_like(corner_values)
+        corner_z = corner_z + 1e-3 * (float(onp.max(onp.abs(corner_z))) + 1.0)
+        edge_x, edge_y, edge_z = _triangle_edges(
+            onp.stack([corner_x, corner_y, corner_z], axis=1), corner_triangles)
+        fig.add_trace(go.Scatter3d(
+            x=edge_x, y=edge_y, z=edge_z, mode="lines",
+            line=dict(width=2, color="black"), showlegend=False, hoverinfo="skip",
+        ))
+
+    scene = dict(xaxis_title=xaxis_title, yaxis_title=yaxis_title)
+    if elevate:
+        scene |= dict(zaxis_title=zaxis_title, aspectmode="auto")
+    else:
+        scene |= dict(zaxis=dict(visible=False), aspectmode="data",
+                       camera=dict(eye=dict(x=0, y=0, z=1.8), up=dict(x=0, y=1, z=0),
+                                   projection=dict(type="orthographic")))
+
+    fig.update_layout(scene=scene, margin=dict(l=0, r=0, t=40, b=40), width=width, height=height)
     return fig
 
 
@@ -345,7 +714,8 @@ _DISPATCH = {1: _plot_domain_1d, 2: _plot_domain_2d, 3: _plot_domain_3d}
 
 def plot_domain(domain, *, color_by_material=True, show_element_boundaries=True,
                  show_material_interfaces=True, colors=None, material_names=None,
-                 show_graph=False, graph_angle=None, show_levels=False):
+                 show_graph=False, graph_angle=None, show_levels=False, level_mode="order",
+                 graph_color="darkred", mesh_opacity=1.0, width=None, height=None):
     '''
     Visualize a `Domain`'s mesh with plotly, dispatching on `domain.vertices.shape[1]`.
 
@@ -379,7 +749,7 @@ def plot_domain(domain, *, color_by_material=True, show_element_boundaries=True,
         still fall back to `f"material {{index}}"`) or a sequence indexed positionally by
         material index.
     show_graph : bool
-        Overlay the element-adjacency graph: a black circle at every element centroid,
+        Overlay the element-adjacency graph: a `graph_color` circle at every element centroid,
         connected to its neighbours.
     graph_angle : jnp.ndarray, optional
         If given (a direction `[n_dim]`), `show_graph`'s edges are the *directed* sweep-
@@ -391,10 +761,32 @@ def plot_domain(domain, *, color_by_material=True, show_element_boundaries=True,
         required (non-None) when `show_levels=True`, since levels are angle-dependent. Ignored
         when both `show_graph` and `show_levels` are False.
     show_levels : bool
-        Label every element with its sweep level -- the topological-sort group from
+        Label every element with a number from `level_mode`. Requires `graph_angle` to be given
+        (both modes are angle-dependent).
+    level_mode : {"levels", "order"}
+        What `show_levels` labels each element with. `"levels"`: its sweep *level* -- the
+        topological-sort group from
         `jax_sn.domain.graph_generation.compute_levels_domain_safe` for `graph_angle` (elements
-        in the same level are mutually independent and solvable in parallel). Requires
-        `graph_angle` to be given.
+        in the same level are mutually independent and solvable in parallel, so this repeats
+        across a level). `"order"`: its own position in the topological sort (0 = computed
+        first, ties within a level broken by element index) -- the actual sequential order a
+        serial sweep computes elements in, matching how `BasicSweepData.levels_argsort` is built
+        for a single angle (see `_element_topological_order`).
+    graph_color : str
+        Colour for everything drawn by `show_graph`/`show_levels` (edges, arrowheads, node
+        outlines/labels) -- kept a single fixed accent, distinct from the mesh's black element
+        boundaries, so a dense adjacency graph doesn't visually merge into the mesh underneath it.
+    mesh_opacity : float
+        Opacity (0-1) applied to the underlying mesh (fill and/or boundary lines/wireframe) only
+        -- the graph/level overlay is unaffected. Lower it (e.g. 0.25-0.4) to fade a crowded mesh
+        out of the way when `show_graph`/`show_levels` is the point of the plot.
+    width, height : int, optional
+        Figure size in pixels; either/both may be given. Left `None` (default) plotly
+        autosizes to its container, which -- combined with 2D/3D's fixed-aspect axes
+        (`scaleanchor="y"` / `aspectmode="data"`) -- tends to letterbox a domain whose
+        bounding box isn't near-square (wide flat mesh in a wide-but-short default figure,
+        leaving dead vertical margin). Set both explicitly to match the domain's aspect ratio
+        and reclaim that space.
 
     Returns
     -------
@@ -405,11 +797,15 @@ def plot_domain(domain, *, color_by_material=True, show_element_boundaries=True,
         raise ValueError(f"plot_domain only supports 1D/2D/3D domains, got dimension {dim}")
     if show_levels and graph_angle is None:
         raise ValueError("show_levels=True requires graph_angle (levels are angle-dependent).")
+    if level_mode not in ("levels", "order"):
+        raise ValueError(f'level_mode must be "levels" or "order", got {level_mode!r}')
 
-    kwargs = dict(color_by_material=color_by_material,
+    kwargs = dict(color_by_material=color_by_material, level_mode=level_mode,
                   show_element_boundaries=show_element_boundaries, colors=colors,
                   material_names=material_names, show_graph=show_graph, graph_angle=graph_angle,
-                  show_levels=show_levels)
+                  show_levels=show_levels, graph_color=graph_color, mesh_opacity=mesh_opacity)
     if dim == 3:
         kwargs["show_material_interfaces"] = show_material_interfaces
-    return _DISPATCH[dim](domain, **kwargs)
+    fig = _DISPATCH[dim](domain, **kwargs)
+    fig.update_layout(width=width, height=height)
+    return fig

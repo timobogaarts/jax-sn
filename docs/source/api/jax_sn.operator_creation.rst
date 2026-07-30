@@ -14,3 +14,4 @@ Submodules
 
    jax_sn.operator_creation.default_strategies
    jax_sn.operator_creation.multi_group_operator_creation
+   jax_sn.operator_creation.transport_operator_creation

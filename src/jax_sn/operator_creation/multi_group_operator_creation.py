@@ -3,6 +3,7 @@ from jax_sn.operators.multi_group_operator import MultiGroupOperator, MultiGroup
 from jax_sn.quadrature_set import QuadratureSetBase
 from typing import Dict, Protocol
 from jax_sn.solution_domain import SolutionDomain
+import jax.numpy as jnp
 
 class DefinesDefaultSweepData(Protocol):
     @classmethod
@@ -23,6 +24,5 @@ def create_operator_data(solution_domain : SolutionDomain, quadrature_set : Quad
 
 def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set : QuadratureSetBase, multi_group_strategy : MultiGroupStrategyBase, sweep_data_kwargs : Dict = {}) -> MultiGroupOperator:
     return MultiGroupOperator(create_operator_data(solution_domain, quadrature_set, multi_group_strategy, sweep_data_kwargs), multi_group_strategy, transpose_bool = False)
-
 
 
