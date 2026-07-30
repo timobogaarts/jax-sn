@@ -175,8 +175,6 @@ html_css_files = ["css/terracotta.css", "css/custom.css"]
 
 # Scales display equations that overshoot the content column down to fit,
 # instead of leaving them to be scrolled sideways.
-# (require.js for plotly's notebook-output embedding is injected separately,
-# into <head>, via _templates/base.html's extrahead block.)
 html_js_files = ["js/fit-math.js"]
 
 autodoc_default_options = {

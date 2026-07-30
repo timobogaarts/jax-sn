@@ -9,6 +9,15 @@ if [ "${1:-}" = "--no-execute" ]; then
   export JAXSN_DOCS_NO_EXECUTE=1
 fi
 
+# Plotly's default-renderer autodetection (env/kernel sniffing in
+# plotly.io._renderers) is not stable across plotly versions or dev
+# environments (e.g. it silently degrades to a mimetype-only, non-embeddable
+# output under plain ipykernel execution on plotly >=6, or picks up a
+# VSCODE_PID leaked into the kernel subprocess) -- pin it explicitly so
+# notebook figures always come out as self-contained <script>-embedded HTML
+# that a static Sphinx page can actually show.
+export PLOTLY_RENDERER=notebook_connected
+
 # The example notebooks live in examples/ (the copies users open and run); each
 # one is copied into the docs tree, where myst_nb renders it as a page. The
 # copies are generated, hence gitignored -- edit the original under examples/.
