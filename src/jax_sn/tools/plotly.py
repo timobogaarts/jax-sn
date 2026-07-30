@@ -809,3 +809,345 @@ def plot_domain(domain, *, color_by_material=True, show_element_boundaries=True,
     fig = _DISPATCH[dim](domain, **kwargs)
     fig.update_layout(width=width, height=height)
     return fig
+
+
+def plot_quadrature_set(quadrature_set, *, values=None, colorbar_title=None, color_by_weight=True,
+                         colorscale="Viridis", cmin=None, cmax=None, marker_size=6,
+                         ray_color="lightgray", show_unit_sphere=False, width=None, height=None):
+    '''
+    Plot a `QuadratureSetBase`'s angles as points on the unit sphere, each joined to the origin
+    by a line so it reads as a direction/ray rather than a bare point.
+
+    Parameters
+    ----------
+    quadrature_set : jax_sn.quadrature_set.QuadratureSetBase
+        Any quadrature set; only `.angles` ([n_angles, 3]) and (unless `values` is given)
+        `.weights` ([n_angles]) are used.
+    values : jnp.ndarray [n_angles], optional
+        Colour each point by these values instead of the quadrature weights -- e.g. some function
+        evaluated at the quadrature's angles. Overrides `color_by_weight`.
+    colorbar_title : str, optional
+        Colour bar title; defaults to "w" for weights, or "f" when `values` is given.
+    color_by_weight : bool
+        Colour each point by its quadrature weight (with a colour bar) instead of a single flat
+        colour. Ignored when `values` is given (then always coloured).
+    colorscale : str or list
+        Plotly colourscale name (or explicit scale) for the weights/`values`; ignored when
+        neither is used for colouring.
+    cmin, cmax : float, optional
+        Colour scale bounds; left `None` (default), plotly scales to the weights/`values`'
+        own min/max. Set both explicitly (e.g. to a shared, zero-centred range) to make colours
+        comparable against another plot's -- e.g. `plot_moments_spheres`/`plot_spherical_field`'s.
+    marker_size : int
+        Marker size in pixels.
+    ray_color : str
+        Colour of the origin-to-angle lines.
+    show_unit_sphere : bool
+        Overlay a faint unit sphere for reference.
+    width, height : int, optional
+        Figure size in pixels; either/both may be given. Left `None` (default) plotly autosizes
+        to its container.
+
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
+    '''
+    angles = onp.asarray(quadrature_set.angles)
+
+    use_values   = values is not None
+    color_values = onp.asarray(values) if use_values else onp.asarray(quadrature_set.weights)
+    label        = "f" if use_values else "w"
+    use_color    = use_values or color_by_weight
+
+    fig = go.Figure()
+
+    if show_unit_sphere:
+        u = onp.linspace(0, onp.pi, 30)
+        v = onp.linspace(0, 2 * onp.pi, 30)
+        fig.add_trace(go.Surface(
+            x=onp.outer(onp.sin(u), onp.cos(v)), y=onp.outer(onp.sin(u), onp.sin(v)),
+            z=onp.outer(onp.cos(u), onp.ones_like(v)), opacity=0.15, showscale=False,
+            colorscale=[[0, "lightblue"], [1, "lightblue"]], hoverinfo="skip", name="unit sphere",
+        ))
+
+    ray_x, ray_y, ray_z = [], [], []
+    for x, y, z in angles:
+        ray_x += [0.0, x, None]
+        ray_y += [0.0, y, None]
+        ray_z += [0.0, z, None]
+    fig.add_trace(go.Scatter3d(
+        x=ray_x, y=ray_y, z=ray_z, mode="lines", line=dict(width=2, color=ray_color),
+        showlegend=False, hoverinfo="skip", name="rays",
+    ))
+
+    marker = dict(size=marker_size)
+    if use_color:
+        marker |= dict(color=color_values, colorscale=colorscale, cmin=cmin, cmax=cmax,
+                        showscale=True, colorbar=dict(title=colorbar_title or label))
+    else:
+        marker |= dict(color=_color(None, 0))
+
+    fig.add_trace(go.Scatter3d(
+        x=angles[:, 0], y=angles[:, 1], z=angles[:, 2], mode="markers", marker=marker,
+        text=[f"{label}={v:.4g}" for v in color_values], hoverinfo="text", name="angles",
+    ))
+
+    fig.update_layout(scene=dict(aspectmode="data", xaxis_title="x", yaxis_title="y", zaxis_title="z"),
+                       margin=dict(l=0, r=0, t=40, b=40), width=width, height=height)
+    return fig
+
+
+def plot_moments_bar(moments, l_max, *, colors=None, width=None, height=None):
+    r'''
+    Bar chart of real-spherical-harmonic moment coefficients :math:`\phi_{lm}` against the
+    flattened :math:`(l,m)` index, shaded by degree :math:`l`.
+
+    Parameters
+    ----------
+    moments : jnp.ndarray [(l_max + 1)**2]
+        Moment coefficients in the same :math:`(l,m)` ordering as
+        `jax_sn.quadrature_set.QuadratureSetBase.wk_ylm_real`/`ylm_real`
+        (see `jax_sn.quadrature_set.quadrature_set_base._lm_real_expansion`), e.g. from
+        contracting a discrete field against `QuadratureSetBase.wk_ylm_real(l_max)`.
+    l_max : int
+        Maximum expansion degree `moments` was computed with.
+    colors : Sequence[str], optional
+        Colour palette to cycle through per degree l; defaults to plotly's qualitative `Plotly`
+        palette.
+    width, height : int, optional
+        Figure size in pixels; either/both may be given. Left `None` (default) plotly autosizes
+        to its container.
+
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
+    '''
+    from jax_sn.quadrature_set.quadrature_set_base import _lm_real_expansion
+    l, m    = (onp.asarray(x) for x in _lm_real_expansion(l_max))
+    moments = onp.asarray(moments)
+    assert moments.shape[0] == l.shape[0], \
+        f"moments must have shape [{l.shape[0]}] for l_max={l_max}, got {moments.shape}"
+
+    fig = go.Figure()
+    for degree in range(l_max + 1):
+        mask = l == degree
+        fig.add_trace(go.Bar(
+            x=[f"({degree},{mi})" for mi in m[mask]], y=moments[mask],
+            marker_color=_color(colors, degree), name=f"l={degree}",
+        ))
+    fig.update_layout(xaxis_title="(l, m)", yaxis_title="φ_lm", bargap=0.15, showlegend=False,
+                       margin=dict(l=0, r=0, t=40, b=40), width=width, height=height)
+    return fig
+
+
+def plot_spherical_field(l_max, moments, *, n_theta=60, n_phi=120, colorscale="Viridis",
+                          colorbar_title="Σ φ_lm·Y_lm(Ω)", zmin=None, zmax=None, width=None,
+                          height=None):
+    '''
+    Plot a real-spherical-harmonic expansion as a continuous field on the unit sphere, sampled on
+    a fine (theta, phi) grid independent of any quadrature set -- the continuous, "re-interpolated"
+    counterpart to `plot_quadrature_set`'s discrete points.
+
+    Parameters
+    ----------
+    l_max : int
+        Maximum expansion degree; `moments` must have `(l_max + 1)**2` entries.
+    moments : jnp.ndarray [(l_max + 1)**2]
+        Real-spherical-harmonic expansion coefficients, in the same ordering as
+        `QuadratureSetBase.wk_ylm_real`/`ylm_real` (see `_lm_real_expansion`).
+    n_theta, n_phi : int
+        Grid resolution in the polar/azimuthal angle.
+    colorscale : str or list
+        Plotly colourscale for the reconstructed field.
+    colorbar_title : str
+        Colour bar title.
+    zmin, zmax : float, optional
+        Colour scale bounds; left `None` (default), plotly scales to the field's min/max.
+    width, height : int, optional
+        Figure size in pixels; either/both may be given. Left `None` (default) plotly autosizes
+        to its container.
+
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
+    '''
+    from jax_sn.quadrature_set.quadrature_set_base import _lm_real_expansion, _ylm_real
+    moments = jnp.asarray(moments)
+    l, m    = _lm_real_expansion(l_max)
+    assert moments.shape[0] == l.shape[0], \
+        f"moments must have shape [{l.shape[0]}] for l_max={l_max}, got {moments.shape}"
+
+    theta = jnp.linspace(0.0, jnp.pi, n_theta)
+    phi   = jnp.linspace(0.0, 2 * jnp.pi, n_phi)
+    theta_grid, phi_grid = jnp.meshgrid(theta, phi, indexing="ij")
+
+    yklm  = _ylm_real(l, m, theta_grid.reshape(-1), phi_grid.reshape(-1), l_max)
+    field = onp.asarray((yklm @ moments).reshape(n_theta, n_phi))
+
+    theta_grid, phi_grid = onp.asarray(theta_grid), onp.asarray(phi_grid)
+    x = onp.sin(theta_grid) * onp.cos(phi_grid)
+    y = onp.sin(theta_grid) * onp.sin(phi_grid)
+    z = onp.cos(theta_grid)
+
+    fig = go.Figure(go.Surface(
+        x=x, y=y, z=z, surfacecolor=field, colorscale=colorscale, cmin=zmin, cmax=zmax,
+        showscale=True, colorbar=dict(title=colorbar_title),
+        lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0),
+    ))
+    fig.update_layout(scene=dict(aspectmode="data", xaxis_title="x", yaxis_title="y", zaxis_title="z"),
+                       margin=dict(l=0, r=0, t=40, b=40), width=width, height=height)
+    return fig
+
+
+def plot_moments_spheres(moments, l_max, *, n_theta=16, n_phi=32, colorscale="RdBu_r", clim=None,
+                          radius=0.85, spacing=2.2, colorbar_title="φ_lm·Y_lm(Ω)", width=None,
+                          height=None):
+    r'''
+    Visualize real-spherical-harmonic moments :math:`\phi_{lm}` as a pyramid of small spheres --
+    row :math:`l`, column :math:`m` -- each coloured by that term's own contribution
+    :math:`\phi_{lm} Y_{lm}(\Omega)` on one shared, zero-centred colour scale. That shared scale is
+    what makes both shape *and* relative size legible at a glance: a near-zero moment reads as a
+    flat, faint sphere, a large one shows its harmonic's lobed pattern vividly -- the small-multiples
+    analogue of `plot_spherical_field`'s single reconstructed field, one term at a time instead of
+    their sum.
+
+    Each little sphere is still oriented in the same (x, y, z) convention as the discrete angles
+    themselves (only translated to its grid slot), so the scene keeps (unticked, since the axis
+    *values* are grid positions, not coordinates) x/y/z titles -- letting the reader relate a lobe's
+    direction here back to the same direction in `plot_quadrature_set`/`plot_spherical_field`.
+
+    Parameters
+    ----------
+    moments : jnp.ndarray [(l_max + 1)**2]
+        Moment coefficients, in the same ordering as `plot_moments_bar`/`_lm_real_expansion`.
+    l_max : int
+        Maximum expansion degree.
+    n_theta, n_phi : int
+        Per-sphere grid resolution (kept low by default -- there are `(l_max + 1)**2` of these).
+    colorscale : str or list
+        Diverging Plotly colourscale; "RdBu" (default) makes positive/negative lobes easy to tell
+        apart.
+    clim : float, optional
+        Symmetric colour scale bound (`cmin=-clim, cmax=clim`); left `None` (default), it's the
+        largest `|φ_lm·Y_lm(Ω)|` over every term. Set explicitly to a shared value (e.g. matching
+        `plot_quadrature_set`/`plot_spherical_field`'s own `cmin`/`cmax`) to make colours comparable
+        across plots.
+    radius : float
+        Radius of each small sphere; less than half of `spacing` leaves a visible gap between
+        neighbours.
+    spacing : float
+        Centre-to-centre distance between neighbouring (l, m) spheres.
+    colorbar_title : str
+        Colour bar title.
+    width, height : int, optional
+        Figure size in pixels; either/both may be given. Left `None` (default) plotly autosizes
+        to its container.
+
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
+    '''
+    from jax_sn.quadrature_set.quadrature_set_base import _lm_real_expansion, _ylm_real
+    moments = jnp.asarray(moments)
+    l, m    = _lm_real_expansion(l_max)
+    assert moments.shape[0] == l.shape[0], \
+        f"moments must have shape [{l.shape[0]}] for l_max={l_max}, got {moments.shape}"
+
+    theta = jnp.linspace(0.0, jnp.pi, n_theta)
+    phi   = jnp.linspace(0.0, 2 * jnp.pi, n_phi)
+    theta_grid, phi_grid = jnp.meshgrid(theta, phi, indexing="ij")
+
+    yklm  = _ylm_real(l, m, theta_grid.reshape(-1), phi_grid.reshape(-1), l_max)
+    terms = onp.asarray(yklm * moments[None, :]).reshape(n_theta, n_phi, -1)  # each (l,m)'s own term
+
+    if clim is None:
+        clim = float(onp.max(onp.abs(terms)))
+        clim = clim if clim > 0 else 1.0
+
+    theta_grid, phi_grid = onp.asarray(theta_grid), onp.asarray(phi_grid)
+    x_local = radius * onp.sin(theta_grid) * onp.cos(phi_grid)
+    y_local = radius * onp.sin(theta_grid) * onp.sin(phi_grid)
+    z_local = radius * onp.cos(theta_grid)
+
+    l_np, m_np = onp.asarray(l), onp.asarray(m)
+
+    fig = go.Figure()
+    for idx, (li, mi) in enumerate(zip(l_np, m_np)):
+        fig.add_trace(go.Surface(
+            x=x_local + spacing * mi, y=y_local - spacing * li, z=z_local,
+            surfacecolor=terms[..., idx], cmin=-clim, cmax=clim, colorscale=colorscale,
+            showscale=(idx == 0), colorbar=dict(title=colorbar_title),
+            lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0), hoverinfo="skip",
+        ))
+
+    # one (l, m) tag per sphere -- m only, since the new row label below already carries l
+    fig.add_trace(go.Scatter3d(
+        x=spacing * m_np, y=-spacing * l_np - 1.3 * radius, z=onp.zeros_like(l_np, dtype=float),
+        mode="text", text=[f"m={mi:+d}" for mi in m_np], textfont=dict(size=10),
+        showlegend=False, hoverinfo="skip",
+    ))
+
+    # one "l=..." row label to the left of each row, past its leftmost (m = -l) sphere
+    row_l = onp.arange(l_max + 1)
+    fig.add_trace(go.Scatter3d(
+        x=-spacing * (row_l + 1.4), y=-spacing * row_l, z=onp.zeros_like(row_l, dtype=float),
+        mode="text", text=[f"l={li}" for li in row_l], textfont=dict(size=14, color="black"),
+        showlegend=False, hoverinfo="skip",
+    ))
+
+    axis = dict(visible=True, showticklabels=False, showgrid=False, zeroline=False,
+                showbackground=False)
+    fig.update_layout(
+        scene=dict(aspectmode="data", xaxis=dict(axis, title="x"), yaxis=dict(axis, title="y"),
+                   zaxis=dict(axis, title="z"),
+                   camera=dict(eye=dict(x=0, y=0, z=3.2), up=dict(x=0, y=1, z=0),
+                               projection=dict(type="orthographic"))),
+        showlegend=False, margin=dict(l=0, r=0, t=40, b=0), width=width, height=height)
+    return fig
+
+
+def add_axis_triad(fig, origin=(0.0, 0.0, 0.0), length=1.0, colors=("red", "green", "blue"),
+                    labels=("x", "y", "z"), row=None, col=None):
+    '''
+    Draw a small PyVista/VTK-style XYZ orientation triad in a 3D scene -- three colour-coded arrows
+    from `origin` along the local +x/+y/+z directions, each tipped with a cone and text label.
+    Meant as a direct replacement for Plotly's own scene axes when those are hidden (e.g. because
+    the axis *values* aren't physically meaningful, as in `plot_moments_spheres`'s grid layout, or
+    just to keep several scenes visually consistent) -- a literal, always-legible direction marker
+    instead of relying on axis lines/ticks that are easy to hide by accident and don't stand out
+    much even when shown.
+
+    Parameters
+    ----------
+    fig : plotly.graph_objects.Figure
+        Modified in place (new traces appended).
+    origin : Sequence[float] [3]
+        Where the triad's three arrows start.
+    length : float
+        Arrow length (shaft + cone).
+    colors : Sequence[str] [3]
+        Colour per axis, in (x, y, z) order; default matches the common red/green/blue convention.
+    labels : Sequence[str] [3]
+        Text label per axis, in (x, y, z) order.
+    row, col : int, optional
+        Subplot cell to add the triad to (as for `Figure.add_trace`); omit for a non-subplot figure.
+    '''
+    origin = onp.asarray(origin, dtype=float)
+    kwargs = dict(row=row, col=col) if row is not None else {}
+    for direction, color, label in zip(onp.eye(3), colors, labels):
+        tip = origin + direction * length
+        fig.add_trace(go.Scatter3d(
+            x=[origin[0], tip[0]], y=[origin[1], tip[1]], z=[origin[2], tip[2]], mode="lines",
+            line=dict(width=6, color=color), showlegend=False, hoverinfo="skip",
+        ), **kwargs)
+        fig.add_trace(go.Cone(
+            x=[tip[0]], y=[tip[1]], z=[tip[2]], u=[direction[0]], v=[direction[1]], w=[direction[2]],
+            sizemode="absolute", sizeref=0.3 * length, anchor="tail", showscale=False,
+            colorscale=[[0, color], [1, color]], showlegend=False, hoverinfo="skip",
+        ), **kwargs)
+        label_pos = origin + direction * (length * 1.3)
+        fig.add_trace(go.Scatter3d(
+            x=[label_pos[0]], y=[label_pos[1]], z=[label_pos[2]], mode="text", text=[label],
+            textfont=dict(size=14, color=color), showlegend=False, hoverinfo="skip",
+        ), **kwargs)
+

@@ -1,3 +1,4 @@
+.. _angular_discretisation:
 Angular discretisation
 --------------------------
 

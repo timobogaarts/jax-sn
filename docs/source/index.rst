@@ -52,6 +52,7 @@ This model has been described and benchmarked in the following publications. If 
    theory.rst   
    user_guide.rst
    examples.rst
+   faq.rst
    api_reference.rst
    appendices.rst
 

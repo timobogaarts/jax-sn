@@ -95,6 +95,7 @@ class FluxMomentOperator(TransposeBoolDataStrategyLinearOperator):
 
     data                 : eqx.AbstractVar[DiscreteMomentData]
     elements_basis_shape : eqx.AbstractVar[jax.ShapeDtypeStruct]  #[n_elements, n_basis]
+    strategy             : eqx.AbstractVar[FluxMomentStrategy]
     transpose_bool       : eqx.AbstractVar[bool]
 
     def _axis_structure(self, axis : int):

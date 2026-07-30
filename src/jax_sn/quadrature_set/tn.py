@@ -3,7 +3,9 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 from .quadrature_set_base import QuadratureSet
-@partial(jax.jit, static_argnums= 0)
+import equinox as eqx
+
+@eqx.filter_jit
 def _create_tn_octants( N : int):
     N = N + 1
     points_per_level = jnp.arange(1, N+1)
@@ -75,7 +77,7 @@ def _create_tn_octants( N : int):
     
     return points, interleave_vertices(vertices_double_down, vertices_right_same)
     
-@partial(jax.jit, static_argnums= 0)
+@eqx.filter_jit
 def create_tn_quadrature_set(N : int) -> QuadratureSet:
     '''
     Creates a TN quadrature set with N levels per octant. See [1].

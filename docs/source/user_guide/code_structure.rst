@@ -33,15 +33,15 @@ quadrature set for lower dimensional problems.
 
 GeometricDomain and Domain
 -----------------------------
-A :class:`GeometricDomain` defines how the domain is geometrically constructed: its vertices and the connection between 
+A :class:`~jax_sn.domain.GeometricDomain` defines how the domain is geometrically constructed: its vertices and the connection between
 each vertices. Can compute the required discontinuous-Galerkin connected to matrices (which face connects to which other face or element)
 and Jacobian matrices. Also handles interpolation location (using BVH trees).
 
-A :class:`Domain` also adds cross section information: which element has which cross section in :class:`CrossSectionIndexed`.
+A :class:`~jax_sn.domain.Domain` also adds cross section information: which element has which cross section in :class:`~jax_sn.domain.CrossSectionsIndexed`.
 
-SolutionDomain 
+SolutionDomain
 ---------------
-:class:`SolutionDomain` defines which type of :class:`Element` is used on a :class:`Domain` (e.g. first order / second order) and 
+:class:`~jax_sn.solution_domain.SolutionDomain` defines which type of :class:`~jax_sn.solution_domain.Element` is used on a :class:`~jax_sn.domain.Domain` (e.g. first order / second order) and
 has functions for computing the relevant finite element matrices. Also checks compatibility.
 
 Operators and Strategies
@@ -63,8 +63,8 @@ each operator is implemented as follows:
         def mv(self, x ):
             return strategy.forward(self.operator_data, x)
 
-where the strategy only defines the numerics (how it calculates). Constructing the multigroup operator thus requires picking 
-a implementation of :class:`MultiGroupStrategyBase` and constructing the operator data (which defines the mesh, and other discretisation parameters).
+where the strategy only defines the numerics (how it calculates). Constructing the multigroup operator thus requires picking
+a implementation of :class:`~jax_sn.operators.multi_group_operator.MultiGroupStrategyBase` and constructing the operator data (which defines the mesh, and other discretisation parameters).
 Then, it can be passed to a `Lineax <https://github.com/patrick-kidger/lineax>`_ solver, which automatically handles the differentiation as well.
 
 Strategies can be composed: in the multigroup system, we can either compute the entire action :math:`\mathbf{A}` using a single 
