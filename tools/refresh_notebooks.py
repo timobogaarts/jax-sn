@@ -11,6 +11,7 @@ commit (or open a PR).
 Usage: python tools/refresh_notebooks.py
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -27,12 +28,20 @@ def main() -> None:
         print("No ci: False notebooks in docs/source/_notebook_manifest.py -- nothing to do.")
         return
 
+    # Matches build_docs.sh's renderer pin (see the comment there): plotly figures
+    # embed differently depending on the renderer plotly's autodetection happens to
+    # land on, and these notebooks' outputs are committed as-is (never re-executed
+    # by the docs build), so this has to be set here rather than relying on
+    # whoever invokes this script to have exported it themselves.
+    env = {**os.environ, "PLOTLY_RENDERER": "sphinx_gallery"}
+
     for rel_path in targets:
         path = REPO_ROOT / rel_path
         print(f"Executing {path} ...")
         subprocess.run(
             ["jupyter", "nbconvert", "--to", "notebook", "--execute", "--inplace", str(path)],
             check=True,
+            env=env,
         )
 
 

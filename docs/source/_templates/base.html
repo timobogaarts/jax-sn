@@ -13,21 +13,3 @@
 </script>
 {% endblock %}
 
-{#- Furo renders html_js_files at the end of <body> (after page content), for
-    performance. Plotly's own "notebook"/"notebook_connected" renderer output
-    is NOT stable across plotly versions: on plotly <6 (what docs/requirements.txt
-    pins, since CI installs that fresh) it still self-embeds via requirejs's AMD
-    pattern (an inline `define('plotly', ...)` call sitting in the page content,
-    followed by `require(["plotly"], ...)` calls), which needs require.js's
-    `define`/`require` globals to already exist by the time it runs -- hence
-    require.js has to load in <head>, ahead of the body. On plotly >=6 (e.g. a
-    locally installed dev env that has drifted past the pin) the same renderer
-    instead emits a plain `<script src="cdn.plot.ly/...">` + direct
-    `Plotly.newPlot(...)` call and never references `require`/`define` at all,
-    so this script is simply unused there -- harmless, not something to remove
-    on the assumption it's dead (it broke the actual CI-built site the one time
-    that was tried, since CI's pinned plotly still needs it). -#}
-{% block extrahead %}
-<script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
-{% endblock %}
-
