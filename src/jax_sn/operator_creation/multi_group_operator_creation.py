@@ -1,9 +1,17 @@
-from jax_sn.operators.operator_data import OperatorData, AngularData, DiscretisationData, NonDifferentiableData
+'''
+The original :class:`SolutionDomain`-based factories. These are now thin adapters over
+:mod:`jax_sn.operator_creation.builders`: they recover the :class:`Builder` of the solution domain
+they are given and hand off to its build methods, so there is a single derivation path shared with
+the parametrisation machinery.
+'''
+
+from jax_sn.operators.operator_data import OperatorData
 from jax_sn.operators.multi_group_operator import MultiGroupOperator, MultiGroupStrategyBase
+from .builders import Builder
+from jax_sn.operators.sweep_policy import Resort
 from jax_sn.quadrature_set import QuadratureSetBase
 from typing import Dict, Protocol
 from jax_sn.solution_domain import SolutionDomain
-import jax.numpy as jnp
 
 class DefinesDefaultSweepData(Protocol):
     @classmethod
@@ -14,15 +22,10 @@ def create_operator_data(solution_domain : SolutionDomain, quadrature_set : Quad
     '''
     Creates the total operator data struct for the given solution domain and quadrature set, using the default sweep data type of the given strategy.
     This can also be a single group operator or something else.
-    '''    
-    lmax                      = solution_domain.domain.cross_sections_indexed.l_max
-    sweep_data_type           = strategy.default_sweep_data()
-    sweep_data                = sweep_data_type.from_domain_quadrature_set(solution_domain.domain, quadrature_set, **sweep_data_kwargs)
-    angular_data              = AngularData.from_quadrature_set(quadrature_set, lmax)
-    operator_data             = OperatorData(DiscretisationData(solution_domain.spatial_data, angular_data), NonDifferentiableData(sweep_data))
-    return operator_data
+    '''
+    builder = Builder.from_solution_domain(solution_domain, quadrature_set)
+    return builder.operator_data(strategy.default_sweep_data(), Resort(**sweep_data_kwargs))
 
 def create_multi_group_operator(solution_domain : SolutionDomain, quadrature_set : QuadratureSetBase, multi_group_strategy : MultiGroupStrategyBase, sweep_data_kwargs : Dict = {}) -> MultiGroupOperator:
-    return MultiGroupOperator(create_operator_data(solution_domain, quadrature_set, multi_group_strategy, sweep_data_kwargs), multi_group_strategy, transpose_bool = False)
-
-
+    builder = Builder.from_solution_domain(solution_domain, quadrature_set)
+    return builder.multi_group_operator(multi_group_strategy, Resort(**sweep_data_kwargs))

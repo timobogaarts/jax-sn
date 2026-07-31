@@ -3,7 +3,9 @@ from . import graph_tools
 from . import permutation_tools
 from . import memory_analysis
 from . import setup_test_mgop
+from . import derivation
 from .memory_analysis import assert_pytree_allclose
+from .derivation import DerivedModule
 
 __all__ = [
     "mesh_tools",
@@ -11,5 +13,7 @@ __all__ = [
     "permutation_tools",
     "memory_analysis",
     "assert_pytree_allclose",
-    "setup_test_mgop"
+    "setup_test_mgop",
+    "derivation",
+    "DerivedModule",
 ]

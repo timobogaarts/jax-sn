@@ -50,12 +50,33 @@ need a matching exclusion there so their committed outputs survive.
 - `quadrature_set/` — angular discretisation (T_N quadrature in `tn.py`).
 - `energy_set/` — multigroup energy structure/overlap.
 - `operators/` — the S_N operators; see below.
-- `operator_creation/` — the factory layer that builds operators from a `SolutionDomain` + `QuadratureSetBase`: `multi_group_operator_creation.py` (`create_operator_data`, `create_multi_group_operator`) and `default_strategies.py` (`DefaultMultiGroupStrategy` — ready-made vmap/pallas/warp strategy trees).
-- `parametrisation/` — single-group/multigroup/transport parametrisations for optimisation/gradient workflows (topologically sorted, see `test_parametrisation_toposort.py`).
+- `problem_spec/` — the primitives a problem is made of and the single path from them to everything else; see below.
+- `operator_creation/` — `default_strategies.py` (`DefaultMultiGroupStrategy` — ready-made vmap/pallas/warp strategy trees), plus the original `SolutionDomain`-based factories (`create_operator_data`, `create_multi_group_operator`, `create_transport_operator`), which are now thin adapters over `problem_spec`.
+- `parametrisation/` — single-group/multigroup/transport parametrisations for optimisation/gradient workflows (topologically sorted, see `test_parametrisation_toposort.py`). Superseded by `problem_spec` for new code: a parametrisation there is an `eqx.tree_at` on the spec plus a rebuild.
 - `solvers/` — direct solvers built on the operators: block forward/back-substitution for (block) lower-triangular multigroup systems (`lower_triangular_solver.py`) and configurable right-hand-sides (`right_hand_side.py`).
 - `variance_reduction/` — FW-CADIS; also holds the adjoint multigroup operator (`adjoint_multigroup_operator.py`).
 - `tools/` — mesh/graph/permutation utilities, memory analysis.
 - `analytical_solutions/` — closed-form references (e.g. `slab.py`) used by tests/examples.
+
+### Problem specification: primitives in, everything else derived
+`problem_spec/` exists because derived data used to be *cached* in the operator pytree and re-derived
+by hand wherever a primitive changed (the old `parametrisation` reconstructs), so the derivation lived
+in two places and could drift. It splits the data into tiers: **primitive** (vertices, connectivity,
+cross sections, quadrature, element), **structural** (`StaticSetup` — FEM matrices, `etoe`/`etof`/
+`face_perm_idx`; depends only on connectivity + element, untraceable, built once), **derived**
+(`face_normals`, `PrecomputedGeometricData`, `AngularData`; traceable, differentiable) and
+**combinatorial** (`SweepData`; rebuilt but non-differentiable). The load-bearing fact is that nothing
+untraceable depends on the vertices or cross sections, so the whole θ-dependent layer is pure JAX.
+
+`ProblemSpec` holds the primitives plus its `StaticSetup`; `derive`/`derive_spatial` is the *only*
+derivation path (`spec.py`); `builders.py` is per-operator assembly on top of it (`build_multi_group_operator`,
+`build_transport_operator`, `build_single_group_operator`, plus `build_mass_/moment_/discrete_/scatter_operator`,
+which take no sweep policy because those operators never sweep — they use `NoSweep`/`NoSweepData` and
+skip the topological sort). A `SweepPolicy` (`Resort` default / `Reuse` / `NoSweep`) owns tier 3,
+including the `stop_gradient`. A parametrisation is then `eqx.tree_at` on the spec followed by a
+rebuild — there is no cache to invalidate. `tests/test_problem_spec.py` asserts equivalence with the
+old factories and the generic no-stale-derived-data invariant (replacing a primitive == having had it
+all along, over every leaf).
 
 ### Operator composition: data + strategy, not subclassing
 Every operator is a **data pytree + strategy object**, not a `forward`-implementing subclass. The

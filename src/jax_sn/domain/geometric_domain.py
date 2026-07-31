@@ -8,6 +8,47 @@ from typing import Tuple
 import equinox as eqx
 from typing import Union
 
+def compute_face_normals(vertices : jnp.ndarray, connectivity : jnp.ndarray, face_template : jnp.ndarray) -> jnp.ndarray:
+    '''
+    The canonical face-normal derivation: the single place that knows how ``face_normals`` follows from
+    ``vertices``. Traceable, so it can be re-derived under ``jit``/``grad`` when the vertices move.
+
+    Parameters
+    ----------
+    vertices : jnp.ndarray [n_vertices, n_dim]
+    connectivity : jnp.ndarray [n_elements, n_vertices_per_element]
+    face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
+
+    Returns
+    -------
+    face_normals : jnp.ndarray [n_elements, n_faces_per_element, 3]
+    '''
+    return compute_face_normal_vectors_from_3d_simplices(vertices[connectivity], face_template)
+
+
+@jax.jit
+def compute_topology(connectivity : jnp.ndarray, face_template : jnp.ndarray):
+    '''
+    The mesh adjacency: ``etoe``, ``etof`` and ``face_perm_idx``.
+
+    Depends on the connectivity alone, never on the vertices -- which is what lets a deformable
+    parametrisation move the vertices without redoing this (the expensive, non-differentiable part
+    of the domain setup).
+
+    Parameters
+    ----------
+    connectivity : jnp.ndarray [n_elements, n_vertices_per_element]
+    face_template : jnp.ndarray [n_faces_per_element, n_vertices_per_face]
+
+    Returns
+    -------
+    etoe, etof, face_perm_idx : jnp.ndarray, each [n_elements, n_faces_per_element]
+    '''
+    etoe, etof    = _compute_adjacency(connectivity, face_template)
+    face_perm_idx = _compute_face_permutations(connectivity, etoe, etof, face_template)
+    return etoe, etof, face_perm_idx
+
+
 @jax.jit
 def _compute_domain_setup_from_mesh(mesh : Tuple[jnp.ndarray, jnp.ndarray], face_template : jnp.ndarray):
     '''
@@ -26,9 +67,8 @@ def _compute_domain_setup_from_mesh(mesh : Tuple[jnp.ndarray, jnp.ndarray], face
     _check_mesh_is_valid(mesh)
     vertices, connectivity = mesh
 
-    face_normals = compute_face_normal_vectors_from_3d_simplices(vertices[connectivity], face_template)
-    etoe, etof   = _compute_adjacency(connectivity, face_template)
-    face_perm_idx = _compute_face_permutations(connectivity, etoe, etof, face_template)
+    face_normals            = compute_face_normals(vertices, connectivity, face_template)
+    etoe, etof, face_perm_idx = compute_topology(connectivity, face_template)
 
     return vertices, connectivity, face_normals, etoe, etof, face_perm_idx
 
