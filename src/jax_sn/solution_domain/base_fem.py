@@ -6,15 +6,15 @@ from typing import Tuple, List
 from jax_sn.domain.geometric_domain import GeometricDomain
 import jax 
 from dataclasses import dataclass
+import equinox as eqx
 
 
 #======================================================================================================================================================================
 #                                                               Precomputed Data Classes
 #=======================================================================================================================================================================    
 
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class FEMMatrices:
+
+class FEMMatrices(eqx.Module):
     '''
     Convenience class to bundle all FEM matrices required for the solution of the transport equation on a domain
     This is static wrt the domain geometry since it is only a function of the element type and basis functions.s
@@ -103,9 +103,8 @@ class FEMMatrices:
     def n_basis(self) -> int:
         return self.mass_matrix.shape[0]
     
-@jax.tree_util.register_dataclass
-@dataclass(frozen=True)
-class PrecomputedGeometricData:
+
+class PrecomputedGeometricData(eqx.Module):
     '''
     Convenience class to bundle all precomputed geometric data required for the solution of the transport equation on a domain
     This is specific to a given domain geometry. Therefore, it is separate from FEMMatrices.

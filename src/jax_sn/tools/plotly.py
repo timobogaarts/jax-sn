@@ -166,19 +166,22 @@ def _add_angle_compass(fig, dim, domain, angle, *, z=None):
 
 
 def _add_graph_and_levels(fig, dim, domain, *, show_graph, graph_angle, show_levels, graph_color,
-                           level_mode):
+                           level_mode, show_element_numbers=False):
     '''
-    Overlay the element-adjacency graph and/or per-element sweep levels/order, all in
+    Overlay the element-adjacency graph and/or per-element sweep levels/order/index, all in
     `graph_color` so the overlay reads as one layer distinct from the (black-outlined) mesh
     underneath.
 
-    Nodes: a plain dot if `show_levels` is False, otherwise a white/`graph_color`-outlined circle
-    with a number inside it -- `show_levels` requires `graph_angle` (both are angle-dependent).
-    `level_mode` picks what that number is: `"levels"` is the sweep level (topological-sort
-    *group* -- elements in the same level are mutually independent and solved in parallel,
-    from `compute_levels_domain_safe`), `"order"` is each element's own position in the
-    topological sort (0 = computed first, see `_element_topological_order`) -- the actual
-    per-element sequential order a serial sweep processes them in.
+    Nodes: a plain dot if neither `show_levels` nor `show_element_numbers` is set, otherwise a
+    white/`graph_color`-outlined circle with a number inside it. `show_levels` requires
+    `graph_angle` (angle-dependent); `show_element_numbers` does not (it's just each element's
+    own index, `range(n_elements)`) and takes priority if both are somehow requested with
+    conflicting values -- in practice callers set at most one of the two. `level_mode` picks what
+    `show_levels`'s number is: `"levels"` is the sweep level (topological-sort *group* --
+    elements in the same level are mutually independent and solved in parallel, from
+    `compute_levels_domain_safe`), `"order"` is each element's own position in the topological
+    sort (0 = computed first, see `_element_topological_order`) -- the actual per-element
+    sequential order a serial sweep processes them in.
 
     Edges (only when `show_graph`): with `graph_angle` given, the directed sweep-dependency graph
     for that angle (upstream -> downstream), with a small arrowhead at the midpoint of each edge
@@ -223,14 +226,21 @@ def _add_graph_and_levels(fig, dim, domain, *, show_graph, graph_angle, show_lev
                                       name="sweep direction"))
             _add_angle_compass(fig, dim, domain, graph_angle)
 
-    if show_levels:
+    if show_element_numbers:
+        values, name = onp.arange(centroids.shape[0]), "element"
+    elif show_levels:
         values = (_element_levels(domain, graph_angle) if level_mode == "levels"
                   else _element_topological_order(domain, graph_angle))
+        name = level_mode
+    else:
+        values = None
+
+    if values is not None:
         fig.add_trace(_trace(
             centroids[:, 0], centroids[:, 1], centroids[:, 2], mode="markers+text",
             marker=dict(size=20, color="white", line=dict(color=graph_color, width=1.5), symbol="circle"),
             text=[str(v) for v in values], textposition="middle center",
-            textfont=dict(size=10, color=graph_color), name=level_mode,
+            textfont=dict(size=10, color=graph_color), name=name,
         ))
     elif show_graph:
         fig.add_trace(_trace(
@@ -240,7 +250,8 @@ def _add_graph_and_levels(fig, dim, domain, *, show_graph, graph_angle, show_lev
 
 
 def _plot_domain_1d(domain, *, color_by_material, show_element_boundaries, colors, material_names,
-                     show_graph, graph_angle, show_levels, graph_color, mesh_opacity, level_mode):
+                     show_graph, graph_angle, show_levels, graph_color, mesh_opacity, level_mode,
+                     show_element_numbers=False):
     vertices     = onp.asarray(domain.vertices)[:, 0]
     connectivity = onp.asarray(domain.connectivity)
     materials    = _material_indices(domain, color_by_material)
@@ -273,14 +284,16 @@ def _plot_domain_1d(domain, *, color_by_material, show_element_boundaries, color
 
     fig.update_yaxes(visible=False, range=[-1, 1])
     fig.update_layout(xaxis_title="x", margin=dict(l=0, r=0, t=40, b=40))
-    if show_graph or show_levels:
+    if show_graph or show_levels or show_element_numbers:
         _add_graph_and_levels(fig, 1, domain, show_graph=show_graph, graph_angle=graph_angle,
-                               show_levels=show_levels, graph_color=graph_color, level_mode=level_mode)
+                               show_levels=show_levels, graph_color=graph_color, level_mode=level_mode,
+                               show_element_numbers=show_element_numbers)
     return fig
 
 
 def _plot_domain_2d(domain, *, color_by_material, show_element_boundaries, colors, material_names,
-                     show_graph, graph_angle, show_levels, graph_color, mesh_opacity, level_mode):
+                     show_graph, graph_angle, show_levels, graph_color, mesh_opacity, level_mode,
+                     show_element_numbers=False):
     vertices     = onp.asarray(domain.vertices)
     connectivity = onp.asarray(domain.connectivity)
     materials    = _material_indices(domain, color_by_material)
@@ -300,9 +313,10 @@ def _plot_domain_2d(domain, *, color_by_material, show_element_boundaries, color
                 showlegend=color_by_material and k == 0,
             ))
     fig.update_xaxes(scaleanchor="y", scaleratio=1)
-    if show_graph or show_levels:
+    if show_graph or show_levels or show_element_numbers:
         _add_graph_and_levels(fig, 2, domain, show_graph=show_graph, graph_angle=graph_angle,
-                               show_levels=show_levels, graph_color=graph_color, level_mode=level_mode)
+                               show_levels=show_levels, graph_color=graph_color, level_mode=level_mode,
+                               show_element_numbers=show_element_numbers)
     return fig
 
 
@@ -345,7 +359,7 @@ def _triangle_edges(vertices, faces):
 
 def _plot_domain_3d(domain, *, color_by_material, show_element_boundaries, show_material_interfaces,
                      colors, material_names, show_graph, graph_angle, show_levels, graph_color,
-                     mesh_opacity, level_mode):
+                     mesh_opacity, level_mode, show_element_numbers=False):
     vertices = onp.asarray(domain.vertices)
     groups   = _extract_faces(domain, color_by_material=color_by_material,
                                show_material_interfaces=show_material_interfaces)
@@ -365,9 +379,10 @@ def _plot_domain_3d(domain, *, color_by_material, show_element_boundaries, show_
                 line=dict(width=2, color="black"), showlegend=False, hoverinfo="skip",
             ))
     fig.update_layout(scene=dict(aspectmode="data"))
-    if show_graph or show_levels:
+    if show_graph or show_levels or show_element_numbers:
         _add_graph_and_levels(fig, 3, domain, show_graph=show_graph, graph_angle=graph_angle,
-                               show_levels=show_levels, graph_color=graph_color, level_mode=level_mode)
+                               show_levels=show_levels, graph_color=graph_color, level_mode=level_mode,
+                               show_element_numbers=show_element_numbers)
     return fig
 
 
@@ -715,7 +730,8 @@ _DISPATCH = {1: _plot_domain_1d, 2: _plot_domain_2d, 3: _plot_domain_3d}
 def plot_domain(domain, *, color_by_material=True, show_element_boundaries=True,
                  show_material_interfaces=True, colors=None, material_names=None,
                  show_graph=False, graph_angle=None, show_levels=False, level_mode="order",
-                 graph_color="darkred", mesh_opacity=1.0, width=None, height=None):
+                 show_element_numbers=False, graph_color="darkred", mesh_opacity=1.0,
+                 width=None, height=None):
     '''
     Visualize a `Domain`'s mesh with plotly, dispatching on `domain.vertices.shape[1]`.
 
@@ -772,14 +788,22 @@ def plot_domain(domain, *, color_by_material=True, show_element_boundaries=True,
         first, ties within a level broken by element index) -- the actual sequential order a
         serial sweep computes elements in, matching how `BasicSweepData.levels_argsort` is built
         for a single angle (see `_element_topological_order`).
+    show_element_numbers : bool
+        Label every element with its own index (`0..n_elements-1`, matching row order in
+        `domain.connectivity`), in the same white/`graph_color`-outlined circle style as
+        `show_levels` -- but angle-independent, so it works with no `graph_angle` and needs no
+        sweep computation. Independent of `show_graph`/`show_levels`; if more than one of these
+        labelling options is set, `show_element_numbers` wins.
     graph_color : str
-        Colour for everything drawn by `show_graph`/`show_levels` (edges, arrowheads, node
-        outlines/labels) -- kept a single fixed accent, distinct from the mesh's black element
-        boundaries, so a dense adjacency graph doesn't visually merge into the mesh underneath it.
+        Colour for everything drawn by `show_graph`/`show_levels`/`show_element_numbers` (edges,
+        arrowheads, node outlines/labels) -- kept a single fixed accent, distinct from the mesh's
+        black element boundaries, so a dense adjacency graph doesn't visually merge into the mesh
+        underneath it.
     mesh_opacity : float
         Opacity (0-1) applied to the underlying mesh (fill and/or boundary lines/wireframe) only
         -- the graph/level overlay is unaffected. Lower it (e.g. 0.25-0.4) to fade a crowded mesh
-        out of the way when `show_graph`/`show_levels` is the point of the plot.
+        out of the way when `show_graph`/`show_levels`/`show_element_numbers` is the point of the
+        plot.
     width, height : int, optional
         Figure size in pixels; either/both may be given. Left `None` (default) plotly
         autosizes to its container, which -- combined with 2D/3D's fixed-aspect axes
@@ -803,10 +827,243 @@ def plot_domain(domain, *, color_by_material=True, show_element_boundaries=True,
     kwargs = dict(color_by_material=color_by_material, level_mode=level_mode,
                   show_element_boundaries=show_element_boundaries, colors=colors,
                   material_names=material_names, show_graph=show_graph, graph_angle=graph_angle,
-                  show_levels=show_levels, graph_color=graph_color, mesh_opacity=mesh_opacity)
+                  show_levels=show_levels, show_element_numbers=show_element_numbers,
+                  graph_color=graph_color, mesh_opacity=mesh_opacity)
     if dim == 3:
         kwargs["show_material_interfaces"] = show_material_interfaces
     fig = _DISPATCH[dim](domain, **kwargs)
+    fig.update_layout(width=width, height=height)
+    return fig
+
+
+def _element_basis_values(element, local_coordinates):
+    '''`local_coordinates` [n_points, dim] -> basis function values `[n_points, n_basis]`.'''
+    return onp.asarray(element.tabulate_basis_functions_first_derivative(onp.asarray(local_coordinates))[0])
+
+
+def _basis_function_slider_steps(n_basis, n_extra_always_visible=0):
+    '''One slider step per basis function, toggling `visible` on its (curve/surface, nodes) trace
+    pair -- traces are added in two same-length blocks (all curves/surfaces, then all node marker
+    sets), so basis function `i` owns trace `i` and trace `n_basis + i`. Any further traces (e.g.
+    the 1D zero-line/guide decoration, appended after both blocks) are covered by
+    `n_extra_always_visible` and stay visible in every step.'''
+    steps = []
+    for i in range(n_basis):
+        visible = [False] * (2 * n_basis) + [True] * n_extra_always_visible
+        visible[i], visible[n_basis + i] = True, True
+        steps.append(dict(method="update", args=[{"visible": visible}], label=str(i)))
+    return steps
+
+
+def _plot_element_basis_functions_1d(element, nodes, n_points, mode, colors, node_color, active_node_color):
+    n_basis = element.n_basis
+    x           = onp.linspace(0.0, 1.0, n_points)
+    values      = _element_basis_values(element, x[:, None])
+    node_values = _element_basis_values(element, nodes)
+
+    y_pad   = 0.1 * max(float(values.max() - values.min()), 1e-9)
+    y_range = [float(values.min()) - y_pad, float(values.max()) + y_pad]
+
+    fig = go.Figure()
+    if mode == "all":
+        for i in range(n_basis):
+            fig.add_trace(go.Scatter(
+                x=x, y=values[:, i], mode="lines", line=dict(width=3, color=_color(colors, i)),
+                name=f"H_{i}",
+            ))
+            fig.add_trace(go.Scatter(
+                x=[nodes[i, 0]], y=[node_values[i, i]], mode="markers",
+                marker=dict(size=9, color=_color(colors, i)), showlegend=False, hoverinfo="skip",
+            ))
+    else:
+        for i in range(n_basis):
+            fig.add_trace(go.Scatter(
+                x=x, y=values[:, i], mode="lines", line=dict(width=3, color=_color(colors, i)),
+                name=f"H_{i}", showlegend=False, visible=(i == 0),
+            ))
+        for i in range(n_basis):
+            marker_colors = [active_node_color if j == i else node_color for j in range(n_basis)]
+            sizes         = [12 if j == i else 7 for j in range(n_basis)]
+            fig.add_trace(go.Scatter(
+                x=nodes[:, 0], y=node_values[:, i], mode="markers",
+                marker=dict(size=sizes, color=marker_colors), showlegend=False, hoverinfo="skip",
+                visible=(i == 0),
+            ))
+
+    # Reference guide, always visible regardless of mode/slider step: a dashed vertical line from
+    # the zero line up to 1.0 at every node, with a black marker on the zero line itself -- makes
+    # the Lagrangian "1 at own node, 0 elsewhere" property visually obvious (each curve's peak lands
+    # exactly on its own guide line's top).
+    guide_x, guide_y = [], []
+    for node_x in nodes[:, 0]:
+        guide_x += [float(node_x), float(node_x), None]
+        guide_y += [0.0, 1.0, None]
+    fig.add_trace(go.Scatter(
+        x=guide_x, y=guide_y, mode="lines", line=dict(width=1, color="black", dash="dash"),
+        showlegend=False, hoverinfo="skip",
+    ))
+    fig.add_trace(go.Scatter(
+        x=nodes[:, 0], y=onp.zeros(n_basis), mode="markers",
+        marker=dict(size=7, color="black"), showlegend=False, hoverinfo="skip",
+    ))
+
+    if mode == "slider":
+        fig.update_layout(sliders=[dict(active=0, currentvalue=dict(prefix="Basis function i = "),
+                                         steps=_basis_function_slider_steps(n_basis, n_extra_always_visible=2))])
+
+    fig.update_layout(xaxis_title="x (local coordinate)", yaxis_title="H_i(x)", yaxis=dict(range=y_range),
+                       margin=dict(l=0, r=0, t=40, b=60))
+    return fig
+
+
+def _plot_element_basis_functions_2d(element, nodes, n_subdivisions, mode, colors, opacity, colorscale,
+                                      colorbar_title, node_color, active_node_color, show_vertical_guides):
+    n_basis = element.n_basis
+    local_coordinates, triangles = _reference_triangle_subdivision(n_subdivisions)
+    values      = _element_basis_values(element, local_coordinates)
+    node_values = _element_basis_values(element, nodes)
+    x, y        = local_coordinates[:, 0], local_coordinates[:, 1]
+
+    fig = go.Figure()
+    if mode == "all":
+        for i in range(n_basis):
+            fig.add_trace(go.Mesh3d(
+                x=x, y=y, z=values[:, i], i=triangles[:, 0], j=triangles[:, 1], k=triangles[:, 2],
+                color=_color(colors, i), opacity=opacity, flatshading=True, name=f"H_{i}",
+                showlegend=True,
+            ))
+            fig.add_trace(go.Scatter3d(
+                x=[nodes[i, 0]], y=[nodes[i, 1]], z=[node_values[i, i]], mode="markers",
+                marker=dict(size=6, color=_color(colors, i)), showlegend=False, hoverinfo="skip",
+            ))
+    else:
+        cmin, cmax = float(values.min()), float(values.max())
+        for i in range(n_basis):
+            fig.add_trace(go.Mesh3d(
+                x=x, y=y, z=values[:, i], i=triangles[:, 0], j=triangles[:, 1], k=triangles[:, 2],
+                intensity=values[:, i], intensitymode="vertex", colorscale=colorscale, cmin=cmin, cmax=cmax,
+                showscale=True, colorbar=dict(title=colorbar_title), flatshading=False,
+                lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0), name=f"H_{i}", visible=(i == 0),
+            ))
+        for i in range(n_basis):
+            marker_colors = [active_node_color if j == i else node_color for j in range(n_basis)]
+            sizes         = [8 if j == i else 5 for j in range(n_basis)]
+            fig.add_trace(go.Scatter3d(
+                x=nodes[:, 0], y=nodes[:, 1], z=node_values[:, i], mode="markers",
+                marker=dict(size=sizes, color=marker_colors), showlegend=False, hoverinfo="skip",
+                visible=(i == 0),
+            ))
+
+    # Reference-cell outline + black node dots on the z=0 plane, always visible -- the 2D
+    # counterpart of the 1D zero-line guide, tying each node's (x, y) position back to the cell.
+    corners = onp.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, 0.0]])
+    fig.add_trace(go.Scatter3d(
+        x=corners[:, 0], y=corners[:, 1], z=onp.zeros(4), mode="lines",
+        line=dict(width=3, color="black"), showlegend=False, hoverinfo="skip",
+    ))
+    fig.add_trace(go.Scatter3d(
+        x=nodes[:, 0], y=nodes[:, 1], z=onp.zeros(n_basis), mode="markers",
+        marker=dict(size=5, color="black"), showlegend=False, hoverinfo="skip",
+    ))
+    n_extra = 2
+
+    if show_vertical_guides:
+        # a dashed vertical line from each node's zero-plane dot up to z=1.0, exactly where that
+        # node's own basis function peaks -- makes the "1 at own node, 0 elsewhere" property
+        # visually obvious the same way the 1D guide does.
+        guide_x, guide_y, guide_z = [], [], []
+        for nx, ny in nodes:
+            guide_x += [float(nx), float(nx), None]
+            guide_y += [float(ny), float(ny), None]
+            guide_z += [0.0, 1.0, None]
+        fig.add_trace(go.Scatter3d(
+            x=guide_x, y=guide_y, z=guide_z, mode="lines",
+            line=dict(width=2, color="black", dash="dash"), showlegend=False, hoverinfo="skip",
+        ))
+        n_extra += 1
+
+    if mode == "slider":
+        fig.update_layout(sliders=[dict(active=0, currentvalue=dict(prefix="Basis function i = "),
+                                         steps=_basis_function_slider_steps(n_basis, n_extra_always_visible=n_extra))])
+
+    fig.update_layout(
+        scene=dict(xaxis_title="x (local)", yaxis_title="y (local)", zaxis_title="H_i(x, y)",
+                   aspectmode="auto"),
+        margin=dict(l=0, r=0, t=40, b=60),
+    )
+    return fig
+
+
+def plot_element_basis_functions(element, *, mode="auto", n_subdivisions=10, n_points_1d=200,
+                                  colors=None, opacity=0.55, colorscale="Viridis", colorbar_title="H_i",
+                                  node_color="black", active_node_color="red", show_vertical_guides=True,
+                                  width=None, height=None):
+    '''
+    Visualize a Lagrangian element's basis functions H_i and their nodes x_i on the reference cell.
+
+    1D: each H_i is drawn as a curve over the reference interval [0, 1]. 2D: as an elevated surface
+    over the reference triangle (mirroring `plot_2d_solution`'s `elevate=True` style, reusing the
+    same `_reference_triangle_subdivision`). In both cases every node is drawn as a marker at its own
+    H_i value (1 for the active node, ~0 for the rest -- taken from the same tabulation as the
+    curve/surface, not hard-coded).
+
+    Parameters
+    ----------
+    element : jax_sn.solution_domain.basix_fem.BasixLagrangianSimplex
+        A 1D or 2D Lagrangian simplex element (`element.dimension in (1, 2)`).
+    mode : {"auto", "all", "slider"}
+        "all": every basis function drawn simultaneously, each its own colour/legend entry with a
+        marker at its own peak node -- clear in 1D, where curves rarely overlap confusingly. "slider":
+        one basis function shown at a time (stepped through with a slider), with every node drawn
+        (the active one highlighted in `active_node_color`) -- usually clearer in 2D, where several
+        overlaid coloured/translucent elevated surfaces get visually busy fast, especially past a few
+        basis functions. "auto" (default) picks "all" for a 1D element, "slider" for a 2D one.
+    n_subdivisions : int
+        2D only: sub-triangles per element per side used to sample the surface, see
+        `_reference_triangle_subdivision`; higher values resolve the shape between nodes more
+        smoothly for higher-degree elements.
+    n_points_1d : int
+        1D only: number of points densely sampled over [0, 1] to draw each curve.
+    colors : Sequence[str], optional
+        `mode="all"` only: colour palette to cycle through per basis function; defaults to plotly's
+        qualitative `Plotly` palette.
+    opacity : float
+        2D `mode="all"` only: opacity of each overlaid surface.
+    colorscale : str or list
+        2D `mode="slider"` only: Plotly colourscale for the basis function's value.
+    colorbar_title : str
+        2D `mode="slider"` only: colour bar title.
+    node_color, active_node_color : str
+        `mode="slider"` only: marker colour for inactive nodes and for the currently selected basis
+        function's own node.
+    show_vertical_guides : bool
+        2D only: also draw a dashed vertical line from each node's zero-plane dot up to z=1.0 (the
+        2D counterpart of the 1D guide, always drawn there). The reference cell's outline and a
+        black dot per node on the z=0 plane are always drawn in 2D regardless of this flag.
+    width, height : int, optional
+        Figure size in pixels; either/both may be given. Left `None` (default) plotly autosizes
+        to its container.
+
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
+    '''
+    dim = element.dimension
+    if dim not in (1, 2):
+        raise ValueError(f"plot_element_basis_functions only supports 1D/2D elements, got dimension {dim}")
+    if mode == "auto":
+        mode = "all" if dim == 1 else "slider"
+    if mode not in ("all", "slider"):
+        raise ValueError(f'mode must be "auto", "all", or "slider", got {mode!r}')
+
+    nodes = onp.asarray(element.element.points)
+    if dim == 1:
+        fig = _plot_element_basis_functions_1d(element, nodes, n_points_1d, mode, colors, node_color,
+                                                active_node_color)
+    else:
+        fig = _plot_element_basis_functions_2d(element, nodes, n_subdivisions, mode, colors, opacity,
+                                                colorscale, colorbar_title, node_color, active_node_color,
+                                                show_vertical_guides)
     fig.update_layout(width=width, height=height)
     return fig
 

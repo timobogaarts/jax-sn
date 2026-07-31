@@ -1,7 +1,8 @@
 User Guide
 -----------------
 
-This part of the documentation covers everything to get started *using* the code.
+This part of the documentation covers everything to get started *using* the code. It provides a basic recap of what was discussed in the theory section 
+and several notebooks show how to map these concepts to the code.
 
 .. toctree::
    :maxdepth: 2
@@ -11,6 +12,7 @@ This part of the documentation covers everything to get started *using* the code
    user_guide/code_structure.rst
    user_guide/energy_set.ipynb
    user_guide/quadrature_set.ipynb
+   user_guide/spatial_discretisation.ipynb
    user_guide/slab_single_angle.ipynb
    user_guide/first_operator.ipynb   
 

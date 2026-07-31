@@ -1,4 +1,5 @@
-Simplex simplication
+.. _simplex_elements:
+Simplex simplification
 ---------------------
 Simplices are elements with :math:`d+1` vertices in :math:`d` dimensions connected by straight lines or faces -- intervals, triangles, and tetrahedra. 
 Since they are built from the same building blocks, the full discretisation can be written exactly the same for all three dimensions, reducing implementations.
