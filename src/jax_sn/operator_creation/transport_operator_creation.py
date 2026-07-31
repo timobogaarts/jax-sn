@@ -1,6 +1,6 @@
 from jax_sn.solution_domain import SolutionDomain
 import jax.numpy as jnp
-from jax_sn.operators.transport_operator import SingleAngleForwardStrategy, SingleAngleInversionStrategy, MultiAngleForwardStrategy, MultiAngleInversionStrategy,TransportOperatorSingleAngle, TransportOperatorMultiAngle, TransportData
+from jax_sn.operators.transport_operator import SingleAngleForwardStrategy, SingleAngleInversionStrategy, MultiAngleForwardStrategy, MultiAngleInversionStrategy, TransportOperatorSingleAngle, TransportOperatorMultiAngle
 from .builders import Builder
 from jax_sn.operators.sweep_policy import Resort
 
