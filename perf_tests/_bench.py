@@ -24,13 +24,20 @@ import jax.numpy as jnp
 
 from _common import Measurement, measure, LiveTable
 from _discovery import discover_variants, Variant
+from jax_sn.operator_creation.builders import MultiGroupBuilder
 from jax_sn.operator_creation.default_strategies import DefaultMultiGroupStrategy
-from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
 from jax_sn.operators.single_group_operator import (
     SingleGroupData, SingleGroupOperator, ComposedSingleGroupStrategy,
 )
 from jax_sn.operators.transport_operator import VmapAnglesForward, VmapAnglesInversion
 from jax_sn.operators.scatter_operator import IndexedScatter
+
+
+def create_multi_group_operator(sd, qs, strategy):
+    """The whole-pipeline build every bench measures: solution domain + quadrature set + strategy tree
+    -> ``MultiGroupOperator``, via the builder rung."""
+    return MultiGroupBuilder.from_solution_domain(
+        sd, quadrature_set=qs, strategy=strategy).multi_group_operator
 
 
 def ones_in(op) -> jnp.ndarray:
@@ -76,9 +83,9 @@ def lift_forward(inner):
 
 
 def lift_inversion(inner):
-    """A discovered ``SingleAngleInversionStrategy`` lifted the way ``create_multi_group_operator`` used
-    to auto-resolve before the factory API flattened: ``VmapAnglesInversion`` if the kernel vectorises, else its
-    fused native multi-angle lift (e.g. a Warp level sweep)."""
+    """A discovered ``SingleAngleInversionStrategy`` lifted the way the old operator-creation factory
+    used to auto-resolve before the strategy tree became explicit: ``VmapAnglesInversion`` if the kernel
+    vectorises, else its fused native multi-angle lift (e.g. a Warp level sweep)."""
     if inner.vmappable():
         return VmapAnglesInversion(inner)
     native = type(inner).native_multi_angle()

@@ -67,7 +67,10 @@ class AbstractInversionStrategy(eqx.Module):
     def check_compatible(self, data: TransportData):
         '''Assert the data's sweep data provides every capability in :meth:`required_capabilities`.
         Permissive: a richer sweep data (more capabilities) passes. Run from the operator's
-        ``__check_init__``, so it fires at construction and on every ``eqx.tree_at``.'''
+        ``__check_init__``, so it fires when the operator is *constructed*. Note it does **not** fire
+        on ``eqx.tree_at``: that rebuilds via ``tree_unflatten``, which equinox deliberately does not
+        route through ``__check_init__``. Swapping a strategy in with ``tree_at`` therefore skips the
+        check -- construct the operator if you need it enforced.'''
         for capability in self.required_capabilities():
             assert isinstance(data.sweep_data, capability), \
                 f"{type(self).__name__} requires sweep data providing {capability.__name__}, " \

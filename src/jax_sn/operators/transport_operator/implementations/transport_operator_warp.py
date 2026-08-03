@@ -7,20 +7,28 @@ from jax_sn.solution_domain import SpatialData
 
 from ..transport_operator_strategies import SingleAngleInversionStrategy, MultiAngleInversionStrategy
 from ..transport_data import TransportData
-from .linear_tetrahedron_warp_kernel import (
-    single_angle_warp_sweep, multi_angle_warp_sweep,
-    level_single_angle_warp_sweep, level_multi_angle_warp_sweep,
-    NBASIS, NFACES,
-)
+from .simplex_warp_kernel import build_kernels, SUPPORTED, MAX_LENGTH
+
+
+def _element_shape(spatial_data: SpatialData):
+    '''The ``(n_basis, n_faces)`` the kernels are compiled for. Both are static shapes, so this
+    dispatch happens at trace time.'''
+    return spatial_data.n_basis, spatial_data.domain.etoe.shape[-1]
+
+
+def _kernels(data: TransportData):
+    '''The compiled kernel set for this operator's element (memoised in :func:`build_kernels`).'''
+    return build_kernels(*_element_shape(data.spatial_data))
+
 
 def _assert_warp_compatible(spatial_data: SpatialData):
-    '''Validate that the solution-domain data matches what the warp tetrahedron kernels expect.'''
-    assert spatial_data.precomputed_geometric_data.vol_jacobians_inv.shape[-2:] == (3, 3), \
-        f"For Warp kernel, expected vol_jacobians_inv shape (3,3), got {spatial_data.precomputed_geometric_data.vol_jacobians_inv.shape}"
-    assert spatial_data.n_basis == NBASIS, \
-        f"For warp kernel, expected {NBASIS} basis functions, got {spatial_data.n_basis}"
-    assert spatial_data.domain.etoe.shape[-1] == NFACES, \
-        f"For warp kernel, expected {NFACES} faces per elements, got {spatial_data.domain.etoe.shape[-1]}"
+    '''Validate that the solution-domain data matches what the warp simplex kernels expect.'''
+    n_basis, n_faces = _element_shape(spatial_data)
+    assert (n_basis, n_faces) in SUPPORTED, \
+        f"The Warp kernels support {sorted(SUPPORTED)} as (n_basis, n_faces); got ({n_basis}, {n_faces}). " \
+        f"Warp's fixed-size vector/matrix types stop at {MAX_LENGTH}."
+    assert spatial_data.precomputed_geometric_data.vol_jacobians_inv.shape[-1] <= 3, \
+        f"For Warp kernel, expected at most 3 spatial dimensions, got {spatial_data.precomputed_geometric_data.vol_jacobians_inv.shape}"
 
 # ---------------------------------------------------------------------------
 # Inversion strategies (single angle)
@@ -29,7 +37,7 @@ class WarpSequentialSweep(SingleAngleInversionStrategy):
     '''Single-angle inverse via the sequential Warp sweep kernel (no batching).'''
 
     def invert(self, data: TransportData, b):
-        return single_angle_warp_sweep(*data.inversion_args, b)
+        return _kernels(data).single_angle(*data.inversion_args, b)
 
     def check_compatible(self, data):
         _assert_warp_compatible(data.spatial_data)
@@ -53,7 +61,7 @@ class WarpLevelSweep(SingleAngleInversionStrategy):
     '''
 
     def invert(self, data: TransportData, b):
-        return level_single_angle_warp_sweep(*data.inversion_args, b, data.sweep_data.level_fwd)
+        return _kernels(data).level_single_angle(*data.inversion_args, b, data.sweep_data.level_fwd)
 
     @classmethod
     def required_capabilities(cls):
@@ -90,7 +98,7 @@ class WarpSequentialAngles(MultiAngleInversionStrategy):
         return WarpSequentialSweep()
 
     def invert(self, data: TransportData, b):
-        return multi_angle_warp_sweep(*data.inversion_args, b)
+        return _kernels(data).multi_angle(*data.inversion_args, b)
 
     def check_compatible(self, data):
         _assert_warp_compatible(data.spatial_data)
@@ -104,7 +112,7 @@ class WarpLevelAngles(MultiAngleInversionStrategy):
         return WarpLevelSweep()
 
     def invert(self, data: TransportData, b):
-        return level_multi_angle_warp_sweep(*data.inversion_args, b, data.sweep_data.level_fwd)
+        return _kernels(data).level_multi_angle(*data.inversion_args, b, data.sweep_data.level_fwd)
 
     def required_capabilities(self):
         return (ProvidesLevels,)

@@ -21,6 +21,7 @@ NOTEBOOKS = {
     "user_guide/quadrature_set.ipynb": {"source": "examples/quadrature_set.ipynb", "ci": True},
     "user_guide/first_operator.ipynb": {"source": "examples/first_operator.ipynb", "ci": True},
     "user_guide/slab_single_angle.ipynb": {"source": "examples/slab_single_angle.ipynb", "ci": True},
+    "user_guide/multi_angle.ipynb": {"source": "examples/multi_angle.ipynb", "ci": True},
     "user_guide/spatial_discretisation.ipynb": {"source": "examples/spatial_discretisation.ipynb", "ci": True},
     # Needs OpenMC + downloaded FENDL cross-section data (via mcbb) -- hosted CI can't
     # produce that, so this keeps committed outputs; refresh locally via

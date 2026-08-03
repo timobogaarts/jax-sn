@@ -63,7 +63,7 @@ def test_multigroup_rhs_construction(bb_mgop):
 @pytest.mark.slow
 def test_multigroup_reduced_quadrature(bb_mgop):
     from jax_sn.quadrature_set import QuadratureSetReduced
-    from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
+    from jax_sn.operator_creation.builders import MultiGroupBuilder
     from jax_sn.operator_creation.default_strategies import DefaultMultiGroupStrategy
     from jax_sn.solvers.right_hand_side import IsotropicSourceSingleGroup, solve_multigroup_operator_rhs
 
@@ -76,7 +76,9 @@ def test_multigroup_reduced_quadrature(bb_mgop):
 
     def _solve(qset):
         strategy = DefaultMultiGroupStrategy.default_multi_group_strategy(checkpoint=False)
-        op  = _downscattering_only(create_multi_group_operator(solution_domain, qset, strategy))
+        built = MultiGroupBuilder.from_solution_domain(
+            solution_domain, quadrature_set=qset, strategy=strategy).multi_group_operator
+        op  = _downscattering_only(built)
         src = IsotropicSourceSingleGroup.from_operator(op, jnp.ones(op.out_structure().shape[2:]), 0)
         solver = _block_solver(op, lx.BiCGStab(1e-13, 1e-15, max_steps=160))
         chain_strategy = ComposedMultiGroupChainStrategy.from_composed(op.strategy)

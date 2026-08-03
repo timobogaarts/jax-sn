@@ -18,9 +18,8 @@ import lineax as lx
 import numpy as onp
 
 from _common import peak_mb, time_ms, safe_run, short_exc, Measurement, LiveTable
-from _bench import default_multi_group_strategies
+from _bench import create_multi_group_operator, default_multi_group_strategies
 from jax_sn.solvers.base_solvers import MultiGroupLowerTriangularBlockSolver
-from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
 
 
 def _bicgstab():

@@ -2,10 +2,10 @@
 This file tests that rebuilding an operator after a geometry change actually performs a valid
 topological sort, and that skipping it would have been wrong.
 
-The two cases are the two :class:`~jax_sn.operators.sweep_policy.SweepPolicy` choices: ``Resort()``
-(the default -- recompute the sort for the current geometry) versus ``Reuse(sweep_data)`` (keep the
-existing plan). Reusing is correct only when the sweep order cannot have changed, which is what the
-dimension split below pins down.
+Rebuilding always re-sorts, so the two cases are the fresh sort versus a deliberately stale one
+spliced in with ``equinox.tree_at``. The stale sort is correct only when the sweep order cannot have
+changed, which is what the dimension split below pins down -- and a storage policy that holds the
+sweep tier refuses to move the vertices for exactly that reason.
 
 
 The trick is a **dimension-uniform** mesh: two ``d``-simplices glued on their shared ``(d-1)``-face,
@@ -38,10 +38,8 @@ from jax_sn.solution_domain.basix_fem import BasixLagrangianSimplex
 from jax_sn.solution_domain.solution_domain import SolutionDomain
 from jax_sn.quadrature_set.quadrature_set_base import QuadratureSet
 from jax_sn.operators.transport_operator import BasicSweepData
-from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
 from jax_sn.operator_creation.default_strategies import DefaultMultiGroupStrategy
-from jax_sn.operator_creation.builders import FixedFemTopologyBuilder, FixedGeometryBuilder
-from jax_sn.operators.sweep_policy import Resort, Reuse
+from jax_sn.operator_creation.builders import MultiGroupBuilder
 
 from bb_setup import transport_operator_from_mgop
 
@@ -115,17 +113,22 @@ def _strategy(batch_size=4):
 
 
 def _build_mgop(solution_domain, quad, batch_size=4):
-    return create_multi_group_operator(solution_domain, quad, _strategy(batch_size))
+    return MultiGroupBuilder.from_solution_domain(
+        solution_domain, quadrature_set=quad,
+        strategy=_strategy(batch_size)).multi_group_operator
 
 
-def _builder(verts, conn, element, quad):
+def _builder(verts, conn, element, quad, batch_size=4):
     '''
-    The rung for a deforming mesh: the connectivity-only tier is stored, so the topology is built
-    once and the vertices stay free to update.
+    The policy for a deforming mesh: everything the vertices do not determine is stored, so the
+    topology is built once and the vertices stay free to update. The sweep tier is *not* stored --
+    it depends on the vertices -- so it is rebuilt on every update.
     '''
     domain = Domain.from_mesh_and_cross_sections((verts, conn), element.face_template, _cross_sections(conn))
-    return FixedFemTopologyBuilder.from_solution_domain(
-        SolutionDomain.from_element_and_domain(element, domain), quad)
+    return MultiGroupBuilder.varying("vertices").from_solution_domain(
+        SolutionDomain.from_element_and_domain(element, domain),
+        quadrature_set = quad,
+        strategy       = _strategy(batch_size))
 
 
 def _order(mgop):
@@ -162,9 +165,8 @@ def test_basic_sweep_data_reconstruct(dim):
 
 @pytest.mark.parametrize("dim", [1, 2, 3])
 def test_builder_resort(dim):
-    '''``updated(vertices=...)`` re-sorts under the default ``Resort`` policy, while ``Reuse`` keeps
-    the stale order -- which is wrong exactly when the order changed (d>=2) and harmless when it did
-    not (d=1).'''
+    '''``updated(vertices=...)`` re-sorts, while a sort spliced back in keeps the stale order --
+    which is wrong exactly when the order changed (d>=2) and harmless when it did not (d=1).'''
     element = BasixLagrangianSimplex(1, dim)
     verts0, conn = _glued_simplices(dim, lift=0.0)
     verts1, _    = _glued_simplices(dim, lift=_LIFT[dim])
@@ -173,15 +175,16 @@ def test_builder_resort(dim):
     mgop_base  = _build_mgop(_solution_domain(verts0, conn, element), quad)
     mgop_fresh = _build_mgop(_solution_domain(verts1, conn, element), quad)
 
-    # Moving the vertices is a primitive update; everything derived follows. The sweep plan is not
-    # derived (it is combinatorial), so which of the two policies applies is stated at build time.
+    # Moving the vertices is a primitive update; everything derived follows, the combinatorial tier
+    # included. Skipping the re-sort is no longer a policy -- it takes a deliberate tree_at.
     moved     = _builder(verts0, conn, element, quad).updated(vertices=verts1)
-    mgop_with = moved.multi_group_operator(_strategy(), Resort())
-    mgop_no   = moved.multi_group_operator(_strategy(), Reuse(mgop_base.data.sweep_data))
+    mgop_with = moved.multi_group_operator
+    mgop_no   = eqx.tree_at(lambda m : m.data.non_differentiable_data.sweep_data,
+                            mgop_with, mgop_base.data.sweep_data)
 
     # --- the sort itself ---
-    assert (_order(mgop_with) == _order(mgop_fresh)).all(), "Resort must recompute the sort for the deformed mesh"
-    assert (_order(mgop_no) == _order(mgop_base)).all(),    "Reuse must keep the base (stale) sort"
+    assert (_order(mgop_with) == _order(mgop_fresh)).all(), "rebuilding must re-sort for the deformed mesh"
+    assert (_order(mgop_no) == _order(mgop_base)).all(),    "the spliced sort must be the base (stale) one"
     if dim == 1:
         assert (_order(mgop_base) == _order(mgop_fresh)).all()
     else:
@@ -205,16 +208,37 @@ def test_builder_resort(dim):
 
 @pytest.mark.parametrize("dim", [1, 2, 3])
 def test_frozen_vertices_are_refused(dim):
-    '''A rung that stores geometry cannot move the vertices: it refuses rather than going stale.'''
+    '''A policy that stores geometry cannot move the vertices: it refuses rather than going stale.'''
     element = BasixLagrangianSimplex(1, dim)
     verts0, conn = _glued_simplices(dim, lift=0.0)
     verts1, _    = _glued_simplices(dim, lift=_LIFT[dim])
     quad = _quad(_ANGLE[dim])
 
-    fixed_geometry = _builder(verts0, conn, element, quad).materialise(FixedGeometryBuilder)
+    fixed_geometry = _builder(verts0, conn, element, quad).materialise(
+        MultiGroupBuilder.varying("quadrature_set"))
     assert "vertices" in fixed_geometry.graph().frozen
     with pytest.raises(ValueError, match="vertices"):
         fixed_geometry.updated(vertices=verts1)
+
+
+@pytest.mark.parametrize("dim", [1, 2, 3])
+def test_storing_the_sweep_tier_freezes_the_vertices(dim):
+    '''
+    What ``Reuse`` used to be, as a refusal instead of silent staleness: a policy that holds the
+    sweep tier is by construction one whose vertices cannot move.
+    '''
+    element = BasixLagrangianSimplex(1, dim)
+    verts0, conn = _glued_simplices(dim, lift=0.0)
+    verts1, _    = _glued_simplices(dim, lift=_LIFT[dim])
+    quad = _quad(_ANGLE[dim])
+
+    policy = MultiGroupBuilder.varying("cross_sections_indexed")
+    assert "non_differentiable_data" in policy.graph().stored     # the sort is held, not rebuilt
+    assert "sweep_data" in policy.graph().projected
+
+    fixed = _builder(verts0, conn, element, quad).materialise(policy)
+    with pytest.raises(ValueError, match="vertices"):
+        fixed.updated(vertices=verts1)
 
 
 if __name__ == "__main__":

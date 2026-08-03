@@ -11,10 +11,9 @@ import jax.numpy as jnp
 import lineax as lx
 
 from _common import peak_mb, time_ms, short_exc, Measurement, LiveTable
-from _bench import default_multi_group_strategies
+from _bench import create_multi_group_operator, default_multi_group_strategies
 from bench_solve import _bicgstab, _n_iter
 from jax_sn.solvers.base_solvers import MultiGroupLowerTriangularBlockSolver
-from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
 from jax_sn.parametrisation import MultigroupOperatorParametrisedVerticesXS
 
 
