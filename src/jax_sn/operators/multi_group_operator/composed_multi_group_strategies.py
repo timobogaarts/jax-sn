@@ -12,11 +12,10 @@ import jax.numpy as jnp
 import equinox as eqx
 
 from jax_sn.operators.operator_data import OperatorData
-from jax_sn.operators.base_linear_operator import TransposableStrategy
 
 from jax_sn.operators.scatter_operator import GatherScatterData, SingleGroupGatherScatterStrategy
 from jax_sn.operators.single_group_operator import SingleGroupData
-from .multi_group_operator_base import MultiGroupStrategyBase
+from .multi_group_operator_base import MultiGroupStrategy, MultiGroupChainStrategy
 from ..single_group_operator.single_group_operators_base import SingleGroupChainStrategy
 
 
@@ -35,7 +34,7 @@ class _VmapLift(eqx.Module):
         return jax.vmap(body)(jnp.arange(n_energy_groups))
 
 
-class MultiGroupChainGatherStrategy(MultiGroupStrategyBase):
+class MultiGroupChainGatherStrategy(MultiGroupStrategy):
     r'''
     Uses a chain and a gather-scatter that fully define the action of a single group, mapping in some way
     over all the groups.
@@ -83,24 +82,7 @@ class MultiGroupChainGatherVmapStrategy(_VmapLift, MultiGroupChainGatherStrategy
     '''Lift by batching the entire vmap. Naturally most parallelizable but significantly increases memory (use on small problems only)'''
 
 
-class MultiGroupChainStrategyBase(TransposableStrategy):
-    r'''
-    Applies a chain over every group (groups don't couple, unlike :class:`MultiGroupChainGatherStrategy` --
-    no gather-scatter). Abstract on purpose: a subclass may fuse the whole chain across the group axis
-    (its own kernel, no per-group sub-strategy), or lift a per-group :class:`SingleGroupChainStrategy` as
-    :class:`ComposedMultiGroupChainStrategy` does below.
-    '''
-
-    @abstractmethod
-    def forward(self, operator_data: OperatorData, x):
-        ...
-
-    @abstractmethod
-    def transpose(self, operator_data: OperatorData, x):
-        ...
-
-
-class ComposedMultiGroupChainStrategy(MultiGroupChainStrategyBase):
+class ComposedMultiGroupChainStrategy(MultiGroupChainStrategy):
     r'''
     Applies a :class:`SingleGroupChainStrategy` independently over every group. Used to precondition a
     per-group right-hand side with the same group-lift (scan/vmap, checkpoint) as the operator it
@@ -130,6 +112,9 @@ class ComposedMultiGroupChainStrategy(MultiGroupChainStrategyBase):
         if isinstance(composed, MultiGroupChainGatherScanStrategy):
             return MultiGroupChainScanStrategy(composed.single_group_chain_strategy, checkpoint=composed.checkpoint)
         raise TypeError(f"No matching chain-only lift for {type(composed).__name__}.")
+
+    def default_sweep_data(self):
+        return self.single_group_chain_strategy.default_sweep_data()
 
 
 class MultiGroupChainScanStrategy(_ScanLift, ComposedMultiGroupChainStrategy):

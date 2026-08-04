@@ -53,19 +53,19 @@ need a matching exclusion there so their committed outputs survive.
 - `energy_set/` — multigroup energy structure/overlap.
 - `operators/` — the S_N operators; see below.
 - `operator_creation/` — `builders.py` (the builder ladder: one rung per operator kind, the only path from primitives to an operator; see below) plus `default_strategies.py` (`DefaultMultiGroupStrategy` — ready-made vmap/pallas/warp strategy trees).
-- `parametrisation/` — single-group/multigroup/transport parametrisations for optimisation/gradient workflows (topologically sorted, see `test_parametrisation_toposort.py`). Superseded by the builders for new code: a parametrisation there is `.updated(...)` on a builder rung, or `eqx.tree_at` plus a rebuild.
 - `solvers/` — direct solvers built on the operators: block forward/back-substitution for (block) lower-triangular multigroup systems (`MultiGroupLowerTriangularBlockSolver` in `base_solvers.py`) and configurable right-hand-sides (`right_hand_side.py`).
 - `variance_reduction/` — FW-CADIS (`fw_cadis.py`); also holds the continuous adjoint (`continuous_adjoint.py`), which is the forward `MultiGroupOperator` applied to transformed data rather than a separate operator.
-- `tools/` — mesh/graph/permutation utilities, memory analysis, and `derivation.py` (the `DerivedModule` machinery the builders are written in).
+- `tools/` — mesh/graph/permutation utilities, memory analysis, and `parametrisation.py` (the `ParametrisedModule` machinery the builders are written in). Also `parametrisation_tools.py`, an unrelated leftover: scipy/objective glue for optimisation loops, imported by nothing in-package.
 - `analytical_solutions/` — closed-form references (e.g. `slab.py`) used by tests/examples.
 
 ### Problem specification: primitives in, everything else derived
 The builders exist because derived data used to be *cached* in the operator pytree and re-derived by
-hand wherever a primitive changed (the old `parametrisation` reconstructs), so the derivation lived in
-two places and could drift. Now a class declares only *what depends on what* and the storage policy is
-generated from that graph.
+hand wherever a primitive changed (the `parametrisation/` package, since removed, held one
+reconstruct function per parametrised quantity), so the derivation lived in two places and could
+drift. Now a class declares only *what depends on what* and the storage policy is generated from that
+graph.
 
-`tools/derivation.py` is the mechanism. A `DerivedModule` subclass sets `DERIVATIONS = {quantity:
+`tools/parametrisation.py` is the mechanism. A `ParametrisedModule` subclass sets `DERIVATIONS = {quantity:
 function}`, where a derivation's **parameter names are its dependencies** and anything without a
 derivation is a **primitive**. A concrete subclass declares as fields the primitives plus whichever
 derived quantities it stores; accessors for the rest are injected, so `x.face_normals` is a field read
@@ -79,8 +79,10 @@ override an injected accessor, so only an abstract class is safe to inherit from
 Storage is stated as intent, not as a field list: `.varying(*primitives)` generates the subclass
 keeping those updatable and storing as much of the rest as the graph allows, `.freezing(*primitives)`
 the converse, `.storing(*quantities)` states it directly (to seed from data you already have, then
-`.materialise(cls)` into the policy you want). `.updated(**primitives)` replaces primitives and
-everything downstream follows. Generated classes are memoised on `(base, stored)` — a class object is
+`.materialise(cls)` into the policy you want). Each has a past-tense instance-side twin that converts
+rather than generates — `.frozen(...)` / `.varied(...)` / `.stored(...)`, i.e.
+`builder.frozen("element")` is `builder.materialise(Builder.freezing("element"))`.
+`.updated(**primitives)` replaces primitives and everything downstream follows. Generated classes are memoised on `(base, stored)` — a class object is
 part of a treedef, so two structurally identical but distinct classes would retrace.
 
 `operator_creation/builders.py` is the ladder over that mechanism, along two axes. The **operator**
@@ -132,7 +134,14 @@ MultiGroupBuilder.from_solution_domain(
 ```
 
 and the same shape on the other rungs (`.operator_data`, `.transport_operator`, `.mass_operator`, …).
-`sweep_data_kwargs` is keyword-only and defaults to `()`. The shared `OperatorData` a rung assembles is
+`sweep_data_kwargs` is keyword-only and defaults to `()`. One use is load-bearing: a leveled sweep
+(`LeveledSweepData`, what the Warp strategies want) pads its level arrays to a fixed width, and left
+to itself it reads that width off the levels — a tracer once the primitive it derives from is one, so
+`builder.updated(vertices=...)` under `jit` dies with a `ConcretizationTypeError`. Pinning it
+(`sweep_data_kwargs=(("maximum_number_of_levels", n),)`, with `n` read off a concretely-built sweep as
+`sweep_data.level_fwd.n_levels`) makes the rebuild traceable; too small a value is a clean equinox
+runtime error, not silent corruption. `perf_tests/_bench.create_multi_group_builder` does this.
+The shared `OperatorData` a rung assembles is
 `DiscretisationData(spatial, angular)` (differentiable: FEM/geometry/cross-sections + `AngularData`
 quadrature & harmonics) + `NonDifferentiableData(sweep_data)`; the sweep data type is chosen by the
 strategy's `default_sweep_data()`. Note the strategy argument is **one composed `multi_group_strategy`**,
@@ -140,7 +149,7 @@ not a flat list of per-axis kwargs — the composition happens by nesting strate
 `DefaultMultiGroupStrategy` in `operator_creation/default_strategies.py` for canonical trees).
 
 The multigroup strategy nests down through the axes:
-- **Multigroup** (`operators/multi_group_operator/`): `MultiGroupStrategyBase` → `MultiGroupChainGatherStrategy`,
+- **Multigroup** (`operators/multi_group_operator/`): `MultiGroupStrategy` → `MultiGroupChainGatherStrategy`,
   which holds a `SingleGroupChainStrategy` + a `SingleGroupGatherScatterStrategy` and lifts the per-group
   body over the energy-group axis via `_lift_over_groups`. Two lifts, mixed in as `_ScanLift`/`_VmapLift`:
   `MultiGroupChainGatherScanStrategy` (serialising `lax.scan`, optional `checkpoint`) and

@@ -40,6 +40,19 @@ def create_multi_group_operator(sd, qs, strategy):
         sd, quadrature_set=qs, strategy=strategy).multi_group_operator
 
 
+def create_multi_group_builder(sd, qs, strategy):
+    """The same build, stopped at the builder and frozen down to a vertices + cross-section
+    parametrisation -- for benches that differentiate through a rebuild."""
+    builder = MultiGroupBuilder.from_solution_domain(sd, quadrature_set=qs, strategy=strategy)
+    # A leveled sweep pads its level arrays to a fixed width. Left to itself it reads that width off
+    # the levels, which is a tracer once the vertices are -- so pin it to what this domain needs, the
+    # same width `LeveledSweepData.reconstruct` reuses. Plain sweeps have no levels and no kwarg.
+    levels = getattr(builder.sweep_data, "level_fwd", None)
+    if levels is not None:
+        builder = builder.updated(sweep_data_kwargs=(("maximum_number_of_levels", levels.n_levels),))
+    return builder.varied("vertices", "cross_sections_indexed")
+
+
 def ones_in(op) -> jnp.ndarray:
     return jnp.ones(op.in_structure().shape)
 

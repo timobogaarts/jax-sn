@@ -4,7 +4,7 @@ Builders: a derivation graph per operator kind.
 Two axes. The *operator* axis is this file's class ladder -- each rung adds the primitives that
 operator is built from (its strategy, its angle, its energy group) and the quantities that follow.
 The *storage* axis is generated: ``.varying(...)`` / ``.freezing(...)`` on any rung returns a class
-storing everything the named primitives do not determine (see :mod:`jax_sn.tools.derivation`).
+storing everything the named primitives do not determine (see :mod:`jax_sn.tools.parametrisation`).
 
 Which tier an operator needs is visible in its registry rather than declared: only the rungs whose
 operator actually sweeps carry ``sweep_data`` and mark it ``NON_DIFFERENTIABLE``. The others build
@@ -23,7 +23,7 @@ from jax_sn.operators.mass_operator import MassData, MassOperator, MassStrategy
 from jax_sn.operators.moment_operator import (
     DiscreteData, DiscreteOperator, FluxMomentStrategy, MomentData, MomentOperator,
 )
-from jax_sn.operators.multi_group_operator import MultiGroupOperator, MultiGroupStrategyBase
+from jax_sn.operators.multi_group_operator import MultiGroupOperator, MultiGroupStrategy
 from jax_sn.operators.operator_data import (
     AngularData, DiscretisationData, NonDifferentiableData, OperatorData,
 )
@@ -42,7 +42,7 @@ from jax_sn.quadrature_set import QuadratureSetBase
 from jax_sn.solution_domain import SpatialData
 from jax_sn.solution_domain.base_fem import Element, FEMMatrices, PrecomputedGeometricData
 from jax_sn.solution_domain.solution_domain import SolutionDomain
-from jax_sn.tools.derivation import DerivedModule
+from jax_sn.tools.parametrisation import ParametrisedModule
 
 
 class TopologyBuild(eqx.Module):
@@ -133,7 +133,7 @@ def discretisation_data(spatial_data : SpatialData, angular_data : AngularData) 
 # -- the combinatorial tier -------------------------------------------------------------------------
 
 def sweep_data(geometric_domain : GeometricDomain, quadrature_set : QuadratureSetBase,
-               strategy : MultiGroupStrategyBase,
+               strategy : MultiGroupStrategy,
                sweep_data_kwargs : Tuple[Tuple[str, Any], ...]) -> SweepData:
     # The strategy picks the type, so the two cannot disagree; inline rather than its own quantity so
     # that no `type` ever becomes a stored pytree leaf.
@@ -153,7 +153,7 @@ def operator_data(discretisation_data : DiscretisationData,
 # -- the operators themselves ------------------------------------------------------------------------
 
 def multi_group_operator(operator_data : OperatorData,
-                         strategy : MultiGroupStrategyBase) -> MultiGroupOperator:
+                         strategy : MultiGroupStrategy) -> MultiGroupOperator:
     return MultiGroupOperator(operator_data, strategy, transpose_bool=False)
 
 
@@ -262,7 +262,7 @@ def _topology_build_of(geometric_domain : GeometricDomain) -> TopologyBuild:
 #                                          The spine
 # ==================================================================================================
 
-class SpatialBuilder(DerivedModule, abstract=True):
+class SpatialBuilder(ParametrisedModule, abstract=True):
     '''
     The problem's spatial description: a mesh, an element and its materials.
     '''
@@ -318,7 +318,7 @@ class SpatialBuilder(DerivedModule, abstract=True):
             solution_domain        = solution_domain,
             **primitives,
         )
-        target = base.varying(*(base.graph().primitives - spine)) if cls._derivation_abstract else cls
+        target = base.varying(*(base.graph().primitives - spine)) if cls._parametrisation_abstract else cls
         return seed if type(seed) is target else seed.materialise(target)
 
 
@@ -376,7 +376,7 @@ class MultiGroupBuilder(SweptBuilder, abstract=True):
     PROJECTIONS = {**SweptBuilder.PROJECTIONS,
                    "operator_data": {"multi_group_operator": lambda op : op.data}}
 
-    strategy : MultiGroupStrategyBase
+    strategy : MultiGroupStrategy
 
 
 class SingleGroupBuilderBase(SweptBuilder, abstract=True):

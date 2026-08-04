@@ -1,8 +1,8 @@
 '''
-Module to handle flat dependent modules in a relatively simple way.
-In essense, a derived module is a graph (a sweep data depends on face normals which depend on vertices), and so we use some graph tools to create the graph,
+Module to handle flat parametrised modules in a relatively simple way.
+In essense, a parametrised module is a graph (a sweep data depends on face normals which depend on vertices), and so we use some graph tools to create the graph,
 check that what you are modifying makes sense, etc.
-Used for parametrizing the jax_sn modules.
+Used for parametrizing the jax_sn modules: the primitives are the parameters, everything else follows.
 
 [Claude generated most of this!]
 '''
@@ -23,7 +23,7 @@ import jax
 __all__ = [
     "MissingQuantityError",        
     "Graph",
-    "DerivedModule",
+    "ParametrisedModule",
 ]
 
 
@@ -132,7 +132,7 @@ def _projection_paths(projections: Mapping[str, Mapping[str, Callable]],
 class Graph(NamedTuple):
     '''
     What a class's storage policy implies. All derived from the registry plus which quantities the
-    class declared as fields; see :meth:`DerivedModule.graph`.
+    class declared as fields; see :meth:`ParametrisedModule.graph`.
     '''
 
     quantities     : FrozenSet[str]                    # everything with a derivation
@@ -158,7 +158,7 @@ class Graph(NamedTuple):
     __repr__ = __str__          # the default tuple repr is unreadable, and this is for reading
 
 
-def _missing_primitives(instance: "DerivedModule", name: str) -> FrozenSet[str]:
+def _missing_primitives(instance: "ParametrisedModule", name: str) -> FrozenSet[str]:
     '''Primitives ``name`` needs that are ``None`` on ``instance``.'''
     graph = type(instance).graph()
     if name in graph.stored or name in graph.projected:
@@ -168,7 +168,7 @@ def _missing_primitives(instance: "DerivedModule", name: str) -> FrozenSet[str]:
     )
 
 
-def _evaluate(instance: "DerivedModule", name: str, memo: Dict[str, Any]) -> Any:
+def _evaluate(instance: "ParametrisedModule", name: str, memo: Dict[str, Any]) -> Any:
     '''
     Resolve ``name``, reusing anything already in ``memo``.
 
@@ -282,7 +282,7 @@ def _generated(base: type, stored: FrozenSet[str]) -> type:
     return cls
 
 
-class _DerivedModuleMeta(type(eqx.Module)):
+class _ParametrisedModuleMeta(type(eqx.Module)):
     '''
     Instantiating an abstract class builds the policy that stores nothing.
 
@@ -293,12 +293,12 @@ class _DerivedModuleMeta(type(eqx.Module)):
     '''
 
     def __call__(cls, *args, **kwargs):
-        if cls.__dict__.get("_derivation_abstract") and cls.DERIVATIONS:
+        if cls.__dict__.get("_parametrisation_abstract") and cls.DERIVATIONS:
             return cls.freezing()(*args, **kwargs)
         return super().__call__(*args, **kwargs)
 
 
-class DerivedModule(eqx.Module, metaclass=_DerivedModuleMeta):
+class ParametrisedModule(eqx.Module, metaclass=_ParametrisedModuleMeta):
     '''
     Base for modules built from a derivation registry.
 
@@ -309,7 +309,7 @@ class DerivedModule(eqx.Module, metaclass=_DerivedModuleMeta):
 
     Declare intermediate classes ``abstract=True``::
 
-        class Interface(DerivedModule, abstract=True): ...
+        class Interface(ParametrisedModule, abstract=True): ...
 
     which suppresses that injection. Since it is an injected accessor that makes a class unsafe to
     inherit from -- a field cannot override one -- an abstract class *is* safe to inherit from, so
@@ -327,7 +327,7 @@ class DerivedModule(eqx.Module, metaclass=_DerivedModuleMeta):
 
     def __init_subclass__(cls, abstract : bool = False, **kwargs):
         super().__init_subclass__(**kwargs)
-        type.__setattr__(cls, "_derivation_abstract", abstract)
+        type.__setattr__(cls, "_parametrisation_abstract", abstract)
         if abstract:
             return
         declared = set(getattr(cls, "__annotations__", {}))
@@ -433,6 +433,7 @@ class DerivedModule(eqx.Module, metaclass=_DerivedModuleMeta):
         '''
         A subclass storing everything that ``frozen`` determines. Freezing a primitive no quantity
         is fully determined by is a no-op; the result's ``graph().frozen`` says what was achieved.
+        See :meth:`frozen` for the instance-side spelling.
         '''
         return _generated(cls._generation_base(), cls.frontier(*frozen))
 
@@ -442,7 +443,7 @@ class DerivedModule(eqx.Module, metaclass=_DerivedModuleMeta):
         A subclass storing exactly ``quantities``. Unlike :meth:`freezing`, this states the storage
         directly rather than deriving it, so it can hold something a frontier would not pick -- use
         it to seed an instance from data you already have, then :meth:`materialise` into the policy
-        you want.
+        you want. See :meth:`stored` for the instance-side spelling.
         '''
         unknown = set(quantities) - set(cls.DERIVATIONS)
         if unknown:
@@ -452,13 +453,34 @@ class DerivedModule(eqx.Module, metaclass=_DerivedModuleMeta):
 
     @classmethod
     def varying(cls, *free : str) -> type:
-        '''A subclass that keeps ``free`` updatable and stores as much of the rest as it can.'''
+        '''
+        A subclass that keeps ``free`` updatable and stores as much of the rest as it can. See
+        :meth:`varied` for the instance-side spelling.
+        '''
         primitives = _primitives_of(cls.DERIVATIONS)
         unknown = set(free) - primitives
         if unknown:
             raise ValueError(f"Unknown primitive(s) {sorted(unknown)}. "
                              f"Known primitives: {sorted(primitives)}.")
         return cls.freezing(*(primitives - set(free)))
+
+    # -- the same three from an instance --------------------------------------------------------
+    #
+    # Past-tense names, because these return a converted instance rather than a policy: `frozen` is
+    # `materialise(freezing(...))`, and so on down. Promoting pays each newly stored derivation once;
+    # demoting frees more primitives to update.
+
+    def frozen(self, *frozen : str) -> "ParametrisedModule":
+        '''This instance under :meth:`freezing`.'''
+        return self.materialise(type(self).freezing(*frozen))
+
+    def stored(self, *quantities : str) -> "ParametrisedModule":
+        '''This instance under :meth:`storing`.'''
+        return self.materialise(type(self).storing(*quantities))
+
+    def varied(self, *free : str) -> "ParametrisedModule":
+        '''This instance under :meth:`varying`.'''
+        return self.materialise(type(self).varying(*free))
 
     @classmethod
     def _generation_base(cls) -> type:
@@ -467,7 +489,7 @@ class DerivedModule(eqx.Module, metaclass=_DerivedModuleMeta):
         cannot override one, so only an abstract class is safe to generate from.
         '''
         for base in cls.__mro__:
-            if base.__dict__.get("_derivation_abstract"):
+            if base.__dict__.get("_parametrisation_abstract"):
                 return base
         raise TypeError(
             f"{cls.__name__} has no abstract ancestor to generate from. Declare the class carrying "
@@ -483,7 +505,7 @@ class DerivedModule(eqx.Module, metaclass=_DerivedModuleMeta):
             n for n in type(self).graph().quantities if not _missing_primitives(self, n)
         )
 
-    def updated(self, **primitives: Any) -> "DerivedModule":
+    def updated(self, **primitives: Any) -> "ParametrisedModule":
         '''
         Replace primitives, keeping everything else. Only ``graph().free`` primitives may be
         replaced; everything derived from them follows automatically.
@@ -508,14 +530,13 @@ class DerivedModule(eqx.Module, metaclass=_DerivedModuleMeta):
                 f"{cls.__name__} cannot update {sorted(frozen)}: it stores {culprits}, derived "
                 f"from {'it' if len(frozen) == 1 else 'them'}. Free to update: "
                 f"{sorted(graph.free)}. Move to "
-                f"`{cls._generation_base().__name__}.varying({', '.join(map(repr, sorted(graph.free | frozen)))})` "
-                f"first, or use equinox.tree_at directly if you accept the inconsistency."
+                f"`{cls._generation_base().__name__}.varying({', '.join(map(repr, sorted(graph.free | frozen)))})` "            
             )
 
         values = {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}
         return cls(**{**values, **primitives})
 
-    def materialise(self, cls: type) -> "DerivedModule":
+    def materialise(self, cls: type) -> "ParametrisedModule":
         '''
         Convert to another class over the same registry, storing whatever that class stores.
         Promoting pays a repeated derivation once; demoting frees more primitives to update.
