@@ -36,6 +36,25 @@ jobs:
           pip install ".[geometry]"
           pip install -r docs/requirements.txt
 
+      # TEMPORARY: the parametrization notebook's gradient cell times out (>600s) here
+      # while taking ~3s locally on identical package versions. This reproduces just that
+      # cell with compile logging and a periodic stack dump, so the log says whether it is
+      # sitting in XLA compilation, in a runtime execute, or in Python. Remove once known.
+      - name: Diagnose parametrization gradient cell
+        timeout-minutes: 8
+        continue-on-error: true
+        run: python -u tools/debug_parametrization_cell.py
+
+      # Same run with equinox's runtime error checks compiled out, which removes the
+      # jax.pure_callback that eqx.error_if embeds in the graph (the level computation
+      # uses two). If this one passes while the one above hangs, the callback is the cause.
+      - name: Diagnose again with equinox runtime errors off
+        timeout-minutes: 8
+        continue-on-error: true
+        env:
+          EQX_ON_ERROR: "off"
+        run: python -u tools/debug_parametrization_cell.py
+
       - name: Build docs
         run: bash build_docs.sh
 
