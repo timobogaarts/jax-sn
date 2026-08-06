@@ -8,11 +8,14 @@ import pytest
 from jax_sn.operators.multi_group_operator import ComposedMultiGroupChainStrategy
 from jax_sn.solvers.base_solvers import MultiGroupLowerTriangularBlockSolver
 from jax_sn.solvers.right_hand_side import IsotropicSourceSingleGroup, solve_multigroup_operator_rhs
-from jax_sn.parametrisation.multigroup_parametrisation import MultigroupOperatorParametrisedXS
 
 from bb_setup import downscattering_only as _downscattering_only
 
-_DIM_DEGREE = (3, 1)   
+_DIM_DEGREE = (3, 1)
+
+
+def _mgop_xs(mgop):
+    return mgop.data.spatial_data.domain.cross_sections_indexed.cross_section_data
 
 
 @pytest.mark.slow
@@ -28,12 +31,13 @@ def test_mg_block_solve_ad(bb_mgop):
     rhs    = IsotropicSourceSingleGroup.from_operator(mgop, source_total[0] * onp.sqrt(4.0 * onp.pi), 0)
 
     def solve_sum(theta):
-        op = MultigroupOperatorParametrisedXS.reconstruct_operator(mgop, theta)
+        # cross sections live in one canonical location, so transport and gather-scatter both follow.
+        op = eqx.tree_at(_mgop_xs, mgop, theta)
         chain_strategy = ComposedMultiGroupChainStrategy.from_composed(op.strategy)
         val = solve_multigroup_operator_rhs(op, rhs, solver, chain_strategy).value
         return jnp.sum(val)
 
-    theta0 = MultigroupOperatorParametrisedXS.theta_base(mgop)
+    theta0 = _mgop_xs(mgop)
     grad   = eqx.filter_jit(jax.grad(solve_sum))(theta0)
     base   = solve_sum(theta0)
 

@@ -5,12 +5,17 @@ import jax
 import lineax as lx
 import equinox as eqx
 from jax_sn.operators.base_linear_operator import TransposeBoolDataStrategyLinearOperator
-from jax_sn.operators.operator_data import OperatorData
+from jax_sn.operators.operator_data import OperatorData, RequiresNonDifferentiableData
 from ..base_linear_operator import TransposableStrategy
 
-class MultiGroupStrategyBase(TransposableStrategy):
+class MultiGroupStrategyBase(TransposableStrategy, RequiresNonDifferentiableData):
     r'''
-    Apply the multi-group operator :math:`\mathbf{A}` (or its transpose) over the energy-group axis.
+    Apply a multigroup operator, base class for both full operator and chain.
+
+    States its requirement on the whole non-differentiable tier (see
+    :class:`~jax_sn.operators.operator_data.RequiresNonDifferentiableData`), not on the sweep data
+    alone: it is handed an :class:`~jax_sn.operators.operator_data.OperatorData`, so what it needs of
+    that tier is its own business and may grow past the sweep ordering.
     '''
 
     @abstractmethod
@@ -20,14 +25,49 @@ class MultiGroupStrategyBase(TransposableStrategy):
     @abstractmethod
     def transpose(self, operator_data: OperatorData, x):
         ...
-    
-    @abstractmethod
-    def default_sweep_data(self):
-        ...
+
+class MultiGroupStrategy(MultiGroupStrategyBase):
+    r'''
+    Multigroup strategy for $\mathbf{A}= \mathbf{I} - \mathbf{M}\mathbf{T}^{-1}\mathbf{H}\mathbf{D}\mathbf{S}$, with $\mathbf{S}$ the full scattering operator.
+    '''
 
 
+class MultiGroupChainStrategy(MultiGroupStrategyBase):
+    r'''
+    Multigroup strategy for chain $\mathbf{M}\mathbf{T}^{-1}\mathbf{H}\mathbf{D}$
+    '''
 
-class MultiGroupOperator(TransposeBoolDataStrategyLinearOperator):
+class MultiGroupOperatorBase(TransposeBoolDataStrategyLinearOperator):
+    '''
+    Base operator acting on the full energy-group axis: shared operand structure and data accessors.
+    '''
+
+    data           : OperatorData
+    strategy       : MultiGroupStrategyBase   # concrete real field (narrowed per concrete operator); declared before transpose_bool so field order stays data, strategy, transpose_bool
+    transpose_bool : bool = False
+
+    @property
+    def n_energy_groups(self) -> int:
+        '''Number of energy groups, derived from ``operator_data``'s cross sections.'''
+        return self.data.n_energy_groups
+
+    @property
+    def solution_domain(self):
+        '''Reconstruct the :class:`SolutionDomain <jax_sn.solution_domain.SolutionDomain>` this operator was built from (e.g. for interpolation).'''
+        return self.data.solution_domain
+
+    def _group_structure(self) -> jax.ShapeDtypeStruct:
+        '''Full operand structure: the group axis over a single-group moment array.'''
+        return jax.ShapeDtypeStruct((self.n_energy_groups, self.data.n_moments, ) + self.data.elements_basis_shape.shape, self.data.angular_data.wk_ylm.dtype)
+
+    def _in_structure(self) -> jax.ShapeDtypeStruct:
+        return self._group_structure()
+
+    def _out_structure(self) -> jax.ShapeDtypeStruct:
+        return self._group_structure()
+
+
+class MultiGroupOperator(MultiGroupOperatorBase):
     r'''
       Multi energy group linear operator implementation base class.
 
@@ -128,26 +168,18 @@ class MultiGroupOperator(TransposeBoolDataStrategyLinearOperator):
     solving each energy group sequentially using the single-group operator for that group and the already computed higher energy group solutions to form the scattering source. This is implemented in the function :func:`solve_lower_triangular`.    
 
     '''
-    data           : OperatorData
-    strategy       : MultiGroupStrategyBase
-    transpose_bool : bool = False
+    strategy : MultiGroupStrategy
 
-    @property
-    def n_energy_groups(self) -> int:
-        '''Number of energy groups, derived from ``operator_data``'s cross sections.'''
-        return self.data.n_energy_groups
 
-    @property
-    def solution_domain(self):
-        '''Reconstruct the :class:`SolutionDomain <jax_sn.solution_domain.SolutionDomain>` this operator was built from (e.g. for interpolation).'''
-        return self.data.solution_domain
-    
-    def _group_structure(self) -> jax.ShapeDtypeStruct:
-        '''Full operand structure: the group axis over a single-group moment array.'''        
-        return jax.ShapeDtypeStruct((self.n_energy_groups, self.data.n_moments, ) + self.data.elements_basis_shape.shape, self.data.angular_data.wk_ylm.dtype)
+class MultiGroupChainOperator(MultiGroupOperatorBase):
+    r'''
+    The chain :math:`\mathbf{C} = \mathbf{M}\mathbf{T}^{-1}\mathbf{H}\mathbf{D}` applied independently to
+    every group (no gather-scatter, so groups don't couple). Same operand structure as
+    :class:`MultiGroupOperator`; used to precondition a per-group right-hand side.
 
-    def _in_structure(self) -> jax.ShapeDtypeStruct:
-        return self._group_structure()
+    Wrapping the strategy as an operator is what buys ``transpose()`` and lineax composition for free.
+    It is a *view*: it shares ``data`` with the multigroup operator it accompanies, so build it at the
+    call site -- a stored copy would not follow an ``eqx.tree_at`` on the original's data.
+    '''
+    strategy : MultiGroupChainStrategy
 
-    def _out_structure(self) -> jax.ShapeDtypeStruct:
-        return self._group_structure()

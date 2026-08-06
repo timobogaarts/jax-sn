@@ -27,13 +27,20 @@ from typing import Callable, Dict, Type
 from conftest import DIM_DEGREES
 
 
+MAX_WARP_LENGTH = 4
+'''Warp's largest fixed-size vector/matrix type; bounds both n_basis and n_faces.'''
+
+
 def simplex_n_basis(dim: int, degree: int) -> int:
     '''Number of Lagrange nodes on a ``dim``-simplex of the given degree: C(dim + degree, degree).'''
     return comb(dim + degree, degree)
 
-def linear_tet_only(dim: int, degree: int) -> bool:
-    '''The warp kernels are hardcoded to the 3-D linear tetrahedron (n_basis == 4 *and* tet topology).'''
-    return dim == 3 and degree == 1
+def warp_supported(dim: int, degree: int) -> bool:
+    '''Whether the Warp kernels cover this element. They are parametrised on ``(n_basis, n_faces)``
+    but Warp's fixed-size vector/matrix types stop at 4, so both must fit: that admits the linear,
+    quadratic and cubic interval, the linear triangle and the linear tetrahedron -- and rules out
+    every element of degree >= 2 in 2-D/3-D.'''
+    return simplex_n_basis(dim, degree) <= MAX_WARP_LENGTH and (dim + 1) <= MAX_WARP_LENGTH
 
 @dataclass
 class Spec:

@@ -2,8 +2,9 @@ from . import mesh_tools
 from . import graph_tools
 from . import permutation_tools
 from . import memory_analysis
-from . import setup_test_mgop
+from . import parametrisation
 from .memory_analysis import assert_pytree_allclose
+from .parametrisation import ParametrisedModule
 
 __all__ = [
     "mesh_tools",
@@ -11,5 +12,6 @@ __all__ = [
     "permutation_tools",
     "memory_analysis",
     "assert_pytree_allclose",
-    "setup_test_mgop"
+    "parametrisation",
+    "ParametrisedModule",
 ]

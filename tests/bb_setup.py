@@ -335,14 +335,16 @@ def setup_bb(dim, degree, d_elem_regions, n_elem_regions, d_other_dim, n_other_d
 
 
 def build_multigroup_operator(solution_domain, sources, quadrature_set):
-    '''Build the (default-strategy) MultiGroupOperator for a BB solution domain via the operator-creation
-    factory. Returns (Aop, source_total_all_angles, solution_domain). ``source_total`` is the isotropic
-    flat source broadcast over the angle axis (the single-group source operator's operand structure).'''
-    from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
+    '''Build the (default-strategy) MultiGroupOperator for a BB solution domain via the multigroup
+    builder rung. Returns (Aop, source_total_all_angles, solution_domain). ``source_total`` is the
+    isotropic flat source broadcast over the angle axis (the single-group source operator's operand
+    structure).'''
+    from jax_sn.operator_creation.builders import MultiGroupBuilder
     from jax_sn.operator_creation.default_strategies import DefaultMultiGroupStrategy
 
     strategy     = DefaultMultiGroupStrategy.default_multi_group_strategy(checkpoint=False)
-    Aop          = create_multi_group_operator(solution_domain, quadrature_set, strategy)
+    Aop          = MultiGroupBuilder.from_solution_domain(
+        solution_domain, quadrature_set=quadrature_set, strategy=strategy).multi_group_operator
     source_total = jnp.broadcast_to(sources[None, :, :], (quadrature_set.angles.shape[0],) + sources.shape)  # source for all angles
     return Aop, source_total, solution_domain
 

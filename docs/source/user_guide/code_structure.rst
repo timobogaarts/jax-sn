@@ -64,7 +64,7 @@ each operator is implemented as follows:
             return strategy.forward(self.operator_data, x)
 
 where the strategy only defines the numerics (how it calculates). Constructing the multigroup operator thus requires picking
-a implementation of :class:`~jax_sn.operators.multi_group_operator.MultiGroupStrategyBase` and constructing the operator data (which defines the mesh, and other discretisation parameters).
+a implementation of :class:`~jax_sn.operators.multi_group_operator.MultiGroupStrategy` and constructing the operator data (which defines the mesh, and other discretisation parameters).
 Then, it can be passed to a `Lineax <https://github.com/patrick-kidger/lineax>`_ solver, which automatically handles the differentiation as well.
 
 Strategies can be composed: in the multigroup system, we can either compute the entire action :math:`\mathbf{A}` using a single 
@@ -72,7 +72,7 @@ strategy (i.e. writing the whole kernel in one go), or we can decompose it into 
 
 .. code-block:: python    
 
-    class FusedMultiGroupStrategy(MultiGroupStrategyBase):
+    class FusedMultiGroupStrategy(MultiGroupStrategy):
         def forward(data, x):
             return compute_fused_kernel(data, x)
     class MultiGroupChainGatherStrategy(StrategyA):
@@ -104,8 +104,9 @@ This saves a lot of memory since the iteration vector is much smaller than in th
 Parametrisation
 ----------------
 We are interested in parametrising arbitrary quantities. This is supported, but you do need to recalculate various quantities if you update 
-the vertices (e.g. the Jacobian matrices or the sweep ordering for :math:`T^{-1}`). This submodule provides an easy 
-way to do just that for several of the operators.
+the vertices (e.g. the Jacobian matrices or the sweep ordering for :math:`T^{-1}`). The builders in ``operator_creation`` do exactly that:
+each operator is declared as a graph of derivations over a set of primitives, so updating a primitive recomputes everything downstream of it
+and nothing else. The mechanism itself lives in :mod:`jax_sn.tools.parametrisation`.
 
 
 Variance Reduction

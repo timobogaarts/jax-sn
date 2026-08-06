@@ -1,16 +1,22 @@
 from .composed_multi_group_strategies import (
     MultiGroupChainGatherScanStrategy, MultiGroupChainGatherVmapStrategy,
-    MultiGroupChainStrategyBase, ComposedMultiGroupChainStrategy,
+    ComposedMultiGroupChainStrategy,
     MultiGroupChainScanStrategy, MultiGroupChainVmapStrategy,
 )
-from .multi_group_operator_base       import MultiGroupOperator, MultiGroupStrategyBase
+from .multi_group_operator_base       import (
+    MultiGroupOperatorBase, MultiGroupOperator, MultiGroupChainOperator,
+    MultiGroupStrategyBase, MultiGroupStrategy, MultiGroupChainStrategy,
+)
 
 __all__ = [
+    "MultiGroupOperatorBase",
     "MultiGroupOperator",
+    "MultiGroupChainOperator",
     "MultiGroupStrategyBase",
+    "MultiGroupStrategy",
     "MultiGroupChainGatherScanStrategy",
     "MultiGroupChainGatherVmapStrategy",
-    "MultiGroupChainStrategyBase",
+    "MultiGroupChainStrategy",
     "ComposedMultiGroupChainStrategy",
     "MultiGroupChainScanStrategy",
     "MultiGroupChainVmapStrategy",

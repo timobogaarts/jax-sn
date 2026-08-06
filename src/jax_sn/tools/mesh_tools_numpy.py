@@ -211,6 +211,33 @@ def _compute_face_permutations_numpy(
     return np.where(etoe >= 0, perm_numbers, -1).astype(np.int64)
 
 
+def compute_topology_numpy(
+    connectivity: np.ndarray,
+    face_template: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    NumPy drop-in for `jax_sn.domain.geometric_domain.compute_topology`.
+
+    Depends on the connectivity alone, never on the vertices.
+
+    Parameters
+    ----------
+    connectivity  : np.ndarray [n_elements, n_nodes]
+    face_template : np.ndarray [n_faces_per_element, n_vertices_per_face]
+
+    Returns
+    -------
+    etoe, etof, face_perm_idx : np.ndarray, each [n_elements, n_faces_per_element]
+    """
+    connectivity  = np.asarray(connectivity)
+    face_template = np.asarray(face_template)
+    assert face_template.ndim == 2, "face_template must be 2-D"
+
+    etoe, etof    = _compute_adjacency_numpy(connectivity, face_template)
+    face_perm_idx = _compute_face_permutations_numpy(connectivity, etoe, etof, face_template)
+    return etoe, etof, face_perm_idx
+
+
 def _compute_domain_setup_from_mesh_numpy(
     mesh: Tuple[np.ndarray, np.ndarray],
     face_template: np.ndarray,
@@ -240,7 +267,6 @@ def _compute_domain_setup_from_mesh_numpy(
 
     simplices     = vertices[connectivity]
     face_normals  = _compute_face_normals_numpy(simplices, face_template)
-    etoe, etof    = _compute_adjacency_numpy(connectivity, face_template)
-    face_perm_idx = _compute_face_permutations_numpy(connectivity, etoe, etof, face_template)
+    etoe, etof, face_perm_idx = compute_topology_numpy(connectivity, face_template)
 
     return vertices, connectivity, face_normals, etoe, etof, face_perm_idx

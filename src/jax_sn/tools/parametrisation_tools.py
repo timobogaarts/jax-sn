@@ -8,29 +8,6 @@ import jax
 import jax.numpy as jnp
 import numpy as onp
 
-class ParametrisedModule(ABC):
-    '''
-    Abstract base class for parametrised modules.
-
-    Implementations provide methods to extract a parametrisation theta from a module,
-    and to reconstruct the module from the parametrisation theta.
-
-    This initially was created to support a abstract parametrisation framework for performance
-    analysis of different operators.
-    
-    '''
-
-    @staticmethod
-    @abstractmethod
-    def theta_base(self, module):
-        ...
-
-    @staticmethod
-    @abstractmethod
-    def reconstruct_operator(self, module, theta):
-        ...
-    
-
 class ParametrisationValues(eqx.Module):
     ...
 

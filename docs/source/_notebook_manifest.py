@@ -10,18 +10,25 @@ Single source of truth, consumed by three places:
 
 Add a notebook here when adding it to ``examples/``. If ``ci=False`` (e.g. it
 needs a GPU backend, or external data such as OpenMC-generated cross
-sections that hosted CI can't produce), also add a matching
-``-filter`` line to ``.gitattributes`` so the nbstripout pre-commit hook
-does not strip its committed outputs.
+sections that hosted CI can't produce), also add a matching alternation
+branch to the ``exclude:`` regex of the nbstripout hook in
+``.pre-commit-config.yaml`` so it does not strip the committed outputs that
+*are* this notebook's published docs output.
+
+Note the hook only runs in a clone where ``pre-commit install`` has been run;
+the config file does not enforce itself.
 """
 
 NOTEBOOKS = {
     # docs-tree path (relative to docs/source): {"source": examples/ path, "ci": bool}
     "user_guide/energy_set.ipynb": {"source": "examples/energy_set.ipynb", "ci": True},
-    "user_guide/quadrature_set.ipynb": {"source": "examples/quadrature_set.ipynb", "ci": True},
-    "user_guide/first_operator.ipynb": {"source": "examples/first_operator.ipynb", "ci": True},
+    "user_guide/quadrature_set.ipynb": {"source": "examples/quadrature_set.ipynb", "ci": True},    
     "user_guide/slab_single_angle.ipynb": {"source": "examples/slab_single_angle.ipynb", "ci": True},
+    "user_guide/multi_angle.ipynb": {"source": "examples/multi_angle.ipynb", "ci": True},
     "user_guide/spatial_discretisation.ipynb": {"source": "examples/spatial_discretisation.ipynb", "ci": True},
+    "user_guide/multi_group_operator.ipynb": {"source": "examples/multigroup_operator.ipynb", "ci": True},
+    "user_guide/parametrization.ipynb": {"source": "examples/parametrization.ipynb", "ci": True},
+    "user_guide/solving_multigroup.ipynb": {"source": "examples/solving_multigroup.ipynb", "ci": True},
     # Needs OpenMC + downloaded FENDL cross-section data (via mcbb) -- hosted CI can't
     # produce that, so this keeps committed outputs; refresh locally via
     # tools/refresh_notebooks.py.

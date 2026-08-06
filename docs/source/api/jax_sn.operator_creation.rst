@@ -12,6 +12,5 @@ Submodules
 .. toctree::
    :maxdepth: 2
 
+   jax_sn.operator_creation.builders
    jax_sn.operator_creation.default_strategies
-   jax_sn.operator_creation.multi_group_operator_creation
-   jax_sn.operator_creation.transport_operator_creation

@@ -3,15 +3,15 @@ import equinox as eqx
 
 from jax_sn.operators.mass_operator import VmapMass, LaxMass
 
-from .operator_util import BaseOperatorProperties, Spec, parametrize_strategies, simplex_n_basis
+from .operator_util import BaseOperatorProperties, Spec, parametrize_strategies, warp_supported
 from jax_sn.operators.mass_operator.mass_operator_warp import WarpMass
 
 _DEFAULT_MASS = VmapMass   # pure-JAX reference (pivot) every variant is compared against
 
-# Warp supports only 4 basis functions. linear tetrahedron or cubic interval are only checked.
+# Warp is parametrised on n_basis but capped at 4 by its fixed-size vector types; see warp_supported.
 MASS_STRATEGIES = {VmapMass: Spec(), 
                    LaxMass: Spec(), 
-                   WarpMass: Spec(supports= lambda dim, degree : simplex_n_basis(dim, degree) == 4)}  
+                   WarpMass: Spec(supports=warp_supported)}  
 
 @parametrize_strategies(MASS_STRATEGIES)
 class TestMassOperator(BaseOperatorProperties):

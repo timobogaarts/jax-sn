@@ -6,9 +6,10 @@ The benchmarked set of strategies is **never hand-listed as a matrix**. It is de
   1. every *concrete* subclass of a strategy base (``MassStrategy``, ``SingleAngleInversionStrategy``, ...) that is
      importable on this machine is a candidate -- so optional backends (pallas, warp) appear only when
      their module imports (no GPU/warp -> the subclass simply never registers);
-  2. a candidate that builds but is *incompatible* with the current problem (e.g. a warp tetrahedron
-     kernel on a non-tet mesh) self-classifies as a skip via the package's own ``check_compatible`` /
-     build-time assertions -- caught by ``_common.measure``, not predicted by a ``requires=(...)`` table.
+  2. a candidate that builds but is *incompatible* with the current problem (e.g. a warp sweep on an
+     element whose ``n_basis`` exceeds Warp's fixed-size vector types) self-classifies as a skip via the
+     package's own ``check_compatible`` / build-time assertions -- caught by ``_common.measure``, not
+     predicted by a ``requires=(...)`` table.
 
 The one piece that cannot be discovered is a *representative constructor parameter* (a batch size, a
 level cap): default-construction benchmarks e.g. ``BatchedForward()`` == non-batched. Benches supply a

@@ -10,6 +10,7 @@ from jax_sn.operators.base_linear_operator import (
     DataTransposeDataStrategyLinearOperator, DirectlyInvertibleOperator, Strategy
 )
 from typing import Type
+from jax_sn.domain.geometric_domain import GeometricDomain
 from .sweep_data_implementations import SweepData, BasicSweepData
 from .transport_data import TransportData
 
@@ -59,20 +60,30 @@ class AbstractInversionStrategy(eqx.Module):
         (the default) means any :class:`~jax_sn.operators.transport_operator.SweepData` is acceptable.'''
         return ()
 
-    def default_sweep_data_type(self) -> Type[SweepData]:
-        '''The concrete, minimal sweep-data type a creation helper should build for this strategy.
-        Default: the plain sort (provides no extra capability).'''
-        return BasicSweepData
+    def build_default_sweep_data(self, geometric_domain : GeometricDomain,
+                                 angle : jnp.ndarray) -> SweepData:
+        '''
+        The minimal sweep data this strategy needs, built for ``geometric_domain`` and ``angle``
+        (single or batched -- dispatched on ``angle.ndim``).
+
+        This *builds* rather than naming a type because a strategy may carry build-time knobs of its
+        own (a level-padding width, say): those are properties of how this kernel sweeps, so they live
+        as static fields on the strategy and are applied right here. Nothing upstream has to know they
+        exist.
+        '''
+        return BasicSweepData.from_domain_angle(geometric_domain, angle)
+
+    def accepts(self, sweep_data: SweepData) -> bool:
+        '''Accepts any sweep data that provides every capability in :meth:`required_capabilities`.'''
+        return all(isinstance(sweep_data, capability) for capability in self.required_capabilities())
 
     def check_compatible(self, data: TransportData):
-        '''Assert the data's sweep data provides every capability in :meth:`required_capabilities`.
-        Permissive: a richer sweep data (more capabilities) passes. Run from the operator's
-        ``__check_init__``, so it fires at construction and on every ``eqx.tree_at``.'''
-        for capability in self.required_capabilities():
-            assert isinstance(data.sweep_data, capability), \
-                f"{type(self).__name__} requires sweep data providing {capability.__name__}, " \
-                f"but got {type(data.sweep_data).__name__}. Build it via " \
-                f"{type(self).__name__}.default_sweep_data_type().from_domain_quadrature_set(...)."
+        '''Asserts whether the sweep data is compatible with this inversion strategy (just typing information). '''
+        assert self.accepts(data.sweep_data), \
+            f"{type(self).__name__} requires sweep data providing " \
+            f"{[c.__name__ for c in self.required_capabilities()]}, but got " \
+            f"{type(data.sweep_data).__name__}. Build it via " \
+            f"{type(self).__name__}.build_default_sweep_data(geometric_domain, angle)."
 
 
 class SingleAngleInversionStrategy(AbstractInversionStrategy):

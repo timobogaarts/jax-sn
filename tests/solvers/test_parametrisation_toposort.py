@@ -1,6 +1,11 @@
 '''
-This file tests that the parametrisation actually performs a valid topological sort when geometry changes and 
-that skipping it would have been wrong. 
+This file tests that rebuilding an operator after a geometry change actually performs a valid
+topological sort, and that skipping it would have been wrong.
+
+Rebuilding always re-sorts, so the two cases are the fresh sort versus a deliberately stale one
+spliced in with ``equinox.tree_at``. The stale sort is correct only when the sweep order cannot have
+changed, which is what the dimension split below pins down -- and a storage policy that holds the
+sweep tier refuses to move the vertices for exactly that reason.
 
 
 The trick is a **dimension-uniform** mesh: two ``d``-simplices glued on their shared ``(d-1)``-face,
@@ -33,12 +38,8 @@ from jax_sn.solution_domain.basix_fem import BasixLagrangianSimplex
 from jax_sn.solution_domain.solution_domain import SolutionDomain
 from jax_sn.quadrature_set.quadrature_set_base import QuadratureSet
 from jax_sn.operators.transport_operator import BasicSweepData
-from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
 from jax_sn.operator_creation.default_strategies import DefaultMultiGroupStrategy
-from jax_sn.parametrisation.multigroup_parametrisation import (
-    MultigroupOperatorParametrisedVerticesXS, MultigroupOperatorParametrisedVerticesNoToposort,
-    VerticesXSTheta,
-)
+from jax_sn.operator_creation.builders import MultiGroupBuilder
 
 from bb_setup import transport_operator_from_mgop
 
@@ -105,11 +106,29 @@ def _solution_domain(verts, conn, element):
     return SolutionDomain.from_element_and_domain(element, domain)
 
 
+# Single energy group (n_eg=1): the multigroup operator is trivially lower-block-triangular, so no
+# convert step is needed -- only the transport sweep order matters for this test.
+def _strategy(batch_size=4):
+    return DefaultMultiGroupStrategy.default_multi_group_strategy(batch_size=batch_size, checkpoint=False)
+
+
 def _build_mgop(solution_domain, quad, batch_size=4):
-    # Single energy group (n_eg=1): the multigroup operator is trivially lower-block-triangular, so no
-    # convert step is needed -- only the transport sweep order matters for this test.
-    strategy = DefaultMultiGroupStrategy.default_multi_group_strategy(batch_size=batch_size, checkpoint=False)
-    return create_multi_group_operator(solution_domain, quad, strategy)
+    return MultiGroupBuilder.from_solution_domain(
+        solution_domain, quadrature_set=quad,
+        strategy=_strategy(batch_size)).multi_group_operator
+
+
+def _builder(verts, conn, element, quad, batch_size=4):
+    '''
+    The policy for a deforming mesh: everything the vertices do not determine is stored, so the
+    topology is built once and the vertices stay free to update. The sweep tier is *not* stored --
+    it depends on the vertices -- so it is rebuilt on every update.
+    '''
+    domain = Domain.from_mesh_and_cross_sections((verts, conn), element.face_template, _cross_sections(conn))
+    return MultiGroupBuilder.varying("vertices").from_solution_domain(
+        SolutionDomain.from_element_and_domain(element, domain),
+        quadrature_set = quad,
+        strategy       = _strategy(batch_size))
 
 
 def _order(mgop):
@@ -145,9 +164,9 @@ def test_basic_sweep_data_reconstruct(dim):
 
 
 @pytest.mark.parametrize("dim", [1, 2, 3])
-def test_parametrisation_resort(dim):
-    '''The parametrisation re-sorts (VerticesXS) and NoToposort keeps the stale order -- which is
-    wrong exactly when the order changed (d>=2) and harmless when it did not (d=1).'''
+def test_builder_resort(dim):
+    '''``updated(vertices=...)`` re-sorts, while a sort spliced back in keeps the stale order --
+    which is wrong exactly when the order changed (d>=2) and harmless when it did not (d=1).'''
     element = BasixLagrangianSimplex(1, dim)
     verts0, conn = _glued_simplices(dim, lift=0.0)
     verts1, _    = _glued_simplices(dim, lift=_LIFT[dim])
@@ -156,13 +175,16 @@ def test_parametrisation_resort(dim):
     mgop_base  = _build_mgop(_solution_domain(verts0, conn, element), quad)
     mgop_fresh = _build_mgop(_solution_domain(verts1, conn, element), quad)
 
-    base_xs   = MultigroupOperatorParametrisedVerticesXS.theta_base(mgop_base).cross_section_data
-    mgop_with = MultigroupOperatorParametrisedVerticesXS.reconstruct_operator(mgop_base, VerticesXSTheta(verts1, base_xs))
-    mgop_no   = MultigroupOperatorParametrisedVerticesNoToposort.reconstruct_operator(mgop_base, verts1)
+    # Moving the vertices is a primitive update; everything derived follows, the combinatorial tier
+    # included. Skipping the re-sort is no longer a policy -- it takes a deliberate tree_at.
+    moved     = _builder(verts0, conn, element, quad).updated(vertices=verts1)
+    mgop_with = moved.multi_group_operator
+    mgop_no   = eqx.tree_at(lambda m : m.data.non_differentiable_data.sweep_data,
+                            mgop_with, mgop_base.data.sweep_data)
 
     # --- the sort itself ---
-    assert (_order(mgop_with) == _order(mgop_fresh)).all(), "VerticesXS must recompute the sort for the deformed mesh"
-    assert (_order(mgop_no) == _order(mgop_base)).all(),    "NoToposort must keep the base (stale) sort"
+    assert (_order(mgop_with) == _order(mgop_fresh)).all(), "rebuilding must re-sort for the deformed mesh"
+    assert (_order(mgop_no) == _order(mgop_base)).all(),    "the spliced sort must be the base (stale) one"
     if dim == 1:
         assert (_order(mgop_base) == _order(mgop_fresh)).all()
     else:
@@ -184,8 +206,44 @@ def test_parametrisation_resort(dim):
             "stale sort gave the same sweep result -- the test is not exercising the re-sort"
 
 
+@pytest.mark.parametrize("dim", [1, 2, 3])
+def test_frozen_vertices_are_refused(dim):
+    '''A policy that stores geometry cannot move the vertices: it refuses rather than going stale.'''
+    element = BasixLagrangianSimplex(1, dim)
+    verts0, conn = _glued_simplices(dim, lift=0.0)
+    verts1, _    = _glued_simplices(dim, lift=_LIFT[dim])
+    quad = _quad(_ANGLE[dim])
+
+    fixed_geometry = _builder(verts0, conn, element, quad).materialise(
+        MultiGroupBuilder.varying("quadrature_set"))
+    assert "vertices" in fixed_geometry.graph().frozen
+    with pytest.raises(ValueError, match="vertices"):
+        fixed_geometry.updated(vertices=verts1)
+
+
+@pytest.mark.parametrize("dim", [1, 2, 3])
+def test_storing_the_sweep_tier_freezes_the_vertices(dim):
+    '''
+    What ``Reuse`` used to be, as a refusal instead of silent staleness: a policy that holds the
+    sweep tier is by construction one whose vertices cannot move.
+    '''
+    element = BasixLagrangianSimplex(1, dim)
+    verts0, conn = _glued_simplices(dim, lift=0.0)
+    verts1, _    = _glued_simplices(dim, lift=_LIFT[dim])
+    quad = _quad(_ANGLE[dim])
+
+    policy = MultiGroupBuilder.varying("cross_sections_indexed")
+    assert "non_differentiable_data" in policy.graph().stored     # the sort is held, not rebuilt
+    assert "sweep_data" in policy.graph().projected
+
+    fixed = _builder(verts0, conn, element, quad).materialise(policy)
+    with pytest.raises(ValueError, match="vertices"):
+        fixed.updated(vertices=verts1)
+
+
 if __name__ == "__main__":
     for d in (1, 2, 3):
         test_basic_sweep_data_reconstruct(d)
-        test_parametrisation_resort(d)
+        test_builder_resort(d)
+        test_frozen_vertices_are_refused(d)
         print(f"dim {d}: OK")

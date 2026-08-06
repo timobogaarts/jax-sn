@@ -219,10 +219,11 @@ class OperatorAnalysis(ABC):
         duration_mv = custom_timeit( run_method, number = n_samples , ignore_n=ignore_n)[0]                
         return duration_mv
 
-from .parametrisation_tools import ParametrisedModule
+# `cls` below is duck-typed: anything with static `theta_base(operator)` and
+# `reconstruct_operator(operator, theta)`. Builders express this as `.updated(...)` on a rung.
 
 
-def analyze_grad_memory(cls : ParametrisedModule, operator : lx.AbstractLinearOperator, method : Union[str, Callable]):
+def analyze_grad_memory(cls : type, operator : lx.AbstractLinearOperator, method : Union[str, Callable]):
     '''
     Analyzes memory usage for the gradient of a parameterised operator method (mv or inv).
     First it initializes the operator with the provided arguments and keyword arguments.
@@ -245,7 +246,7 @@ def analyze_grad_memory(cls : ParametrisedModule, operator : lx.AbstractLinearOp
 
     return mem_mv, mem_grad_mv
     
-def analyze_grad_timing(cls : ParametrisedModule, operator : lx.AbstractLinearOperator, method : Union[str, Callable], n_samples : int = 100, ignore_n : int = 1):        
+def analyze_grad_timing(cls : type, operator : lx.AbstractLinearOperator, method : Union[str, Callable], n_samples : int = 100, ignore_n : int = 1):
     '''
     Analyzes timing for the gradient of a parameterised operator method.
 

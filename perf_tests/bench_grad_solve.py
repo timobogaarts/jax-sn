@@ -2,20 +2,19 @@
 EXPENSIVE (opt-in) -- gradient through the lower-triangular solve, swept over the hand-picked default
 composed strategies (see ``_bench.default_multi_group_strategies``: ``DefaultMultiGroupStrategy``'s
 jax/pallas/warp recipes, batched and non) -- same reasoning as ``bench_machinery.py``/``bench_solve.py``.
-This is the heaviest op and the one that actually exercises the parametrisation module
-(reconstruct-operator + reverse-mode through the block solve). Records peak memory, wall time and the
-underlying solve's iteration count.
+This is the heaviest op and the one that actually exercises the builder's storage policy
+(rebuild-from-primitives + reverse-mode through the block solve). Records peak memory, wall time and
+the underlying solve's iteration count.
 """
 import jax
 import jax.numpy as jnp
 import lineax as lx
 
 from _common import peak_mb, time_ms, short_exc, Measurement, LiveTable
-from _bench import default_multi_group_strategies
+from _bench import create_multi_group_builder, default_multi_group_strategies
 from bench_solve import _bicgstab, _n_iter
+from jax_sn.domain.cross_sections import CrossSectionsIndexed
 from jax_sn.solvers.base_solvers import MultiGroupLowerTriangularBlockSolver
-from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
-from jax_sn.parametrisation import MultigroupOperatorParametrisedVerticesXS
 
 
 class GradSolveBench:
@@ -29,17 +28,26 @@ class GradSolveBench:
         for label, make_strategy in strategies.items():
             table.start(label)
             try:
-                mgop = create_multi_group_operator(sd, qs, make_strategy())
+                # vertices + cross sections free, the structural tier stored: the whole theta-dependent
+                # layer stays pure JAX, so the rebuild differentiates.
+                # (the leveled sweeps the warp strategies use need a pinned level count to rebuild
+                # under a trace -- `create_multi_group_builder` supplies it.)
+                builder = create_multi_group_builder(sd, qs, make_strategy())
+                mgop = builder.multi_group_operator
                 rhs = jnp.ones(mgop.in_structure().shape)
-                theta = MultigroupOperatorParametrisedVerticesXS.theta_base(mgop)
+                # the material indices are integers, so theta carries only the cross-section *data*.
+                theta = (builder.vertices, builder.cross_sections_indexed.cross_section_data)
                 ltri = MultiGroupLowerTriangularBlockSolver.from_composed(mgop.strategy, _bicgstab())
 
-                def reconstruct_solve(th, op, b):
-                    m = MultigroupOperatorParametrisedVerticesXS.reconstruct_operator(op, th)
+                def reconstruct_solve(th, bld, b):
+                    vertices, xs_data = th
+                    xs = CrossSectionsIndexed(indices=bld.cross_sections_indexed.indices,
+                                              cross_section_data=xs_data)
+                    m = bld.updated(vertices=vertices, cross_sections_indexed=xs).multi_group_operator
                     return jnp.sum(lx.linear_solve(m, b, ltri, throw=False).value)
 
-                f = lambda th, op, b: jax.value_and_grad(reconstruct_solve)(th, op, b)
-                args = (theta, mgop, rhs)
+                f = lambda th, bld, b: jax.value_and_grad(reconstruct_solve)(th, bld, b)
+                args = (theta, builder, rhs)
                 n_iter = _n_iter(mgop, rhs, ltri, "num_steps_per_group")
                 t = time_ms(f, *args)
                 rec = dict(status="ok", peak_mb=peak_mb(f, *args), t_ms=t, n_iter=n_iter,

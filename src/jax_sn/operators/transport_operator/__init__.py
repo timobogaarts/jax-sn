@@ -27,7 +27,9 @@ from .implementations.transport_operator_pallas import (
 )
 
 
-from .implementations import transport_operator_warp
+from .implementations.transport_operator_warp import (
+    WarpSequentialSweep, WarpLevelSweep, WarpSequentialAngles, WarpLevelAngles,
+)
 
 __all__ = [
     'SweepData',
@@ -56,5 +58,8 @@ __all__ = [
     'ScanAnglesForward',
     'VmapPallasSweep',
     'BatchedPallasSweep',
-    'transport_operator_warp'
+    'WarpSequentialSweep',
+    'WarpLevelSweep',
+    'WarpSequentialAngles',
+    'WarpLevelAngles',
 ]

@@ -5,7 +5,7 @@ import equinox as eqx
 from jax_sn.operators.base_linear_operator import TransposeBoolDataStrategyLinearOperator, TransposableStrategy
 
 
-from ..operator_data import OperatorData
+from ..operator_data import OperatorData, RequiresNonDifferentiableData
 from ..base_linear_operator import BaseOperatorData
 import jax
 
@@ -13,20 +13,20 @@ class SingleGroupData(BaseOperatorData):
     operator_data : OperatorData
     energy_group  : int
 
-class SingleGroupStrategyBase(TransposableStrategy):
+class SingleGroupStrategyBase(TransposableStrategy, RequiresNonDifferentiableData):
     r'''
     Base class for single-group strategies, which are linear operators that act on a single energy group.
+
+    Like the multigroup strategies, it states its requirement on the whole non-differentiable tier
+    (see :class:`~jax_sn.operators.operator_data.RequiresNonDifferentiableData`) rather than on the
+    sweep data alone.
     '''
-    @abstractmethod 
+    @abstractmethod
     def forward(self, single_group_data : SingleGroupData, x):
         ...
 
-    @abstractmethod 
-    def transpose(self, single_group_data : SingleGroupData, x):
-        ...
-
     @abstractmethod
-    def default_sweep_data(self):
+    def transpose(self, single_group_data : SingleGroupData, x):
         ...
 
 class SingleGroupStrategy(SingleGroupStrategyBase):

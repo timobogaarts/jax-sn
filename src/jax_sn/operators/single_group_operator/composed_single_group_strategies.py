@@ -1,4 +1,4 @@
-from ..operator_data import OperatorData
+from ..operator_data import NonDifferentiableData, OperatorData, RequiresNonDifferentiableData
 from ..transport_operator import (
     TransportData, TransportOperatorMultiAngle,
     MultiAngleForwardStrategy, MultiAngleInversionStrategy,
@@ -43,18 +43,24 @@ def _build_transport_operator(single_group_data: SingleGroupData, forward_strate
     return TransportOperatorMultiAngle(TransportData(single_group_data.operator_data.spatial_data, single_group_data.energy_group, single_group_data.operator_data.angular_data.quadrature_set.angles, single_group_data.operator_data.sweep_data),
                                        forward_strategy, inversion_strategy)
 
-class ComposedSingleGroupTransportBase(TransposableStrategy):
+class ComposedSingleGroupTransportBase(TransposableStrategy, RequiresNonDifferentiableData):
     '''
-    Shared base for all composed single-group operators. All variants use 
-    transport, moment, and mass. 
+    Shared base for all composed single-group operators. All variants use
+    transport, moment, and mass.
     '''
     transport_strategy           : MultiAngleForwardStrategy
     transport_inversion_strategy : MultiAngleInversionStrategy
     moment_strategy              : FluxMomentStrategy
     mass_strategy                : MassStrategy
 
-    def default_sweep_data(self):
-        return self.transport_inversion_strategy.default_sweep_data_type()
+
+    def accepts(self, non_differentiable_data : NonDifferentiableData) -> bool:
+        return self.transport_inversion_strategy.accepts(non_differentiable_data.sweep_data)
+
+    def build_default_non_differentiable_data(self, geometric_domain, angles) -> NonDifferentiableData:
+        return NonDifferentiableData(
+            sweep_data = self.transport_inversion_strategy.build_default_sweep_data(
+                geometric_domain, angles))
 
 class ComposedSingleGroupSourceStrategy(ComposedSingleGroupTransportBase, SingleGroupSourceStrategy):
     '''The source operator :math:`\\mathbf{M}\\mathbf{T}_g^{-1}\\mathbf{H}` -- no discrete or scatter operator needed.'''

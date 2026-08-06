@@ -4,7 +4,7 @@ import lineax as lx
 import equinox as eqx
 from abc import abstractmethod
 
-from jax_sn.operators.multi_group_operator import MultiGroupOperator, MultiGroupChainStrategyBase
+from jax_sn.operators.multi_group_operator import MultiGroupOperator, MultiGroupChainStrategy
 
 
 class RightHandSide(eqx.Module):
@@ -80,7 +80,7 @@ def _to_struct(x) -> jax.ShapeDtypeStruct:
 @eqx.filter_jit
 def solve_multigroup_operator_rhs(operator : MultiGroupOperator, rhs : RightHandSide,
                                   solver : lx.AbstractLinearSolver,
-                                  chain_strategy : MultiGroupChainStrategyBase):
+                                  chain_strategy : MultiGroupChainStrategy):
     r'''
     Solve :math:`\mathbf{A}\psi = \mathbf{C}[b]` for the multi-group operator ``operator``.
 
@@ -92,7 +92,7 @@ def solve_multigroup_operator_rhs(operator : MultiGroupOperator, rhs : RightHand
         The physical right-hand side (or a bare array of matching structure).
     solver : lx.AbstractLinearSolver
         The lineax solver applied to the preconditioned system.
-    chain_strategy : MultiGroupChainStrategyBase
+    chain_strategy : MultiGroupChainStrategy
         Per-group chain, lifted over groups, used to precondition the source. Build via
         ``ComposedMultiGroupChainStrategy.from_composed(operator.strategy)`` to match the operator's own lift.
 

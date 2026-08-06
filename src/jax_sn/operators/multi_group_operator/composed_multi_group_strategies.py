@@ -11,12 +11,11 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 
-from jax_sn.operators.operator_data import OperatorData
-from jax_sn.operators.base_linear_operator import TransposableStrategy
+from jax_sn.operators.operator_data import NonDifferentiableData, OperatorData
 
 from jax_sn.operators.scatter_operator import GatherScatterData, SingleGroupGatherScatterStrategy
 from jax_sn.operators.single_group_operator import SingleGroupData
-from .multi_group_operator_base import MultiGroupStrategyBase
+from .multi_group_operator_base import MultiGroupStrategy, MultiGroupChainStrategy
 from ..single_group_operator.single_group_operators_base import SingleGroupChainStrategy
 
 
@@ -35,7 +34,7 @@ class _VmapLift(eqx.Module):
         return jax.vmap(body)(jnp.arange(n_energy_groups))
 
 
-class MultiGroupChainGatherStrategy(MultiGroupStrategyBase):
+class MultiGroupChainGatherStrategy(MultiGroupStrategy):
     r'''
     Uses a chain and a gather-scatter that fully define the action of a single group, mapping in some way
     over all the groups.
@@ -71,8 +70,12 @@ class MultiGroupChainGatherStrategy(MultiGroupStrategyBase):
         return self._lift_over_groups(
             lambda g: x[g] - gather.outgoing_gather(gs_data, zeta, g), operator_data.n_energy_groups)
 
-    def default_sweep_data(self):
-        return self.single_group_chain_strategy.default_sweep_data()
+    def accepts(self, non_differentiable_data : NonDifferentiableData) -> bool:
+        return self.single_group_chain_strategy.accepts(non_differentiable_data)
+
+    def build_default_non_differentiable_data(self, geometric_domain, angles) -> NonDifferentiableData:
+        return self.single_group_chain_strategy.build_default_non_differentiable_data(
+            geometric_domain, angles)
 
 
 class MultiGroupChainGatherScanStrategy(_ScanLift, MultiGroupChainGatherStrategy):
@@ -83,24 +86,7 @@ class MultiGroupChainGatherVmapStrategy(_VmapLift, MultiGroupChainGatherStrategy
     '''Lift by batching the entire vmap. Naturally most parallelizable but significantly increases memory (use on small problems only)'''
 
 
-class MultiGroupChainStrategyBase(TransposableStrategy):
-    r'''
-    Applies a chain over every group (groups don't couple, unlike :class:`MultiGroupChainGatherStrategy` --
-    no gather-scatter). Abstract on purpose: a subclass may fuse the whole chain across the group axis
-    (its own kernel, no per-group sub-strategy), or lift a per-group :class:`SingleGroupChainStrategy` as
-    :class:`ComposedMultiGroupChainStrategy` does below.
-    '''
-
-    @abstractmethod
-    def forward(self, operator_data: OperatorData, x):
-        ...
-
-    @abstractmethod
-    def transpose(self, operator_data: OperatorData, x):
-        ...
-
-
-class ComposedMultiGroupChainStrategy(MultiGroupChainStrategyBase):
+class ComposedMultiGroupChainStrategy(MultiGroupChainStrategy):
     r'''
     Applies a :class:`SingleGroupChainStrategy` independently over every group. Used to precondition a
     per-group right-hand side with the same group-lift (scan/vmap, checkpoint) as the operator it
@@ -130,6 +116,13 @@ class ComposedMultiGroupChainStrategy(MultiGroupChainStrategyBase):
         if isinstance(composed, MultiGroupChainGatherScanStrategy):
             return MultiGroupChainScanStrategy(composed.single_group_chain_strategy, checkpoint=composed.checkpoint)
         raise TypeError(f"No matching chain-only lift for {type(composed).__name__}.")
+
+    def accepts(self, non_differentiable_data : NonDifferentiableData) -> bool:
+        return self.single_group_chain_strategy.accepts(non_differentiable_data)
+
+    def build_default_non_differentiable_data(self, geometric_domain, angles) -> NonDifferentiableData:
+        return self.single_group_chain_strategy.build_default_non_differentiable_data(
+            geometric_domain, angles)
 
 
 class MultiGroupChainScanStrategy(_ScanLift, ComposedMultiGroupChainStrategy):

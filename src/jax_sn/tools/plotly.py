@@ -1,5 +1,6 @@
 '''
-Plotly functions for visualizing domains. 
+Plotly functions for visualizing domains, solutions, elements, quadrature sets, and the derivation
+graphs the builders are written in.
 
 Used by docs for interactive visualization; not a core part of the library and not eagerly imported.
 '''
@@ -1407,4 +1408,532 @@ def add_axis_triad(fig, origin=(0.0, 0.0, 0.0), length=1.0, colors=("red", "gree
             x=[label_pos[0]], y=[label_pos[1]], z=[label_pos[2]], mode="text", text=[label],
             textfont=dict(size=14, color=color), showlegend=False, hoverinfo="skip",
         ), **kwargs)
+
+
+# ==================================================================================================
+#                                       Derivation graphs
+# ==================================================================================================
+# A `jax_sn.tools.parametrisation.ParametrisedModule` subclass *is* a graph -- a derivation's parameter names
+# are its dependencies -- and its storage policy is a colouring of that graph. Both come straight off
+# `cls.graph()`; nothing here inspects the class any further.
+
+_DERIVATION_ROLE_COLORS = {
+    "free primitive"     : "#2ca02c",
+    "retained primitive" : "#bcbd22",
+    "frozen primitive"   : "#8c8c8c",
+    "stored"             : "#1f77b4",
+    "projected"          : "#9467bd",
+    "derived"            : "#ff7f0e",
+}
+
+_DERIVATION_ROLE_DESCRIPTIONS = {
+    "free primitive"     : "primitive, may be replaced by .updated()",
+    "retained primitive" : "primitive, replaceable while every retention on it holds",
+    "frozen primitive"   : "primitive, pinned: a stored quantity was built from it",
+    "stored"             : "held as a field, read directly",
+    "projected"          : "read back out of a stored quantity",
+    "derived"            : "recomputed on every access",
+}
+
+_DERIVATION_PALE = "#e3e3e3"        # a node/edge greyed out by a `highlight` selection
+
+
+def _derivation_roles(graph):
+    '''Each node's role under this class's storage policy; the keys of `_DERIVATION_ROLE_COLORS`.'''
+    roles = {n: ("retained primitive" if n in graph.conditionally_free else
+                 "frozen primitive"   if n in graph.frozen else "free primitive")
+             for n in graph.primitives}
+    roles |= {n: ("stored"    if n in graph.stored    else
+                  "projected" if n in graph.projected else "derived") for n in graph.quantities}
+    return roles
+
+
+def _derivation_layers(deps, nodes):
+    '''
+    `nodes` split into layers by longest path from a primitive, so every dependency of a node sits
+    in a strictly earlier layer (primitives, having none, are layer 0). Longest rather than shortest
+    path: a shortest-path layering would place a node next to its *nearest* dependency and leave the
+    others reaching forward past it.
+    '''
+    depth = {}
+
+    def resolve(name):
+        if name in depth:
+            return depth[name]
+        depth[name] = 0             # guards the recursion; the registry is already known acyclic
+        depth[name] = 1 + max((resolve(p) for p in deps.get(name, ())), default=-1)
+        return depth[name]
+
+    for name in nodes:
+        resolve(name)
+    layers = [[] for _ in range(max(depth.values()) + 1)]
+    for name in sorted(nodes):      # alphabetical, so the ordering sweep starts from something fixed
+        layers[depth[name]].append(name)
+    return layers, depth
+
+
+def _route_long_edges(layers, edges, depth):
+    '''
+    Make the layering *proper*: an edge spanning several layers gets a dummy node in each layer it
+    crosses, and is drawn as a polyline through them.
+
+    Without this, a long edge (``element`` feeds both ``fem_matrices`` one layer along and
+    ``precomputed_geometric_data`` four layers along) is a single straight line across the whole
+    drawing -- it crosses nearly everything, it passes *through* unrelated node markers so that two
+    nodes it merely flies past look connected, and the ordering heuristic below cannot see it at all,
+    since it only ever compares adjacent layers. Routed, the edge occupies a real slot in every layer
+    it crosses, so it is ordered and separated like any other node.
+
+    `layers` is extended in place. Returns the routes, plus the adjacency of the proper graph.
+    '''
+    routes = {}
+    for src, dst in edges:
+        route = [("dummy", src, dst, d) for d in range(depth[src] + 1, depth[dst])]
+        for node in route:
+            layers[node[3]].append(node)
+        routes[(src, dst)] = route
+
+    predecessors = {n: [] for layer in layers for n in layer}
+    successors   = {n: [] for layer in layers for n in layer}
+    for (src, dst), route in routes.items():
+        chain = [src, *route, dst]
+        for a, b in zip(chain, chain[1:]):
+            predecessors[b].append(a)
+            successors[a].append(b)
+    return routes, predecessors, successors
+
+
+def _count_crossings(layers, predecessors, order):
+    '''
+    Edge crossings between every pair of adjacent layers: two edges into the same layer cross when
+    their endpoints are in opposite order. Pairwise, which is quadratic in the edge count -- fine for
+    a registry of this size, and it lets the sweeps below keep the best ordering they ever saw rather
+    than whatever the last sweep happened to leave behind.
+    '''
+    total = 0
+    for layer in layers:
+        pairs = [(order[p], order[n]) for n in layer for p in predecessors[n]]
+        total += sum((a[0] - b[0]) * (a[1] - b[1]) < 0
+                     for i, a in enumerate(pairs) for b in pairs[i + 1:])
+    return total
+
+
+def _ordering_sweeps(layers, predecessors, successors, statistic, n_sweeps=16):
+    '''
+    Reorder within each layer to cut crossings, by the classic heuristic: repeatedly place a node at
+    the barycentre (or median) of its neighbours in the layer just ordered, alternating direction.
+    Purely cosmetic; the layering is what carries the meaning.
+    '''
+    layers = [list(layer) for layer in layers]
+    order  = {n: i for layer in layers for i, n in enumerate(layer)}
+    best, best_crossings = [list(l) for l in layers], _count_crossings(layers, predecessors, order)
+
+    for sweep in range(n_sweeps):
+        neighbours = predecessors if sweep % 2 == 0 else successors
+        for layer in (layers if sweep % 2 == 0 else layers[::-1]):
+            layer.sort(key=lambda n: statistic([order[m] for m in neighbours[n]] or [order[n]]))
+            order.update({n: i for i, n in enumerate(layer)})       # the next layer reads this one
+        crossings = _count_crossings(layers, predecessors, order)
+        if crossings < best_crossings:
+            best, best_crossings = [list(l) for l in layers], crossings
+    return best, best_crossings
+
+
+def _isotonic(desired, weights, offsets):
+    '''
+    The closest sequence to `desired` (weighted least squares) that still respects the layer's node
+    order and keeps every neighbouring pair at least `offsets`' spacing apart. Subtracting the
+    (cumulative) offsets turns "separated and increasing" into plain "non-decreasing", which is
+    textbook isotonic regression, solved here by pool-adjacent-violators.
+    '''
+    blocks = []          # [weighted sum, weight, count], each already >= the block before it
+    for value, weight, offset in zip(desired, weights, offsets):
+        blocks.append([(value - offset) * weight, weight, 1])
+        while len(blocks) > 1 and blocks[-2][0] * blocks[-1][1] > blocks[-1][0] * blocks[-2][1]:
+            top, below = blocks.pop(), blocks.pop()
+            blocks.append([below[0] + top[0], below[1] + top[1], below[2] + top[2]])
+    flat = [total / weight for total, weight, count in blocks for _ in range(count)]
+    return [value + offset for value, offset in zip(flat, offsets)]
+
+
+def _layer_offsets(layer, dummy_half, node_claim):
+    '''
+    Where each node in a layer sits if the layer is packed as tightly as it may be. A real node
+    claims `node_claim` on each side -- half a unit in total, so two of them end up the usual 1
+    apart, but split unevenly to leave room on the side its label is drawn -- while a dummy node is
+    just a line passing through and claims `dummy_half`, so routing a long edge costs a sliver of
+    space rather than a whole row.
+    '''
+    claims  = [(dummy_half, dummy_half) if isinstance(n, tuple) else node_claim for n in layer]
+    offsets = [0.0]
+    for near, far in zip(claims, claims[1:]):
+        offsets.append(offsets[-1] + near[1] + far[0])
+    return offsets
+
+
+def _straighten(layers, predecessors, successors, *, node_claim=(0.5, 0.5), n_iterations=12,
+                 dummy_half=0.14, dummy_weight=6.0):
+    '''
+    Coordinates within a layer, given the ordering: pull every node toward the mean of its
+    neighbours, then push the layer back apart just enough to restore the order and spacing
+    (`_isotonic`). Dummy nodes pull much harder, which is what straightens a routed long edge into a
+    line instead of a staircase.
+    '''
+    offsets    = [_layer_offsets(layer, dummy_half, node_claim) for layer in layers]
+    coordinate = {n: offset for layer, layer_offsets in zip(layers, offsets)
+                  for n, offset in zip(layer, layer_offsets)}
+    for iteration in range(n_iterations):
+        neighbours = predecessors if iteration % 2 == 0 else successors
+        order      = range(len(layers)) if iteration % 2 == 0 else range(len(layers) - 1, -1, -1)
+        for index in order:
+            layer   = layers[index]
+            desired = [float(onp.mean([coordinate[m] for m in neighbours[n]] or [coordinate[n]]))
+                       for n in layer]
+            weights = [dummy_weight if isinstance(n, tuple) else 1.0 for n in layer]
+            coordinate.update(zip(layer, _isotonic(desired, weights, offsets[index])))
+    return coordinate
+
+
+def _derivation_positions(layers, coordinate, orientation, layer_gap):
+    '''Node -> (x, y). Layers advance along x (left to right) or down y.'''
+    high = max(coordinate.values())
+    return {n: ((depth * layer_gap, high - coordinate[n]) if orientation == "horizontal"
+                else (coordinate[n], -depth * layer_gap))
+            for depth, layer in enumerate(layers) for n in layer}
+
+
+def _wrap_derivation_label(name, max_chars):
+    '''Break a `snake_case` quantity name across lines at underscores, keeping lines short enough
+    that adjacent nodes' labels don't run into each other.'''
+    lines, current = [], ""
+    for word in name.split("_"):
+        candidate = f"{current}_{word}" if current else word
+        if current and len(candidate) > max_chars:
+            lines.append(current + "_")
+            current = word
+        else:
+            current = candidate
+    lines.append(current)
+    return "<br>".join(lines)
+
+
+def _derivation_hover(name, cls, graph, roles):
+    role = roles[name]
+    lines = [f"<b>{name}</b>", f"<i>{role}</i> -- {_DERIVATION_ROLE_DESCRIPTIONS[role]}"]
+    if name in graph.quantities:
+        lines.append(f"depends on: {', '.join(sorted(graph.deps[name])) or '(nothing)'}")
+        lines.append(f"follows from primitives: {', '.join(sorted(graph.primitive_deps[name]))}")
+        if name in graph.projections:
+            lines.append(f"projected out of: {graph.projections[name][0]}")
+        if name in cls.NON_DIFFERENTIABLE:
+            lines.append("non-differentiable (stop_gradient)")
+        if name in cls.RETAINED_UNDER:
+            lines.append(f"retained under: {', '.join(sorted(cls.RETAINED_UNDER[name]))}")
+    elif role == "retained primitive":
+        gating = sorted(q for q, sources in cls.RETAINED_UNDER.items() if name in sources)
+        lines.append(f"kept across .updated() by the retention on: {', '.join(gating)}")
+    used_by = sorted(q for q in graph.quantities if name in graph.deps[q])
+    lines.append(f"used by: {', '.join(used_by) or '(nothing)'}")
+    return "<br>".join(lines)
+
+
+def _derivation_stale(graph, primitive, retentions):
+    '''What changing `primitive` invalidates: itself, plus every quantity it feeds into -- except
+    where a retention on a held value cuts the chain (the static form: a retention is declared, not
+    that it holds for a particular new value).'''
+    from jax_sn.tools.parametrisation import _insensitive
+    held = graph.stored | graph.projected
+    cut  = lambda n : n in held and primitive in retentions.get(n, ())
+    return {primitive} | {q for q in graph.quantities
+                          if not _insensitive(graph, q, primitive, cut, {})}
+
+
+def _derivation_node_colors(names, roles, colors, stale=None):
+    '''Marker colour per node: its role's colour, or pale grey if a selection excludes it.'''
+    return [colors[roles[n]] if (stale is None or n in stale) else _DERIVATION_PALE for n in names]
+
+
+def _bowed(start, end, bow):
+    '''A backward edge drawn straight would cut across the layers it skips over; bowing it out
+    sideways (one control point off the midpoint, rounded by the spline) keeps it clear of them.'''
+    start, end = onp.asarray(start, dtype=float), onp.asarray(end, dtype=float)
+    delta      = end - start
+    normal     = onp.array([-delta[1], delta[0]])
+    norm       = onp.linalg.norm(normal)
+    if norm == 0:
+        return [tuple(start), tuple(end)]
+    return [tuple(start), tuple((start + end) / 2 + bow * normal / norm), tuple(end)]
+
+
+def _smooth_path(points, samples_per_segment=14, tension=0.5):
+    '''
+    A Catmull-Rom curve through `points`, sampled densely.
+
+    Rounding the corners of a routed edge is plotly's `line_shape="spline"`'s job, but a spline is
+    drawn *near* its control points rather than through the straight segments between them, so an
+    arrowhead placed on those segments visibly floats off the line. Sampling the curve here instead
+    means the trace is a plain polyline and every point on it -- arrowhead included -- is a point the
+    line actually passes through.
+    '''
+    points = onp.asarray(points, dtype=float)
+    if len(points) < 3:
+        return points
+    padded = onp.vstack([points[0], points, points[-1]])     # clamped ends: no overshoot
+    pieces = []
+    for i in range(len(points) - 1):
+        start, end = padded[i + 1], padded[i + 2]
+        start_tangent, end_tangent = tension * (end - padded[i]), tension * (padded[i + 3] - start)
+        t = onp.linspace(0.0, 1.0, samples_per_segment, endpoint=(i == len(points) - 2))[:, None]
+        pieces.append((2 * t**3 - 3 * t**2 + 1) * start + (t**3 - 2 * t**2 + t) * start_tangent
+                      + (-2 * t**3 + 3 * t**2) * end + (t**3 - t**2) * end_tangent)
+    return onp.vstack(pieces)
+
+
+def _along_path(curve, distance_from_end):
+    '''The point `distance_from_end` back along `curve` from its head, and the curve's direction
+    there -- so an arrowhead sits *on* the line and points the way it is actually going.'''
+    steps     = onp.diff(curve, axis=0)
+    lengths   = onp.linalg.norm(steps, axis=1)
+    remaining = distance_from_end
+    for i in range(len(lengths) - 1, -1, -1):
+        if remaining <= lengths[i] or i == 0:
+            fraction = 1.0 - remaining / lengths[i] if lengths[i] > 0 else 0.0
+            return curve[i] + onp.clip(fraction, 0.0, 1.0) * steps[i], steps[i]
+        remaining -= lengths[i]
+    return curve[-1], steps[-1]
+
+
+def _add_derivation_edges(fig, edges, positions, routes=None, *, color, dash, width, name, arrows,
+                           bow=0.0, arrow_at=0.72):
+    '''One `Scatter` line trace for a whole edge set (None-separated, each edge a smoothed polyline
+    through whatever dummy nodes `routes` gave it), plus a rotated-triangle arrowhead near the head
+    of each edge -- the same trick `_add_graph_and_levels` uses for the sweep graph, so the two graph
+    plots read the same way.'''
+    if not edges:
+        return
+    routes = routes or {}
+    paths  = [[positions[n] for n in (src, *routes.get((src, dst), ()), dst)] for src, dst in edges]
+    if bow:
+        paths = [path if len(path) > 2 else _bowed(path[0], path[-1], bow) for path in paths]
+    curves = [_smooth_path(path) for path in paths]
+
+    x, y = [], []
+    for curve in curves:
+        x += [*curve[:, 0], None]
+        y += [*curve[:, 1], None]
+    fig.add_trace(go.Scatter(x=x, y=y, mode="lines", name=name, showlegend=False, hoverinfo="skip",
+                             line=dict(width=width, color=color, dash=dash)))
+    if not arrows:
+        return
+    # placed by distance back from the head, so a routed edge is marked where it arrives rather than
+    # at the midpoint of a chain of segments.
+    heads = [_along_path(curve, (1.0 - arrow_at) * float(onp.linalg.norm(
+        onp.asarray(path[-1], dtype=float) - onp.asarray(path[-2], dtype=float))))
+        for curve, path in zip(curves, paths)]
+    tip       = onp.array([point for point, _ in heads])
+    direction = onp.array([step for _, step in heads])
+    fig.add_trace(go.Scatter(
+        x=tip[:, 0], y=tip[:, 1], mode="markers", showlegend=False, hoverinfo="skip",
+        marker=dict(size=8, color=color, symbol="triangle-up", angle=_bearing_degrees(direction)),
+    ))
+
+
+def plot_derivation_graph(module, *, orientation="horizontal", highlight=None, stale_selector=False,
+                           show_projections=True, fade_shielded=True, colors=None, layer_gap=None,
+                           label_chars=14, font_size=10, node_size=15, width=800, height=700):
+    '''
+    Visualize the dependency graph a `jax_sn.tools.parametrisation.ParametrisedModule` declares -- e.g. any
+    rung of `jax_sn.operator_creation.builders` -- with the class's storage policy as its colouring.
+
+    Every node is a quantity or a primitive; every solid edge points from a dependency to what is
+    built from it (a derivation's parameter names *are* its dependencies). Nodes are laid out left
+    to right (or top to bottom) in layers by longest path from a primitive, so an edge never points
+    backwards -- except a projection edge, which may, since a projection reads a quantity back out of
+    a more-derived one that already holds it, and is bowed aside rather than drawn through the layers
+    it skips. An edge spanning several layers is routed through the gaps between the layers it
+    crosses instead of flying straight over them (see `_route_long_edges`), so no line passes through
+    a node it has nothing to do with.
+
+    The colouring is what the class's `graph()` says about storage: which primitives are still free
+    to `.updated()`, which are pinned because something stored was built from them, and which
+    quantities are stored as fields / projected out of a stored one / recomputed on every access.
+    Since a stored or projected quantity is read rather than computed, the edges *into* it are inert
+    here, and are faded out (`fade_shielded`) -- what is left in full colour is exactly the work a
+    fresh access actually does. Calling this on an abstract rung (which stores nothing) therefore
+    shows the bare structure; calling it on `Rung.varying(...)` / `.freezing(...)` shows what that
+    policy bought.
+
+    Parameters
+    ----------
+    module : type or ParametrisedModule
+        A `ParametrisedModule` subclass or an instance of one (an instance is read as its class).
+    orientation : {"horizontal", "vertical"}
+        "horizontal" (default) lays the layers out left to right, "vertical" top to bottom -- easier
+        to read in a notebook for a deep graph, since it scrolls rather than shrinks.
+    highlight : str or Sequence[str], optional
+        One or more primitives to trace forward: they and everything downstream keep their colour,
+        everything else greys out -- i.e. exactly what `.updated(**{primitive: ...})` invalidates and
+        rebuilds. A quantity name is rejected; only primitives can be updated.
+    stale_selector : bool
+        Add a dropdown doing the same thing interactively, one entry per primitive plus "all". Costs
+        nothing at render time (every colouring is precomputed), so it survives being saved to a
+        static HTML page, e.g. in the docs.
+    show_projections : bool
+        Draw the `PROJECTIONS` edges (source -> projected quantity) as dotted arrows. Only visible
+        when the class actually stores something to project out of.
+    fade_shielded : bool
+        Fade the edges into a stored/projected quantity, which are not traversed on this class (see
+        above). With False, every dependency edge is drawn identically -- the plain registry.
+    colors : Mapping[str, str], optional
+        Override colours per role; keys as in the legend ("free primitive", "frozen primitive",
+        "stored", "projected", "derived").
+    layer_gap : float, optional
+        Spacing between layers, relative to the spacing between nodes within a layer. Raise it to
+        pull crowded layers apart. Defaults to 1.0 horizontally and 1.8 vertically, where a label
+        (drawn under its node) sits between two layers rather than beside them.
+    label_chars, font_size, node_size : int
+        Label wrap width (in characters, broken at underscores), label font size, and marker size.
+        Each label sits under its node in a white, black-bordered box drawn above every trace, so an
+        edge passing behind it hides rather than garbling the text.
+    width, height : int, optional
+        Figure size in pixels; defaults are derived from the graph's shape (its number of layers and
+        the size of its widest layer), which is usually a better starting point than plotly's
+        autosize for a graph this tall or wide. The default width is capped at a notebook-friendly
+        1150px, so a deep graph tightens rather than overflowing the page; raise it (and `font_size`
+        with it) if the labels end up crowded.
+
+    Returns
+    -------
+    fig : plotly.graph_objects.Figure
+    '''
+    from jax_sn.tools.parametrisation import ParametrisedModule
+
+    cls = module if isinstance(module, type) else type(module)
+    if not issubclass(cls, ParametrisedModule):
+        raise TypeError(f"plot_derivation_graph needs a ParametrisedModule (sub)class, got {cls.__name__}")
+    if orientation not in ("horizontal", "vertical"):
+        raise ValueError(f'orientation must be "horizontal" or "vertical", got {orientation!r}')
+    if layer_gap is None:
+        layer_gap = 1.0 if orientation == "horizontal" else 1.8
+
+    graph = cls.graph()
+    if not graph.quantities:
+        raise ValueError(f"{cls.__name__} has an empty DERIVATIONS registry: nothing to plot.")
+    colors = {**_DERIVATION_ROLE_COLORS, **(colors or {})}
+
+    nodes = set(graph.quantities) | set(graph.primitives)
+    deps  = {n: set(graph.deps.get(n, ())) for n in nodes}
+    edges = [(d, n) for n in sorted(nodes) for d in sorted(deps[n])]
+
+    layers, depth = _derivation_layers(deps, nodes)
+    routes, predecessors, successors = _route_long_edges(layers, edges, depth)
+    layers, _ = min((_ordering_sweeps(layers, predecessors, successors, statistic)
+                     for statistic in (onp.mean, onp.median)), key=lambda result: result[1])
+    # a label is drawn under its node, which in a horizontal layout is *along* the layer -- so a real
+    # node claims more of the layer on that side, keeping routed edges out of its text.
+    coordinate = _straighten(layers, predecessors, successors,
+                             node_claim=(0.36, 0.64) if orientation == "horizontal" else (0.5, 0.5))
+    positions  = _derivation_positions(layers, coordinate, orientation, layer_gap)
+
+    roles = _derivation_roles(graph)
+    names = [n for layer in layers for n in layer if not isinstance(n, tuple)]
+
+    shielded = graph.stored | graph.projected
+    live     = [e for e in edges if not (fade_shielded and e[1] in shielded)]
+    inert    = [e for e in edges if e not in live]
+
+    fig = go.Figure()
+    _add_derivation_edges(fig, inert, positions, routes, color=_DERIVATION_PALE, dash="dot",
+                          width=1.2, name="not traversed here", arrows=False)
+    _add_derivation_edges(fig, live, positions, routes, color="#9a9a9a", dash="solid", width=1.4,
+                          name="dependency", arrows=True)
+    if show_projections:
+        # a projection points from a more-derived quantity back to one it contains, so it runs
+        # against the layering and is bowed out of the way rather than drawn through it.
+        _add_derivation_edges(fig, [(src, q) for q, (src, _) in graph.projections.items()], positions,
+                              color=colors["projected"], dash="dot", width=1.6, name="projection",
+                              arrows=True, bow=0.45 * layer_gap)
+
+    if highlight is not None:
+        highlight = [highlight] if isinstance(highlight, str) else list(highlight)
+        unknown = [h for h in highlight if h not in graph.primitives]
+        if unknown:
+            raise ValueError(f"highlight must name primitives of {cls.__name__}; {sorted(unknown)} "
+                             f"{'is' if len(unknown) == 1 else 'are'} not. "
+                             f"Primitives: {sorted(graph.primitives)}.")
+        stale = set().union(*(_derivation_stale(graph, h, cls.RETAINED_UNDER) for h in highlight))
+    else:
+        stale = None
+
+    node_x, node_y = zip(*(positions[n] for n in names))
+    fig.add_trace(go.Scatter(
+        x=list(node_x), y=list(node_y), mode="markers",
+        marker=dict(size=node_size, symbol="circle",
+                    color=_derivation_node_colors(names, roles, colors, stale),
+                    line=dict(width=[2 if n in cls.NON_DIFFERENTIABLE else 1 for n in names],
+                              color=["black" if n in cls.NON_DIFFERENTIABLE else "white" for n in names])),
+        hovertext=[_derivation_hover(n, cls, graph, roles) for n in names],
+        hoverinfo="text", showlegend=False, name="quantities",
+    ))
+    node_trace = len(fig.data) - 1
+
+    # Labels as annotations rather than trace text: only an annotation can carry a filled, bordered
+    # box, and annotations are drawn above every trace -- so a label is legible even where an edge
+    # runs behind it, instead of the text and the line competing for the same pixels.
+    labels = [dict(
+        x=positions[n][0], y=positions[n][1], text=_wrap_derivation_label(n, label_chars),
+        xanchor="center", yanchor="top", yshift=-(node_size / 2 + 3), showarrow=False,
+        font=dict(size=font_size, color="black"), align="center",
+        bgcolor="white", bordercolor="black", borderwidth=1, borderpad=3,
+    ) for n in names]
+
+    for role in _DERIVATION_ROLE_COLORS:            # legend only: dummy traces carrying no points
+        if any(roles[n] == role for n in names):
+            fig.add_trace(go.Scatter(
+                x=[None], y=[None], mode="markers", name=role, hoverinfo="skip",
+                marker=dict(size=node_size, color=colors[role]),
+            ))
+
+    if stale_selector:
+        buttons = [dict(label="all", method="restyle",
+                        args=[{"marker.color": [_derivation_node_colors(names, roles, colors)]},
+                              [node_trace]])]
+        for primitive in sorted(graph.primitives):
+            pinned = (" (retained)" if primitive in graph.conditionally_free else " (frozen)") \
+                     if primitive in graph.frozen else ""
+            buttons.append(dict(
+                label=f"{primitive}{pinned}", method="restyle",
+                args=[{"marker.color": [_derivation_node_colors(
+                    names, roles, colors, _derivation_stale(graph, primitive, cls.RETAINED_UNDER))]}, [node_trace]],
+            ))
+        fig.update_layout(updatemenus=[dict(
+            buttons=buttons, active=0, direction="down", showactive=True,
+            x=0.0, xanchor="left", y=1.12, yanchor="top", pad=dict(t=0, b=4),
+        )])
+        labels.append(dict(
+            text="stale after updating:", x=0.0, xanchor="left", y=1.19, yanchor="bottom",
+            xref="paper", yref="paper", showarrow=False, font=dict(size=11),
+        ))
+
+    # Explicit ranges rather than autorange: a label is drawn outside its marker's extent but does
+    # not enlarge the axis, so the outermost row/column would be clipped. Extra room below every
+    # node for its (up to a few lines of) label.
+    # `span` from the coordinates, not the node count: a layer's dummies are packed much tighter
+    # than its real nodes, so counting slots would badly overstate how much room a layer needs.
+    n_layers      = len(layers)
+    span          = max(coordinate.values()) - min(coordinate.values()) + 1.0
+    along, across = (layer_gap, 1.0) if orientation == "horizontal" else (1.0, layer_gap)
+    all_x, all_y   = zip(*positions.values())       # routed edges can bulge past the real nodes
+    fig.update_xaxes(visible=False, range=[min(all_x) - 0.7 * along, max(all_x) + 0.7 * along])
+    fig.update_yaxes(visible=False, range=[min(all_y) - 0.85 * across, max(all_y) + 0.4 * across])
+    fig.update_layout(
+        annotations=labels,
+        width=width or min(1150, max(760, 190 * (n_layers if orientation == "horizontal" else span))),
+        height=height or (max(420, 86 * span) if orientation == "horizontal"
+                          else max(420, 86 * n_layers)),
+        margin=dict(l=20, r=20, t=90 if stale_selector else 60, b=20),
+        legend=dict(orientation="h", y=-0.02, x=0.0),
+        plot_bgcolor="white",
+    )
+    return fig
 

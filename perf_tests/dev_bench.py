@@ -102,8 +102,7 @@ def main():
         if not variants:
             raise SystemExit(f"no discovered variant of {bench.base.__name__} matches {args.strategy!r}")
 
-    from _bench import compose_chain_strategy
-    from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
+    from _bench import compose_chain_strategy, create_multi_group_operator
 
     table = LiveTable(bench.name, [v.label for v in variants])
     for v in variants:
@@ -147,8 +146,7 @@ def _run_multiangle(args):
     from jax_sn.operators.transport_operator import (
         SingleAngleInversionStrategy, MultiAngleInversionStrategy, VmapAnglesForward, BatchedForward,
     )
-    from _bench import default_multi_group_strategy, inv_call, lift_inversion
-    from jax_sn.operator_creation.multi_group_operator_creation import create_multi_group_operator
+    from _bench import create_multi_group_operator, default_multi_group_strategy, inv_call, lift_inversion
     import equinox as eqx
 
     sd, qs, info = _resolve_problem(args)
