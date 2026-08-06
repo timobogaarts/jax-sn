@@ -48,8 +48,12 @@ from _notebook_manifest import NON_CI_NOTEBOOKS
 nb_execution_mode = "off" if os.environ.get("JAXSN_DOCS_NO_EXECUTE") else "cache"
 nb_execution_excludepatterns = NON_CI_NOTEBOOKS
 nb_execution_cache_path = os.path.abspath("../../.jupyter_cache")
-nb_execution_timeout = 600
+nb_execution_timeout = int(os.environ.get("JAXSN_DOCS_CELL_TIMEOUT", 600))
 nb_execution_raise_on_error = True
+# On a failure (exception or timeout) print the traceback rather than just the
+# error class -- nbclient's CellTimeoutError carries a preview of the cell that
+# hung, which is the only way to tell from a CI log *which* cell it was.
+nb_execution_show_tb = True
 # Notebooks write LaTeX as $...$ / $$...$$ rather than :math: roles.
 myst_enable_extensions = ["dollarmath", "amsmath"]
 myst_heading_anchors = 3
