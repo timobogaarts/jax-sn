@@ -36,27 +36,21 @@ jobs:
           pip install ".[geometry]"
           pip install -r docs/requirements.txt
 
-      # TEMPORARY: the parametrization notebook's gradient cell times out (>600s) here
-      # while taking ~3s locally on identical package versions. Compilation and the forward
-      # pass are already cleared; this run adds a CPU-time sampler (computing vs blocked)
-      # and sweeps three problem sizes (a wall only the largest hits is compute, one every
-      # size hits is a deadlock). Remove once known.
-      # - name: Diagnose parametrization gradient cell
-      #   timeout-minutes: 6
-      #   continue-on-error: true
-      #   run: python -u tools/debug_parametrization_cell.py
-
-      # # Same run with XLA's CPU backend restricted to single-threaded Eigen. The runner
-      # # has 2 vCPUs; if a nested parallel region in the backward pass is waiting on tasks
-      # # that a 2-thread pool can never schedule, this makes it complete.
-      # - name: Diagnose again with single-threaded Eigen
-      #   timeout-minutes: 6
-      #   continue-on-error: true
-      #   env:
-      #     XLA_FLAGS: "--xla_cpu_multi_thread_eigen=false"
-      #   run: python -u tools/debug_parametrization_cell.py
-
       - name: Build docs
+        # Works around a deadlock in XLA's CPU backend that hangs the parametrization
+        # notebook's gradient cell forever (it timed out at 600 s here while taking ~3 s
+        # on any developer machine). jaxlib's batched LU kernel -- reached from the
+        # jnp.linalg.inv calls in the transport operator and the FEM Jacobians --
+        # parallelises over the Eigen thread pool and then blocks on a BlockingCounter
+        # waiting for those subtasks, while itself running *on* that pool. The pool has
+        # one thread per core, so when the concurrency-optimised scheduler starts two LU
+        # thunks at once on a 2-vCPU runner both workers are blocked and no thread is
+        # left to run the subtasks. Three or more cores always leave a spare worker,
+        # which is why this only ever appears in CI. Disabling that scheduler stops the
+        # two LU thunks being co-scheduled. Remove once jaxlib no longer blocks inside
+        # the pool it is running on.
+        env:
+          XLA_FLAGS: "--xla_cpu_enable_concurrency_optimized_scheduler=false"
         run: bash build_docs.sh
 
       - name: Set up GitHub Pages
