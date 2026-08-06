@@ -11,7 +11,7 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 
-from jax_sn.operators.operator_data import OperatorData
+from jax_sn.operators.operator_data import NonDifferentiableData, OperatorData
 
 from jax_sn.operators.scatter_operator import GatherScatterData, SingleGroupGatherScatterStrategy
 from jax_sn.operators.single_group_operator import SingleGroupData
@@ -70,8 +70,12 @@ class MultiGroupChainGatherStrategy(MultiGroupStrategy):
         return self._lift_over_groups(
             lambda g: x[g] - gather.outgoing_gather(gs_data, zeta, g), operator_data.n_energy_groups)
 
-    def default_sweep_data(self):
-        return self.single_group_chain_strategy.default_sweep_data()
+    def accepts(self, non_differentiable_data : NonDifferentiableData) -> bool:
+        return self.single_group_chain_strategy.accepts(non_differentiable_data)
+
+    def build_default_non_differentiable_data(self, geometric_domain, angles) -> NonDifferentiableData:
+        return self.single_group_chain_strategy.build_default_non_differentiable_data(
+            geometric_domain, angles)
 
 
 class MultiGroupChainGatherScanStrategy(_ScanLift, MultiGroupChainGatherStrategy):
@@ -113,8 +117,12 @@ class ComposedMultiGroupChainStrategy(MultiGroupChainStrategy):
             return MultiGroupChainScanStrategy(composed.single_group_chain_strategy, checkpoint=composed.checkpoint)
         raise TypeError(f"No matching chain-only lift for {type(composed).__name__}.")
 
-    def default_sweep_data(self):
-        return self.single_group_chain_strategy.default_sweep_data()
+    def accepts(self, non_differentiable_data : NonDifferentiableData) -> bool:
+        return self.single_group_chain_strategy.accepts(non_differentiable_data)
+
+    def build_default_non_differentiable_data(self, geometric_domain, angles) -> NonDifferentiableData:
+        return self.single_group_chain_strategy.build_default_non_differentiable_data(
+            geometric_domain, angles)
 
 
 class MultiGroupChainScanStrategy(_ScanLift, ComposedMultiGroupChainStrategy):

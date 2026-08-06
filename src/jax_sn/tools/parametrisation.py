@@ -82,15 +82,14 @@ def _topological_order(derivations: Mapping[str, Callable]) -> Tuple[str, ...]:
 
 def _frontier(derivations: Mapping[str, Callable],
               projections: Mapping[str, Mapping[str, Callable]],
+              retentions: Mapping[str, Mapping[str, Callable]],
               frozen: FrozenSet[str]) -> FrozenSet[str]:
     '''
-    The quantities to store when ``frozen`` cannot change: those fully determined by ``frozen``,
-    minus those already readable out of one that is stored.
+    Quantities to store when frozen primitives cannot change.
 
-    Note the second clause is projection-reachability, not dependency. A quantity another stored one
-    merely *consumed* is not thereby recoverable -- ``topology_build`` is built from
-    ``face_template`` but does not hold it -- so dropping it would silently trade a field read for a
-    recomputation.
+    Takes into account containers and only stores the largest container. 
+
+    (i.e. do not store subobjects of a bigger also stored object)
     '''
     primitives = _primitives_of(derivations)
     unknown = set(frozen) - primitives
@@ -99,18 +98,34 @@ def _frontier(derivations: Mapping[str, Callable],
                          f"Known primitives: {sorted(primitives)}.")
     determined = {
         q for q in derivations
-        if _transitive_dependencies(derivations, q) & primitives <= set(frozen)
+        if (_transitive_dependencies(derivations, q) & primitives) - set(retentions.get(q, ()))
+        <= set(frozen)
     }
+    views = _views(derivations, projections)
     stored: set = set()
     for name in reversed(_topological_order(derivations)):      # most derived first
-        if name in determined and name not in _projection_paths(projections, frozenset(stored)):
+        if (name in determined and name not in views
+                and name not in _projection_paths(projections, frozenset(stored))):
             stored.add(name)
     return frozenset(stored)
+
+
+def _views(derivations: Mapping[str, Callable],
+           projections: Mapping[str, Mapping[str, Callable]]) -> FrozenSet[str]:
+    '''
+    Same as projection but reversed: 
+
+    You can build NonDifferentiableData and read SweepData out of it; but you normally do not 
+    first construct SweepData. In this case, container is first in graphs, so this is the other way around here.
+    '''
+    graph = _predecessor_graph(derivations)
+    return frozenset(q for q, sources in projections.items() if set(sources) & graph.get(q, frozenset()))
 
 
 def _projection_paths(projections: Mapping[str, Mapping[str, Callable]],
                       stored: FrozenSet[str]) -> Dict[str, Tuple[str, Callable]]:
     '''
+    
     Quantities recoverable from a stored one, each mapped to the single step that gets it there.
     Breadth-first from ``stored``, so every path bottoms out in a field read and cannot recurse.
     '''
@@ -124,6 +139,32 @@ def _projection_paths(projections: Mapping[str, Mapping[str, Callable]],
             paths[name] = (src, sources[src])
             queue.append(name)
     return paths
+
+
+def _insensitive(graph: "Graph", name: str, primitive: str, cut: Callable[[str], bool],
+                 cache: Dict[str, bool]) -> bool:
+    '''
+    Whether the value ``name`` currently holds stays valid when ``primitive`` is replaced.
+
+    A dependency edge says only *that* a quantity is a function of a primitive, never *how much of
+    it* is used. Where the edge is coarser than that -- ``sweep_data`` reads the strategy only for the
+    sweep type it names -- a retention declares the coarsening, and ``cut(name)`` reports whether it
+    holds. The walk is then the same shape as ``require()`` in :meth:`ParametrisedModule.graph`: descend
+    the dependency DAG and stop at nodes that shield what is below them, here because the held value
+    survives rather than because it is stored.
+    '''
+    if name == primitive:
+        return False
+    if name not in graph.quantities or primitive not in graph.primitive_deps[name]:
+        return True                     # a different primitive, or no dependence at all
+    if name in cache:
+        return cache[name]
+    cache[name] = True                  # guards the recursion; cycles already rejected
+    cache[name] = cut(name) or all(
+        _insensitive(graph, dep, primitive, cut, cache) for dep in graph.deps[name]
+    )
+    return cache[name]
+
 
 # ---------------------------------------------------------------------------------------------
 # The module base.
@@ -142,6 +183,8 @@ class Graph(NamedTuple):
     derived        : FrozenSet[str]                    # quantities recomputed on access
     frozen         : FrozenSet[str]                    # primitives a stored quantity depends on
     free           : FrozenSet[str]                    # primitives safe to replace
+    conditionally_free : FrozenSet[str]                # frozen primitives every stored quantity has a
+                                                       #   retention for: replaceable when it holds
     deps           : Mapping[str, FrozenSet[str]]      # quantity -> its direct dependencies
     primitive_deps : Mapping[str, FrozenSet[str]]      # quantity -> primitives it needs, ignoring
                                                        #   storage: what staleness follows from
@@ -151,8 +194,8 @@ class Graph(NamedTuple):
 
     def __str__(self):
         return "\n".join(
-            f"{k:10s} {sorted(getattr(self, k))}"
-            for k in ("stored", "projected", "derived", "frozen", "free")
+            f"{k:19s} {sorted(getattr(self, k))}"
+            for k in ("stored", "projected", "derived", "frozen", "free", "conditionally_free")
         )
 
     __repr__ = __str__          # the default tuple repr is unreadable, and this is for reading
@@ -319,11 +362,39 @@ class ParametrisedModule(eqx.Module, metaclass=_ParametrisedModuleMeta):
     ----------
     DERIVATIONS : ClassVar[Mapping[str, Callable]]
         The derivation registry. Inherited by subclasses unless overridden.
+    PROJECTIONS : ClassVar[Mapping[str, Mapping[str, Callable]]]
+        ``quantity -> {source quantity: extractor}``, for the derivations that repackage rather than
+        compute: how to read a quantity back out of a stored one that already holds it.
+    NON_DIFFERENTIABLE : ClassVar[FrozenSet[str]]
+        Quantities to ``stop_gradient``. Marked here rather than inside the derivation, so no
+        derivation *can* forget it and it holds on the stored and projected paths too.
+    RETAINED_UNDER : ClassVar[Mapping[str, Mapping[str, Callable[[Any, Any], bool]]]]
+        ``quantity -> {primitive: predicate(held_value, new_primitive) -> bool}``: when a held value
+        of ``quantity`` stays valid across a replacement of ``primitive``.
+
+        A dependency edge states only *that* a quantity is a function of a primitive. Some edges are
+        much coarser than that -- the harmonics depend on the cross sections only through their
+        ``l_max`` -- and without the predicate the graph must treat the two as incompatible: hold the
+        quantity and the primitive is frozen, keep the primitive free and the quantity is recomputed.
+        Declaring when the held value still serves relaxes both halves at once:
+
+        - :meth:`updated` replaces such a primitive even though it is ``frozen``, when the predicate
+          holds, and refuses loudly when it does not -- never a silent rebuild of what the policy
+          promised to keep. These primitives are :attr:`Graph.conditionally_free`. Here the whole
+          walk counts: a retention anywhere on the path shields what is stored above it, provided its
+          own value is stored or projected, so there is something to check it against.
+        - :meth:`frontier` stores a quantity only such a primitive held back. Here only a quantity's
+          *own* retentions count: one declared further down is on a value nothing will hold.
+
+        Two obligations. The predicate must be *sound* -- it asserts the held value is a correct
+        value for the new primitive, not merely a convenient one. And it runs in Python, so it may
+        read only static structure (types, shapes, capabilities), never a traced leaf.
     '''
 
     DERIVATIONS: ClassVar[Mapping[str, Callable]] = {}
     PROJECTIONS: ClassVar[Mapping[str, Mapping[str, Callable]]] = {}
     NON_DIFFERENTIABLE: ClassVar[FrozenSet[str]] = frozenset()
+    RETAINED_UNDER: ClassVar[Mapping[str, Mapping[str, Callable[[Any, Any], bool]]]] = {}
 
     def __init_subclass__(cls, abstract : bool = False, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -367,7 +438,7 @@ class ParametrisedModule(eqx.Module, metaclass=_ParametrisedModuleMeta):
         }
         frozen = frozenset().union(*(primitive_deps[n] for n in stored)) if stored else frozenset()
 
-        cls._check_projections()
+        cls._check_registries()
         projections = _projection_paths(cls.PROJECTIONS, stored)
         projected = frozenset(projections)
         shielded = stored | projected
@@ -397,13 +468,35 @@ class ParametrisedModule(eqx.Module, metaclass=_ParametrisedModuleMeta):
             require(name)
 
         cached = Graph(quantities, primitives, stored, projected, quantities - shielded,
-                       frozen, primitives - frozen, deps, primitive_deps, required, projections)
+                       frozen, primitives - frozen, frozenset(), deps, primitive_deps, required,
+                       projections)
+        # needs the graph to walk, so it is filled in on a second pass over the same tuple
+        cached = cached._replace(conditionally_free=frozenset(
+            p for p in frozen if cls._retention_walk(cached, p, lambda name: True)))
         type.__setattr__(cls, "_graph", cached)
         return cached
 
     @classmethod
-    def _check_projections(cls):
-        '''A projection extracts a quantity from another quantity; both ends must be in the registry.'''
+    def _retention_walk(cls, graph: Graph, primitive: str, cut: Callable[[str], bool]) -> bool:
+        '''
+        Whether every stored quantity survives a replacement of ``primitive``, where a retention
+        declared for it cuts the walk iff ``cut`` says so. ``cut=lambda _: True`` asks the static
+        question (is one declared at all), which is what :attr:`Graph.conditionally_free` reports; the
+        value-checking ``cut`` in :meth:`updated` asks whether it actually holds.
+        '''
+        retained = {q for q, sources in cls.RETAINED_UNDER.items() if primitive in sources}
+        shielded = graph.stored | graph.projected      # a retention is only checkable where the value is
+        cache: Dict[str, bool] = {}
+        cuts = lambda name: name in retained and name in shielded and cut(name)
+        return all(_insensitive(graph, q, primitive, cuts, cache) for q in graph.stored)
+
+    @classmethod
+    def _check_registries(cls):
+        '''
+        The three refining registries against the derivation registry: a projection extracts a
+        quantity from another quantity (both ends must be in it), and only a derived quantity can be
+        marked non-differentiable or given a retention.
+        '''
         for name, sources in cls.PROJECTIONS.items():
             bad = ({name} | set(sources)) - set(cls.DERIVATIONS)
             if bad:
@@ -419,14 +512,38 @@ class ParametrisedModule(eqx.Module, metaclass=_ParametrisedModuleMeta):
                 f"{'is' if len(bad) == 1 else 'are'} not in DERIVATIONS. Only a derived quantity can "
                 f"be marked; a primitive is the caller's to stop_gradient."
             )
+        primitives = _primitives_of(cls.DERIVATIONS)
+        for name, sources in cls.RETAINED_UNDER.items():
+            if name not in cls.DERIVATIONS:
+                raise ValueError(
+                    f"{cls.__name__}.RETAINED_UNDER names '{name}', which is not in DERIVATIONS. A "
+                    f"retention relaxes a dependency of a derived quantity; a primitive has none."
+                )
+            bad = set(sources) - primitives
+            if bad:
+                raise ValueError(
+                    f"{cls.__name__}.RETAINED_UNDER['{name}'] names {sorted(bad)}, which "
+                    f"{'is' if len(bad) == 1 else 'are'} not {'a primitive' if len(bad) == 1 else 'primitives'}. "
+                    f"Known primitives: {sorted(primitives)}."
+                )
+            spurious = set(sources) - _transitive_dependencies(cls.DERIVATIONS, name)
+            if spurious:
+                raise ValueError(
+                    f"{cls.__name__}.RETAINED_UNDER['{name}'] declares a retention for "
+                    f"{sorted(spurious)}, which '{name}' does not depend on -- so there is nothing to "
+                    f"relax and the predicate would never be consulted."
+                )
 
     # -- generated storage policies ------------------------------------------------------------
 
     @classmethod
     def frontier(cls, *frozen : str) -> FrozenSet[str]:
-        '''The quantities worth storing if ``frozen`` never changes.'''
-        cls._check_projections()
-        return _frontier(cls.DERIVATIONS, cls.PROJECTIONS, frozenset(frozen))
+        '''
+        The quantities worth storing if ``frozen`` never changes -- plus those held back only by a
+        primitive they have a retention for, which lands them in ``graph().conditionally_free``.
+        '''
+        cls._check_registries()
+        return _frontier(cls.DERIVATIONS, cls.PROJECTIONS, cls.RETAINED_UNDER, frozenset(frozen))
 
     @classmethod
     def freezing(cls, *frozen : str) -> type:
@@ -508,7 +625,8 @@ class ParametrisedModule(eqx.Module, metaclass=_ParametrisedModuleMeta):
     def updated(self, **primitives: Any) -> "ParametrisedModule":
         '''
         Replace primitives, keeping everything else. Only ``graph().free`` primitives may be
-        replaced; everything derived from them follows automatically.
+        replaced -- plus those in ``graph().conditionally_free`` whose retention predicate accepts the
+        new value (see :attr:`RETAINED_UNDER`); everything derived from them follows automatically.
         '''
         cls, graph = type(self), type(self).graph()
 
@@ -524,13 +642,26 @@ class ParametrisedModule(eqx.Module, metaclass=_ParametrisedModuleMeta):
                              f"Known primitives: {sorted(graph.primitives)}.")
 
         frozen = set(primitives) & graph.frozen
+        memo: Dict[str, Any] = {}       # values of *this* instance, so shared across the checks below
+        retained = {
+            p for p in frozen & graph.conditionally_free
+            if cls._retention_walk(graph, p, lambda name, _p=p: cls.RETAINED_UNDER[name][_p](
+                _evaluate(self, name, memo), primitives[_p]))
+        }
+        frozen -= retained
         if frozen:
             culprits = sorted(q for q in graph.stored if graph.primitive_deps[q] & frozen)
+            refused = sorted(frozen & graph.conditionally_free)
             raise ValueError(
                 f"{cls.__name__} cannot update {sorted(frozen)}: it stores {culprits}, derived "
-                f"from {'it' if len(frozen) == 1 else 'them'}. Free to update: "
-                f"{sorted(graph.free)}. Move to "
-                f"`{cls._generation_base().__name__}.varying({', '.join(map(repr, sorted(graph.free | frozen)))})` "            
+                f"from {'it' if len(frozen) == 1 else 'them'}. "
+                + (f"{refused} would have been retained had the new "
+                   f"{'value' if len(refused) == 1 else 'values'} suited what is stored, but the "
+                   f"retention refused {'it' if len(refused) == 1 else 'them'}, so the stored "
+                   f"{'quantity' if len(culprits) == 1 else 'quantities'} would have to be rebuilt. "
+                   if refused else "")
+                + f"Free to update: {sorted(graph.free)}. Move to "
+                f"`{cls._generation_base().__name__}.varying({', '.join(map(repr, sorted(graph.free | frozen)))})` "
             )
 
         values = {f.name: getattr(self, f.name) for f in dataclasses.fields(self)}

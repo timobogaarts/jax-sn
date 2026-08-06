@@ -2,10 +2,12 @@
 Common data structures for all operators, containing differentiable and non-differentiable data.
 '''
 
+from abc import abstractmethod
 
 import equinox as eqx
 import jax.numpy as jnp
 
+from jax_sn.domain.geometric_domain import GeometricDomain
 from jax_sn.solution_domain import SolutionDomain, SpatialData
 from jax_sn.quadrature_set import QuadratureSetBase
 from jax_sn.operators.sweep_data import SweepData
@@ -43,11 +45,39 @@ class DiscretisationData(eqx.Module):
 
 class NonDifferentiableData(eqx.Module):
     r'''
-    Contains data for operator applications with non-differentiable setup data (e.g. sweep ordering).     
+    Non-differentiable data (setup data) that is not part of the operator's definition and as such does not have to take part in the VJP/JVP of the operator.
     '''
 
     sweep_data : SweepData
     '''The sweep execution plan (per-angle topological ordering).'''
+
+
+class RequiresNonDifferentiableData(eqx.Module):
+    '''
+    Mixin for strategies that require non-differentiable data (transport / single-group/ multi-group).
+    '''
+
+    @abstractmethod
+    def accepts(self, non_differentiable_data : NonDifferentiableData) -> bool:
+        '''Whether it can accept this non-differentiable data.'''
+        ...
+
+    def check_compatible(self, non_differentiable_data : NonDifferentiableData):
+        '''The asserting twin of :meth:`accepts`, for data assembled by hand.'''
+        assert self.accepts(non_differentiable_data), \
+            f"{type(self).__name__} cannot use the given {type(non_differentiable_data).__name__}. " \
+            f"Build the tier it needs with " \
+            f"{type(self).__name__}.build_default_non_differentiable_data(geometric_domain, angles)."
+
+    @abstractmethod
+    def build_default_non_differentiable_data(
+            self, geometric_domain : GeometricDomain,
+            angles : jnp.ndarray) -> NonDifferentiableData:
+        '''
+        Require each strategy to provide a way to construct this non-differentiable data from the
+        geometric domain and angles.
+        '''
+        ...
 
 
 class OperatorData(eqx.Module):
@@ -78,8 +108,7 @@ class OperatorData(eqx.Module):
         return self.discretisation_data.spatial.domain
 
     @property
-    def solution_domain(self) -> SolutionDomain:
-        '''Reconstruct the :class:`SolutionDomain` this operator data was built from (e.g. for interpolation).'''
+    def solution_domain(self) -> SolutionDomain:        
         return SolutionDomain(self.discretisation_data.spatial)
 
     @property
@@ -100,7 +129,6 @@ class OperatorData(eqx.Module):
 
     @property
     def n_energy_groups(self):
-        '''Number of energy groups, read off the indexed cross sections (a static array shape).'''
         return self.domain.cross_sections_indexed.n_energy_groups
 
 

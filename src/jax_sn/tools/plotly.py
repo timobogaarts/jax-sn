@@ -1418,19 +1418,21 @@ def add_axis_triad(fig, origin=(0.0, 0.0, 0.0), length=1.0, colors=("red", "gree
 # `cls.graph()`; nothing here inspects the class any further.
 
 _DERIVATION_ROLE_COLORS = {
-    "free primitive"   : "#2ca02c",
-    "frozen primitive" : "#8c8c8c",
-    "stored"           : "#1f77b4",
-    "projected"        : "#9467bd",
-    "derived"          : "#ff7f0e",
+    "free primitive"     : "#2ca02c",
+    "retained primitive" : "#bcbd22",
+    "frozen primitive"   : "#8c8c8c",
+    "stored"             : "#1f77b4",
+    "projected"          : "#9467bd",
+    "derived"            : "#ff7f0e",
 }
 
 _DERIVATION_ROLE_DESCRIPTIONS = {
-    "free primitive"   : "primitive, may be replaced by .updated()",
-    "frozen primitive" : "primitive, pinned: a stored quantity was built from it",
-    "stored"           : "held as a field, read directly",
-    "projected"        : "read back out of a stored quantity",
-    "derived"          : "recomputed on every access",
+    "free primitive"     : "primitive, may be replaced by .updated()",
+    "retained primitive" : "primitive, replaceable while every retention on it holds",
+    "frozen primitive"   : "primitive, pinned: a stored quantity was built from it",
+    "stored"             : "held as a field, read directly",
+    "projected"          : "read back out of a stored quantity",
+    "derived"            : "recomputed on every access",
 }
 
 _DERIVATION_PALE = "#e3e3e3"        # a node/edge greyed out by a `highlight` selection
@@ -1438,7 +1440,8 @@ _DERIVATION_PALE = "#e3e3e3"        # a node/edge greyed out by a `highlight` se
 
 def _derivation_roles(graph):
     '''Each node's role under this class's storage policy; the keys of `_DERIVATION_ROLE_COLORS`.'''
-    roles = {n: ("frozen primitive" if n in graph.frozen else "free primitive")
+    roles = {n: ("retained primitive" if n in graph.conditionally_free else
+                 "frozen primitive"   if n in graph.frozen else "free primitive")
              for n in graph.primitives}
     roles |= {n: ("stored"    if n in graph.stored    else
                   "projected" if n in graph.projected else "derived") for n in graph.quantities}
@@ -1624,14 +1627,25 @@ def _derivation_hover(name, cls, graph, roles):
             lines.append(f"projected out of: {graph.projections[name][0]}")
         if name in cls.NON_DIFFERENTIABLE:
             lines.append("non-differentiable (stop_gradient)")
+        if name in cls.RETAINED_UNDER:
+            lines.append(f"retained under: {', '.join(sorted(cls.RETAINED_UNDER[name]))}")
+    elif role == "retained primitive":
+        gating = sorted(q for q, sources in cls.RETAINED_UNDER.items() if name in sources)
+        lines.append(f"kept across .updated() by the retention on: {', '.join(gating)}")
     used_by = sorted(q for q in graph.quantities if name in graph.deps[q])
     lines.append(f"used by: {', '.join(used_by) or '(nothing)'}")
     return "<br>".join(lines)
 
 
-def _derivation_stale(graph, primitive):
-    '''What changing `primitive` invalidates: itself, plus every quantity it feeds into.'''
-    return {primitive} | {q for q in graph.quantities if primitive in graph.primitive_deps[q]}
+def _derivation_stale(graph, primitive, retentions):
+    '''What changing `primitive` invalidates: itself, plus every quantity it feeds into -- except
+    where a retention on a held value cuts the chain (the static form: a retention is declared, not
+    that it holds for a particular new value).'''
+    from jax_sn.tools.parametrisation import _insensitive
+    held = graph.stored | graph.projected
+    cut  = lambda n : n in held and primitive in retentions.get(n, ())
+    return {primitive} | {q for q in graph.quantities
+                          if not _insensitive(graph, q, primitive, cut, {})}
 
 
 def _derivation_node_colors(names, roles, colors, stale=None):
@@ -1726,7 +1740,7 @@ def _add_derivation_edges(fig, edges, positions, routes=None, *, color, dash, wi
 
 def plot_derivation_graph(module, *, orientation="horizontal", highlight=None, stale_selector=False,
                            show_projections=True, fade_shielded=True, colors=None, layer_gap=None,
-                           label_chars=14, font_size=10, node_size=15, width=None, height=None):
+                           label_chars=14, font_size=10, node_size=15, width=800, height=700):
     '''
     Visualize the dependency graph a `jax_sn.tools.parametrisation.ParametrisedModule` declares -- e.g. any
     rung of `jax_sn.operator_creation.builders` -- with the class's storage policy as its colouring.
@@ -1847,7 +1861,7 @@ def plot_derivation_graph(module, *, orientation="horizontal", highlight=None, s
             raise ValueError(f"highlight must name primitives of {cls.__name__}; {sorted(unknown)} "
                              f"{'is' if len(unknown) == 1 else 'are'} not. "
                              f"Primitives: {sorted(graph.primitives)}.")
-        stale = set().union(*(_derivation_stale(graph, h) for h in highlight))
+        stale = set().union(*(_derivation_stale(graph, h, cls.RETAINED_UNDER) for h in highlight))
     else:
         stale = None
 
@@ -1885,11 +1899,12 @@ def plot_derivation_graph(module, *, orientation="horizontal", highlight=None, s
                         args=[{"marker.color": [_derivation_node_colors(names, roles, colors)]},
                               [node_trace]])]
         for primitive in sorted(graph.primitives):
-            pinned = " (frozen)" if primitive in graph.frozen else ""
+            pinned = (" (retained)" if primitive in graph.conditionally_free else " (frozen)") \
+                     if primitive in graph.frozen else ""
             buttons.append(dict(
                 label=f"{primitive}{pinned}", method="restyle",
                 args=[{"marker.color": [_derivation_node_colors(
-                    names, roles, colors, _derivation_stale(graph, primitive))]}, [node_trace]],
+                    names, roles, colors, _derivation_stale(graph, primitive, cls.RETAINED_UNDER))]}, [node_trace]],
             ))
         fig.update_layout(updatemenus=[dict(
             buttons=buttons, active=0, direction="down", showactive=True,

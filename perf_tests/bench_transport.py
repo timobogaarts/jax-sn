@@ -7,7 +7,7 @@ Single-angle transport operator. Two axes:
 Each discovered single-angle strategy is lifted to the multi-angle form the chain expects
 (``_bench.lift_forward``/``lift_inversion``) before the operator is built, then indexed back down to a
 single angle for the call. Discovery auto-derives the right toposort per inversion
-(``default_sweep_data_type``); pallas/warp inversions appear only if importable and self-skip (via
+(``build_default_sweep_data``); pallas/warp inversions appear only if importable and self-skip (via
 ``check_compatible``) on an incompatible mesh. The ``overrides`` inject a representative batch size, since
 default-construction gives ``batch_size=None`` (== non-batched).
 """

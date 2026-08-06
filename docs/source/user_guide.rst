@@ -15,7 +15,8 @@ and several notebooks show how to map these concepts to the code.
    user_guide/spatial_discretisation.ipynb
    user_guide/slab_single_angle.ipynb
    user_guide/multi_angle.ipynb
-   user_guide/multi_group_operator_parametrization.ipynb
+   user_guide/multi_group_operator.ipynb
+   user_guide/parametrization.ipynb
    user_guide/first_operator.ipynb   
 
    

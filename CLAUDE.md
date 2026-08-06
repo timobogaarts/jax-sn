@@ -69,12 +69,15 @@ graph.
 function}`, where a derivation's **parameter names are its dependencies** and anything without a
 derivation is a **primitive**. A concrete subclass declares as fields the primitives plus whichever
 derived quantities it stores; accessors for the rest are injected, so `x.face_normals` is a field read
-or a recomputation depending on the policy, and nothing at the call site changes. Two more registries
+or a recomputation depending on the policy, and nothing at the call site changes. Three more registries
 refine it: `PROJECTIONS` (quantity → how to read it back out of a container that already holds it, for
-the derivations that repackage rather than compute) and `NON_DIFFERENTIABLE` (marked on the registry,
+the derivations that repackage rather than compute), `NON_DIFFERENTIABLE` (marked on the registry,
 not inside the derivation, so no derivation *can* forget the `stop_gradient` and it holds on the stored
-and projected paths too). Intermediate classes must be declared `abstract=True` — a field cannot
-override an injected accessor, so only an abstract class is safe to inherit from or generate from.
+and projected paths too), and `RETAINED_UNDER` (below). Intermediate classes must be declared
+`abstract=True` — a field cannot override an injected accessor, so only an abstract class is safe to
+inherit from or generate from. A quantity that is a `PROJECTIONS` target of one of its own
+dependencies is a *view* (the derivation and the projection are the same edge) and is never stored —
+otherwise "most derived first" would store it *and* its own source beside it.
 
 Storage is stated as intent, not as a field list: `.varying(*primitives)` generates the subclass
 keeping those updatable and storing as much of the rest as the graph allows, `.freezing(*primitives)`
@@ -85,9 +88,30 @@ rather than generates — `.frozen(...)` / `.varied(...)` / `.stored(...)`, i.e.
 `.updated(**primitives)` replaces primitives and everything downstream follows. Generated classes are memoised on `(base, stored)` — a class object is
 part of a treedef, so two structurally identical but distinct classes would retrace.
 
+`RETAINED_UNDER = {quantity: {primitive: predicate(held_value, new_primitive)}}` handles edges that
+are coarser than the graph can see. A dependency edge records only *that* a quantity is a function of
+a primitive, so any policy holding the sweep tier freezes `strategy` outright — yet the strategy
+reaches that tier only through what it asks of it, and a tier at least as rich as the new strategy
+needs is still correct. It has two halves, and they are the same statement:
+- `updated` may replace such a primitive even though it is `frozen`, when the predicate holds. It
+  raises naming the refusing quantity when it does not — never a silent rebuild of a tier the policy
+  promised to keep. These primitives are `graph().conditionally_free`.
+- `_frontier` may *store* a quantity that only such a primitive held back, so `.varying(X)` stores
+  more than before. Only a quantity's own retentions count: one declared further down is on a value
+  nothing will hold, so nothing could check it at update time. Note this means `.varying(X)` no
+  longer promises X is unconditionally updatable.
+
+The predicate must be sound (it asserts correctness, not convenience) and runs in Python, so it may
+read only static structure, never a traced leaf. Three are declared: `DiscretisationBuilder` for
+`cross_sections_indexed` (the harmonics read them only for `l_max`, so `.varying("cross_sections_indexed")`
+— the canonical θ policy — now *stores* `angular_data`), `SweptBuilder` for `strategy`
+(`strategy.accepts(tier)`), `TransportBuilder` for `inversion_strategy`. The forward strategy never
+touches the sort, so it is plain `free` whatever the policy.
+
 `operator_creation/builders.py` is the ladder over that mechanism, along two axes. The **operator**
 axis is the class ladder: `SpatialBuilder` (mesh + element + materials) → `DiscretisationBuilder`
-(adds `quadrature_set`) → `SweptBuilder` (adds the `sweep_data` tier and marks it non-differentiable)
+(adds `quadrature_set`) → `SweptBuilder` (adds the `non_differentiable_data` tier, with `sweep_data` a
+view of it, and marks it non-differentiable)
 → the operator rungs (`MultiGroupBuilder`, `SingleGroupBuilder` / `SingleGroupChainBuilder` /
 `SingleGroupSourceBuilder`, `MassBuilder`, `MomentBuilder`, `DiscreteBuilder`, `ScatterBuilder`,
 `SingleAngleTransportBuilder` / `MultiAngleTransportBuilder`), each adding the primitives that operator
@@ -134,17 +158,32 @@ MultiGroupBuilder.from_solution_domain(
 ```
 
 and the same shape on the other rungs (`.operator_data`, `.transport_operator`, `.mass_operator`, …).
-`sweep_data_kwargs` is keyword-only and defaults to `()`. One use is load-bearing: a leveled sweep
-(`LeveledSweepData`, what the Warp strategies want) pads its level arrays to a fixed width, and left
-to itself it reads that width off the levels — a tracer once the primitive it derives from is one, so
-`builder.updated(vertices=...)` under `jit` dies with a `ConcretizationTypeError`. Pinning it
-(`sweep_data_kwargs=(("maximum_number_of_levels", n),)`, with `n` read off a concretely-built sweep as
-`sweep_data.level_fwd.n_levels`) makes the rebuild traceable; too small a value is a clean equinox
-runtime error, not silent corruption. `perf_tests/_bench.create_multi_group_builder` does this.
+A builder takes no build-time knobs: every one of them is a static field on whichever strategy wants
+it, so it rides in on `strategy` and no rung has to pass anything through. The load-bearing case is
+the leveled sweep (`LeveledSweepData`, what the Warp strategies want): it pads its level arrays to a
+fixed width, and left to itself reads that width off the levels — a tracer once the primitive it
+derives from is one, so `builder.updated(vertices=...)` under `jit` dies with a
+`ConcretizationTypeError`. Pinning it is `WarpLevelSweep(maximum_number_of_levels=n)` /
+`WarpLevelAngles(maximum_number_of_levels=n)`, with `n` read off a concretely-built sweep as
+`sweep_data.level_fwd.n_levels`; too small a value is a clean equinox runtime error, not silent
+corruption. `perf_tests/_bench.create_multi_group_builder` does this, rewriting the built strategy
+tree via `_bench.pin_level_width` (the knob is static, so it is a dataclass-field walk — `eqx.tree_at`
+only reaches leaves).
 The shared `OperatorData` a rung assembles is
 `DiscretisationData(spatial, angular)` (differentiable: FEM/geometry/cross-sections + `AngularData`
-quadrature & harmonics) + `NonDifferentiableData(sweep_data)`; the sweep data type is chosen by the
-strategy's `default_sweep_data()`. Note the strategy argument is **one composed `multi_group_strategy`**,
+quadrature & harmonics) + `NonDifferentiableData(sweep_data)`. The non-differentiable tier is built
+whole by the strategy (`RequiresNonDifferentiableData` in `operators/operator_data.py`:
+`build_default_non_differentiable_data(geometric_domain, angles)` builds it, `accepts(tier)`
+says whether an existing one already serves; both abstract) — stated over the tier rather than over
+the sweep data, so a strategy that comes to need more than a sweep ordering changes nothing
+builder-side. It *builds* rather than naming a type because the tier is an assembly whose members are
+chosen by different sub-strategies — and for the same reason the transport level below it builds too
+(`build_default_sweep_data(geometric_domain, angle)`), so a knob-carrying strategy can apply its own
+knobs without anything upstream knowing they exist. Composed strategies answer both by delegating to
+the sub-strategy that consumes each part, bottoming out in the transport inversion's
+`build_default_sweep_data()`/`accepts(sweep_data)`. What a strategy asks *of* an existing sweep is a
+separate, cheap question (`required_capabilities()`), which is what `accepts` is written in terms of.
+Note the strategy argument is **one composed `multi_group_strategy`**,
 not a flat list of per-axis kwargs — the composition happens by nesting strategy objects (see
 `DefaultMultiGroupStrategy` in `operator_creation/default_strategies.py` for canonical trees).
 
@@ -174,7 +213,7 @@ Transport is the richest axis. Strategy contracts live in
   (angle axis leading); `ComposedMultiAngleForwardStrategy` lifts a single-angle kernel and names it via
   `single_angle_strategy()`.
 - Inversion: `AbstractInversionStrategy.invert` is the shared sweep contract and declares the sweep-data
-  precondition — `required_capabilities()`/`default_sweep_data_type()`, enforced by `check_compatible`
+  precondition — `required_capabilities()`/`build_default_sweep_data()`, enforced by `check_compatible`
   from the operator's `__check_init__`, so it fires when the operator is **constructed** — but *not* on
   `eqx.tree_at`, which rebuilds via `tree_unflatten` and bypasses `__check_init__`. Swapping a strategy
   in with `tree_at` (as several test fixtures do) skips the check entirely.

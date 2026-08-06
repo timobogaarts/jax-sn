@@ -48,16 +48,17 @@ def _angle_sample(n_angles):
     return sorted({0, n_angles // 3, (2 * n_angles) // 3, n_angles - 1})
 
 
-def _sweep_data(bb_mgop, sweep_data_type):
+def _sweep_data(bb_mgop, strategy):
+    '''The sweep data ``strategy`` needs for this operator: the one the operator already carries if
+    that serves (which is the strategy's own ``accepts``), else the one the strategy builds itself.'''
+    base_sd = bb_mgop[0].data.sweep_data
+    if strategy.accepts(base_sd):
+        return base_sd
     dim, degree = _dim_degree(bb_mgop)
-    key = (dim, degree, sweep_data_type.__name__)
+    key = (dim, degree, type(strategy).__name__)
     if key not in _SWEEP_DATA_CACHE:
-        base_sd = bb_mgop[0].data.sweep_data
-        if isinstance(base_sd, sweep_data_type):
-            _SWEEP_DATA_CACHE[key] = base_sd
-        else:
-            solution_domain, quadrature_set = bb_mgop[2], bb_mgop[0].data.angular_data.quadrature_set
-            _SWEEP_DATA_CACHE[key] = sweep_data_type.from_domain_quadrature_set(solution_domain.domain, quadrature_set)
+        solution_domain, quadrature_set = bb_mgop[2], bb_mgop[0].data.angular_data.quadrature_set
+        _SWEEP_DATA_CACHE[key] = strategy.build_default_sweep_data(solution_domain.domain, quadrature_set.angles)
     return _SWEEP_DATA_CACHE[key]
 
 
@@ -80,7 +81,7 @@ class TestTransportInversionSingleAngle(_TransportInversionBase):
         from bb_setup import transport_operator_from_mgop
         strategy = strategy_cls(**kwargs)
         top = transport_operator_from_mgop(bb_mgop[0])[_ANGLE_I]
-        sweep_data = _sweep_data(bb_mgop, strategy.default_sweep_data_type())[_ANGLE_I]
+        sweep_data = _sweep_data(bb_mgop, strategy)[_ANGLE_I]
         return eqx.tree_at(lambda t: (t.data.sweep_data, t.inversion_strategy), top, (sweep_data, strategy))
 
     @pytest.fixture
@@ -102,7 +103,7 @@ class TestTransportInversionMultiAngle(_TransportInversionBase):
     def operator(self, bb_mgop, strategy):
         from bb_setup import transport_operator_from_mgop
         top = transport_operator_from_mgop(bb_mgop[0])
-        sweep_data = _sweep_data(bb_mgop, strategy.default_sweep_data_type())
+        sweep_data = _sweep_data(bb_mgop, strategy)
         return eqx.tree_at(lambda t: (t.data.sweep_data, t.inversion_strategy), top, (sweep_data, strategy))
 
     @pytest.fixture

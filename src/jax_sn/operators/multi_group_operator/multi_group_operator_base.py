@@ -5,12 +5,17 @@ import jax
 import lineax as lx
 import equinox as eqx
 from jax_sn.operators.base_linear_operator import TransposeBoolDataStrategyLinearOperator
-from jax_sn.operators.operator_data import OperatorData
+from jax_sn.operators.operator_data import OperatorData, RequiresNonDifferentiableData
 from ..base_linear_operator import TransposableStrategy
 
-class MultiGroupStrategyBase(TransposableStrategy):
+class MultiGroupStrategyBase(TransposableStrategy, RequiresNonDifferentiableData):
     r'''
     Apply a multigroup operator, base class for both full operator and chain.
+
+    States its requirement on the whole non-differentiable tier (see
+    :class:`~jax_sn.operators.operator_data.RequiresNonDifferentiableData`), not on the sweep data
+    alone: it is handed an :class:`~jax_sn.operators.operator_data.OperatorData`, so what it needs of
+    that tier is its own business and may grow past the sweep ordering.
     '''
 
     @abstractmethod
@@ -19,10 +24,6 @@ class MultiGroupStrategyBase(TransposableStrategy):
 
     @abstractmethod
     def transpose(self, operator_data: OperatorData, x):
-        ...
-    
-    @abstractmethod
-    def default_sweep_data(self):
         ...
 
 class MultiGroupStrategy(MultiGroupStrategyBase):

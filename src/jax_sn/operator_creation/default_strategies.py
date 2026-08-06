@@ -45,6 +45,13 @@ class DefaultMultiGroupStrategy:
         return _scan(chain, checkpoint)
 
     @classmethod
-    def default_multi_group_warp_strategy(cls, batch_size : int | None = None, checkpoint : bool = True):
-        chain = _chain(VmapAnglesForward(BatchedForward(batch_size)), WarpLevelAngles(), WarpMass())
+    def default_multi_group_warp_strategy(cls, batch_size : int | None = None, checkpoint : bool = True,
+                                          maximum_number_of_levels : int | None = None):
+        '''
+        ``maximum_number_of_levels`` pins the width the leveled sweep pads its level arrays to; leave it
+        ``None`` unless the sweep is rebuilt under a trace (see
+        :attr:`~jax_sn.operators.transport_operator.implementations.transport_operator_warp.WarpLevelSweep.maximum_number_of_levels`).
+        '''
+        chain = _chain(VmapAnglesForward(BatchedForward(batch_size)),
+                       WarpLevelAngles(maximum_number_of_levels), WarpMass())
         return _scan(chain, checkpoint)

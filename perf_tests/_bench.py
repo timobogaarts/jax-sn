@@ -40,16 +40,34 @@ def create_multi_group_operator(sd, qs, strategy):
         sd, quadrature_set=qs, strategy=strategy).multi_group_operator
 
 
+def pin_level_width(strategy, n_levels: int):
+    """Every unpinned ``maximum_number_of_levels`` in a strategy tree set to ``n_levels``.
+
+    The knob is a static field on whichever sweep strategy pads level arrays, so pinning it is a
+    rewrite of the strategy tree rather than anything the builder knows about. Static fields are part
+    of the treedef, not leaves, so this walks the dataclass fields instead of using ``eqx.tree_at``."""
+    if not isinstance(strategy, eqx.Module):
+        return strategy
+    changed = {}
+    for f in dataclasses.fields(strategy):
+        value = getattr(strategy, f.name)
+        new = n_levels if (f.name == "maximum_number_of_levels" and value is None) \
+            else pin_level_width(value, n_levels)
+        if new is not value:
+            changed[f.name] = new
+    return dataclasses.replace(strategy, **changed) if changed else strategy
+
+
 def create_multi_group_builder(sd, qs, strategy):
     """The same build, stopped at the builder and frozen down to a vertices + cross-section
     parametrisation -- for benches that differentiate through a rebuild."""
     builder = MultiGroupBuilder.from_solution_domain(sd, quadrature_set=qs, strategy=strategy)
     # A leveled sweep pads its level arrays to a fixed width. Left to itself it reads that width off
     # the levels, which is a tracer once the vertices are -- so pin it to what this domain needs, the
-    # same width `LeveledSweepData.reconstruct` reuses. Plain sweeps have no levels and no kwarg.
+    # same width `LeveledSweepData.reconstruct` reuses. Plain sweeps have no levels and no knob.
     levels = getattr(builder.sweep_data, "level_fwd", None)
     if levels is not None:
-        builder = builder.updated(sweep_data_kwargs=(("maximum_number_of_levels", levels.n_levels),))
+        builder = builder.updated(strategy=pin_level_width(strategy, levels.n_levels))
     return builder.varied("vertices", "cross_sections_indexed")
 
 

@@ -4,9 +4,9 @@ Strategy objects for the transport operator. Here, we have subtypes that compose
 
 import equinox as eqx
 from abc import abstractmethod
-from typing import Type, Tuple
+from typing import Tuple
 from jax_sn.operators.base_linear_operator import Strategy
-from .sweep_data_implementations import BasicSweepData, SweepData
+from .sweep_data_implementations import SweepData
 from .transport_data import TransportData
 from .transport_operator_base import (
     AbstractInversionStrategy,
@@ -34,8 +34,8 @@ class ComposedMultiAngleInversionStrategy(MultiAngleInversionStrategy):
     def required_capabilities(self) -> Tuple[type, ...]:
         return self.inner.required_capabilities()
 
-    def default_sweep_data_type(self) -> Type[SweepData]:
-        return self.inner.default_sweep_data_type()
+    def build_default_sweep_data(self, geometric_domain, angle) -> SweepData:
+        return self.inner.build_default_sweep_data(geometric_domain, angle)
 
     def check_compatible(self, data: TransportData):
         self.inner.check_compatible(data)

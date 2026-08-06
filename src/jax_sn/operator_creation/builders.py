@@ -132,17 +132,17 @@ def discretisation_data(spatial_data : SpatialData, angular_data : AngularData) 
 
 # -- the combinatorial tier -------------------------------------------------------------------------
 
-def sweep_data(geometric_domain : GeometricDomain, quadrature_set : QuadratureSetBase,
-               strategy : MultiGroupStrategy,
-               sweep_data_kwargs : Tuple[Tuple[str, Any], ...]) -> SweepData:
-    # The strategy picks the type, so the two cannot disagree; inline rather than its own quantity so
-    # that no `type` ever becomes a stored pytree leaf.
-    return strategy.default_sweep_data().from_domain_angle(
-        geometric_domain, quadrature_set.angles, **dict(sweep_data_kwargs))
+def non_differentiable_data(geometric_domain : GeometricDomain, quadrature_set : QuadratureSetBase,
+                            strategy : MultiGroupStrategy) -> NonDifferentiableData:
+    # The strategy builds the tier it needs, so the two cannot disagree -- and built whole, since what
+    # the tier holds is its business and need not stay one sweep ordering. Any knob that build takes
+    # (a level-padding width, ...) is a static field on the sub-strategy that wants it, so it rides in
+    # on `strategy` and this rung has nothing to pass through.
+    return strategy.build_default_non_differentiable_data(geometric_domain, quadrature_set.angles)
 
 
-def non_differentiable_data(sweep_data : SweepData) -> NonDifferentiableData:
-    return NonDifferentiableData(sweep_data)
+def sweep_data(non_differentiable_data : NonDifferentiableData) -> SweepData:
+    return non_differentiable_data.sweep_data
 
 
 def operator_data(discretisation_data : DiscretisationData,
@@ -221,10 +221,8 @@ def scatter_operator(scatter_data : ScatterData, strategy : ScatterStrategy,
 # -- transport: its own angle, so its own sort ---------------------------------------------------------
 
 def transport_sweep_data(geometric_domain : GeometricDomain, angle : jnp.ndarray,
-                         inversion_strategy : Union[SingleAngleInversionStrategy, MultiAngleInversionStrategy],
-                         sweep_data_kwargs : Tuple[Tuple[str, Any], ...]) -> SweepData:
-    return inversion_strategy.default_sweep_data_type().from_domain_angle(
-        geometric_domain, angle, **dict(sweep_data_kwargs))
+                         inversion_strategy : Union[SingleAngleInversionStrategy, MultiAngleInversionStrategy]) -> SweepData:
+    return inversion_strategy.build_default_sweep_data(geometric_domain, angle)
 
 
 def transport_data(spatial_data : SpatialData, energy_group : int, angle : jnp.ndarray,
@@ -336,6 +334,11 @@ class DiscretisationBuilder(SpatialBuilder, abstract=True):
                                       "discretisation_data": lambda dd : dd.spatial},
     "angular_data"                 : {"discretisation_data": lambda dd : dd.angular}}
 
+    # The harmonics read the cross sections only for `l_max` (n_moments = (l_max+1)^2), so they can be
+    # stored while the cross sections vary -- which is the whole point of varying them.
+    RETAINED_UNDER = {"angular_data": {
+        "cross_sections_indexed": lambda angular, xs : angular.wk_ylm.shape[1] == (xs.l_max + 1) ** 2}}
+
     quadrature_set : QuadratureSetBase
 
 
@@ -343,14 +346,16 @@ class SweptBuilder(DiscretisationBuilder, abstract=True):
     '''
     The rungs whose operator sweeps, and therefore carry the combinatorial tier.
 
-    ``strategy`` selects the sweep data type, so a builder cannot disagree with the operator it
-    builds. The sort is marked non-differentiable on the registry rather than inside the derivation,
-    so it holds on the stored and projected paths too.
+    ``strategy`` builds the tier itself (:meth:`build_default_non_differentiable_data`), so a builder cannot
+    disagree with the operator it builds, and a strategy that comes to need more of that tier than a
+    sweep ordering -- or a knob to build it with -- changes nothing here. The tier is marked
+    non-differentiable on the registry rather than inside the derivation, so it holds on the stored and
+    projected paths too.
     '''
 
     DERIVATIONS = {**DiscretisationBuilder.DERIVATIONS,
-    "sweep_data"              : sweep_data,
     "non_differentiable_data" : non_differentiable_data,
+    "sweep_data"              : sweep_data,
     "operator_data"           : operator_data}
 
     PROJECTIONS = {**DiscretisationBuilder.PROJECTIONS,
@@ -358,11 +363,14 @@ class SweptBuilder(DiscretisationBuilder, abstract=True):
     "non_differentiable_data" : {"operator_data"          : lambda od : od.non_differentiable_data},
     "sweep_data"              : {"non_differentiable_data": lambda nd : nd.sweep_data}}
 
-    NON_DIFFERENTIABLE = frozenset({"sweep_data"})
+    # The tier as a whole, so the mark holds however it grows; `sweep_data` reads out of an already
+    # stopped tier, and is marked too because the transport rungs build it on its own.
+    NON_DIFFERENTIABLE = frozenset({"non_differentiable_data", "sweep_data"})
 
-    # keyword-only, so the default survives the fields the generated storing-classes append.
-    sweep_data_kwargs : Tuple[Tuple[str, Any], ...] = eqx.field(static=True, kw_only=True,
-                                                                default=())
+    # The strategy reaches the tier only through what it asks of it, and `accepts` is the same
+    # question the operator's `__check_init__` asks, so the two cannot drift.
+    RETAINED_UNDER = {**DiscretisationBuilder.RETAINED_UNDER,
+    "non_differentiable_data" : {"strategy": lambda tier, strategy : strategy.accepts(tier)}}
 
 
 # ==================================================================================================
@@ -498,10 +506,12 @@ class TransportBuilder(SpatialBuilder, abstract=True):
 
     NON_DIFFERENTIABLE = frozenset({"sweep_data"})
 
+    # As on `SweptBuilder`, one tier down: the sort is held bare here, and only the inversion strategy
+    # asks anything of it (the forward one never touches it, so it is free whatever the policy).
+    RETAINED_UNDER = {"sweep_data": {"inversion_strategy": lambda sweep_data, strategy: strategy.accepts(sweep_data)}}
+
     angle              : jnp.ndarray
     energy_group       : int
-    sweep_data_kwargs  : Tuple[Tuple[str, Any], ...] = eqx.field(static=True, kw_only=True,
-                                                                 default=())
 
 
 class SingleAngleTransportBuilder(TransportBuilder, abstract=True):

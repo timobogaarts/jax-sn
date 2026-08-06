@@ -2,7 +2,11 @@
 Warp strategies and convenience constructors for the transport operator.
 '''
 
-from ..sweep_data_implementations import BasicSweepData, LeveledSweepData, ProvidesLevels
+from typing import Union
+
+import equinox as eqx
+
+from ..sweep_data_implementations import LeveledSweepData, ProvidesLevels
 from jax_sn.solution_domain import SpatialData
 
 from ..transport_operator_strategies import SingleAngleInversionStrategy, MultiAngleInversionStrategy
@@ -60,6 +64,15 @@ class WarpLevelSweep(SingleAngleInversionStrategy):
     :class:`~jax_sn.operators.transport_operator.LeveledSweepData`.
     '''
 
+    maximum_number_of_levels : Union[int, None] = eqx.field(static=True, default=None)
+    '''
+    Width the level arrays are padded to when this strategy builds its sweep data. ``None`` reads it
+    off the levels themselves, which is a tracer whenever the domain the sweep is derived from is one
+    -- so pin it (to a width at least as large as the domain needs; too small is a clean equinox
+    runtime error) whenever the sweep data is rebuilt under a trace, e.g. by a builder differentiating
+    through a mesh deformation.
+    '''
+
     def invert(self, data: TransportData, b):
         return _kernels(data).level_single_angle(*data.inversion_args, b, data.sweep_data.level_fwd)
 
@@ -71,9 +84,8 @@ class WarpLevelSweep(SingleAngleInversionStrategy):
     def vmappable(cls):
         return False   # opaque warp kernel: an outer vmap serialises
 
-    @classmethod
-    def default_sweep_data_type(cls):
-        return LeveledSweepData
+    def build_default_sweep_data(self, geometric_domain, angle):
+        return LeveledSweepData.from_domain_angle(geometric_domain, angle, self.maximum_number_of_levels)
 
     @classmethod
     def native_multi_angle(cls):
@@ -108,8 +120,11 @@ class WarpLevelAngles(MultiAngleInversionStrategy):
     '''Native multi-angle inverse: fused level-based-parallelism Warp sweep. Requires sweep data
     providing the :class:`~jax_sn.operators.transport_operator.ProvidesLevels` capability.'''
 
+    maximum_number_of_levels : Union[int, None] = eqx.field(static=True, default=None)
+    '''Level-array padding width; see :attr:`WarpLevelSweep.maximum_number_of_levels`.'''
+
     def single_angle_strategy(self):
-        return WarpLevelSweep()
+        return WarpLevelSweep(self.maximum_number_of_levels)
 
     def invert(self, data: TransportData, b):
         return _kernels(data).level_multi_angle(*data.inversion_args, b, data.sweep_data.level_fwd)
@@ -117,8 +132,8 @@ class WarpLevelAngles(MultiAngleInversionStrategy):
     def required_capabilities(self):
         return (ProvidesLevels,)
 
-    def default_sweep_data_type(self):
-        return LeveledSweepData
+    def build_default_sweep_data(self, geometric_domain, angle):
+        return LeveledSweepData.from_domain_angle(geometric_domain, angle, self.maximum_number_of_levels)
 
     def check_compatible(self, data):
         super().check_compatible(data)  # enforces required_capabilities (ProvidesLevels)
