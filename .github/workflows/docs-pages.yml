@@ -41,20 +41,20 @@ jobs:
       # pass are already cleared; this run adds a CPU-time sampler (computing vs blocked)
       # and sweeps three problem sizes (a wall only the largest hits is compute, one every
       # size hits is a deadlock). Remove once known.
-      - name: Diagnose parametrization gradient cell
-        timeout-minutes: 6
-        continue-on-error: true
-        run: python -u tools/debug_parametrization_cell.py
+      # - name: Diagnose parametrization gradient cell
+      #   timeout-minutes: 6
+      #   continue-on-error: true
+      #   run: python -u tools/debug_parametrization_cell.py
 
-      # Same run with XLA's CPU backend restricted to single-threaded Eigen. The runner
-      # has 2 vCPUs; if a nested parallel region in the backward pass is waiting on tasks
-      # that a 2-thread pool can never schedule, this makes it complete.
-      - name: Diagnose again with single-threaded Eigen
-        timeout-minutes: 6
-        continue-on-error: true
-        env:
-          XLA_FLAGS: "--xla_cpu_multi_thread_eigen=false"
-        run: python -u tools/debug_parametrization_cell.py
+      # # Same run with XLA's CPU backend restricted to single-threaded Eigen. The runner
+      # # has 2 vCPUs; if a nested parallel region in the backward pass is waiting on tasks
+      # # that a 2-thread pool can never schedule, this makes it complete.
+      # - name: Diagnose again with single-threaded Eigen
+      #   timeout-minutes: 6
+      #   continue-on-error: true
+      #   env:
+      #     XLA_FLAGS: "--xla_cpu_multi_thread_eigen=false"
+      #   run: python -u tools/debug_parametrization_cell.py
 
       - name: Build docs
         run: bash build_docs.sh
