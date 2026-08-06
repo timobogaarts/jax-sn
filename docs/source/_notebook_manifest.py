@@ -22,13 +22,13 @@ the config file does not enforce itself.
 NOTEBOOKS = {
     # docs-tree path (relative to docs/source): {"source": examples/ path, "ci": bool}
     "user_guide/energy_set.ipynb": {"source": "examples/energy_set.ipynb", "ci": True},
-    "user_guide/quadrature_set.ipynb": {"source": "examples/quadrature_set.ipynb", "ci": True},
-    "user_guide/first_operator.ipynb": {"source": "examples/first_operator.ipynb", "ci": True},
+    "user_guide/quadrature_set.ipynb": {"source": "examples/quadrature_set.ipynb", "ci": True},    
     "user_guide/slab_single_angle.ipynb": {"source": "examples/slab_single_angle.ipynb", "ci": True},
     "user_guide/multi_angle.ipynb": {"source": "examples/multi_angle.ipynb", "ci": True},
     "user_guide/spatial_discretisation.ipynb": {"source": "examples/spatial_discretisation.ipynb", "ci": True},
     "user_guide/multi_group_operator.ipynb": {"source": "examples/multigroup_operator.ipynb", "ci": True},
     "user_guide/parametrization.ipynb": {"source": "examples/parametrization.ipynb", "ci": True},
+    "user_guide/solving_multigroup.ipynb": {"source": "examples/solving_multigroup.ipynb", "ci": True},
     # Needs OpenMC + downloaded FENDL cross-section data (via mcbb) -- hosted CI can't
     # produce that, so this keeps committed outputs; refresh locally via
     # tools/refresh_notebooks.py.

@@ -1,4 +1,4 @@
-from . import quadrature_set, domain, energy_set, solution_domain, tools, operators, operator_creation
+from . import quadrature_set, domain, energy_set, solution_domain, tools, operators, operator_creation, solvers
 # NOTE: variance_reduction (adjoint operator + FW-CADIS) is not yet ported to the data+strategy API and
 # is intentionally left out of the eager import until then. Import it directly once ported.
 __all__ = [
@@ -9,4 +9,5 @@ __all__ = [
     "operators",
     "operator_creation",
     "solution_domain",
+    "solvers",
 ]
