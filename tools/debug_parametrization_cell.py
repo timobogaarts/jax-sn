@@ -150,7 +150,11 @@ theta = jnp.array([0.1, 0.04])
 # --- the cell that times out, by size, one step at a time -------------------------------
 # Ascending, so the log carries a scaling curve up to wherever it stops. The last entry is
 # the notebook's own size.
-for _n_s, _n_theta, _tn in [(2, 4, 2), (3, 5, 2), (4, 7, 3)]:
+_SIZES = [(2, 4, 2), (3, 5, 2), (4, 7, 3)]
+if os.environ.get("JAXSN_DEBUG_BIG_ONLY"):
+    _SIZES = _SIZES[-1:]
+
+for _n_s, _n_theta, _tn in _SIZES:
     tag = f"[n_s={_n_s} n_theta={_n_theta} T_{_tn}]"
     _log(f"=== {tag} ===")
     builder = build(_n_s, _n_theta, _tn)
