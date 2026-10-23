@@ -28,7 +28,7 @@ import warp as wp
 import jax.numpy as jnp
 import equinox as eqx
 
-from warp.jax_experimental import jax_callable, GraphMode
+from warp import jax_callable, JaxCallableGraphMode as GraphMode
 from jax_sn.domain import GeometricDomain, CrossSectionDataSingleGroup
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from ..sweep_data_implementations import BasicSweepData, LevelBasedParallelism

@@ -37,7 +37,7 @@ import jax
 import jax.numpy as jnp
 import lineax as lx
 from jaxtyping import Array, ArrayLike
-from typing_extensions import Self
+from typing import Self
 
 from jax_sn.operators.multi_group_operator import MultiGroupOperator
 from jax_sn.operators.multi_group_operator.composed_multi_group_strategies import MultiGroupChainGatherStrategy

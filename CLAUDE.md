@@ -12,10 +12,12 @@ API reference) are at https://timobogaarts.github.io/jax-sn/, built from `docs/s
 
 ## Environment
 
-Developed against a conda env (see `.vscode/settings.json` — `python-envs.defaultEnvManager: conda`).
-Install editable with test extras: `pip install -e ".[test]"`. Optional extras:
-- `warp` — GPU warp-kernel transport sweep (`transport_operator_warp`, `simplex_warp_kernel`); guarded by try/except at import, so it's silently absent without the extra.
+Python >= 3.12, developed against a conda env. Published on PyPI as `jax-sn` (imported as `jax_sn`).
+Install editable for the test suite with `pip install -e ".[test,geometry,warp]"` — the tests import the
+Warp and geometry modules directly. Optional extras:
+- `warp` — Warp transport-sweep and mass kernels (`transport_operator_warp`, `simplex_warp_kernel`, `mass_operator_warp`); the package `__init__`s guard the import with try/except, so without the extra the `Warp*` strategies are simply absent. `warp-lang>=1.16` also runs on CPU, which the docs CI relies on.
 - `geometry` — mesh/BVH + Cartesian domain-setup helpers (`mesh_tools`, `domain_generation`); depends on `jax_sbgeom` (on PyPI).
+- `viz` — `tools/plotly.py` (not imported eagerly); `docs` — `./build_docs.sh`; `dev` — pre-commit/nbstripout.
 
 ## Commands
 
@@ -33,6 +35,9 @@ compilation, so a warm compilation cache matters much more than usual — confte
 `JAX_COMPILATION_CACHE_DIR` itself, so set it in the environment if you want one across runs.
 Reference numerics live in `tests/reference_data/*.npz`, regenerated via
 `tests/reference_data/regenerate.py`.
+
+Release: pushing a tag `vX.Y.Z` (must equal `version` in `pyproject.toml`) runs `tests.yml` (CPU, fast
+tests only), builds, and publishes to PyPI via Trusted Publishing (`release.yml`, environment `pypi`).
 
 Docs: `./build_docs.sh` regenerates `docs/source/api` via `sphinx-apidoc` then builds
 `docs/build/html` via `sphinx`. Example notebooks (`examples/*.ipynb`) are copied into the docs tree
@@ -268,8 +273,9 @@ evaluating new/faster kernel implementations, so know how to extend it, not just
   python dev_bench.py --bench transport.inv --strategy MySweep --n-other 2 --tn-order 2
   python dev_bench.py --bench transport.inv.multiangle --strategy MySweep --lifting VmapAngles
   ```
-- `_bench.py` — `Bench` dataclass: one operator axis (`base` strategy class, `kwarg` to its local
-  `create_multi_group_operator` helper, `attr`/`extract` to pull the sub-operator out, `make_call` — default
+- `_bench.py` — `Bench` dataclass: one operator axis (`base` strategy class; `chain_field`/`top_level`/`lift`
+  say where a discovered instance is composed into the default multi-group strategy tree, via
+  `compose_chain_strategy`; `extract` pulls the sub-operator out of the built operator; `make_call` — default
   `mv_call`, also `inv_call`). Add a new axis by adding a `Bench(...)` to a `bench_*.py`'s `BENCHES`.
 - `_discovery.py` — **never hand-list the strategy matrix**. `discover_variants` walks
   `__subclasses__()` of the strategy base to find every concrete, importable, default-constructible

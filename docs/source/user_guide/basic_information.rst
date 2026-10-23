@@ -86,10 +86,9 @@ Installing is simple since it is just a python package:
 
 .. code-block::
 
-    pip install .
+    pip install jax-sn
 
-
-in the repository. Take a look at the :ref:`examples <examples>` to get you started with the Python API or at the :ref:`theory <theory>` section for a 
+See the :doc:`front page <../index>` for the optional extras. Take a look at the :ref:`examples <examples>` to get you started with the Python API or at the :ref:`theory <theory>` section for a 
 in-depth view at the code.
 
 

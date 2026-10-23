@@ -15,17 +15,27 @@ Getting started
 
 First install a JAX distribution, see `here <https://docs.jax.dev/en/latest/installation.html>`_. GPU support is strongly preferred.
 
-Then, 
-
-.. code-block:: bash
-   
-   pip install .
-
-to install. For optional dependencies, :code:`jax-sbgeom` is required for location in simplex meshes, :code:`sympy` and :code:`pytest` are used in the testing suite. Install with 
+Then install from PyPI (Python 3.12 or newer):
 
 .. code-block:: bash
 
-   pip install .[geometry,warp,docs]
+   pip install jax-sn
+
+Optional extras:
+
+- :code:`geometry` -- mesh location and Cartesian domain setup (:code:`jax-sbgeom`)
+- :code:`warp` -- NVIDIA Warp transport-sweep and mass kernels (:code:`warp-lang`)
+- :code:`viz` -- domain plotting (:code:`plotly`)
+- :code:`test` -- the test suite (:code:`pytest`, :code:`sympy`, :code:`networkx`, :code:`trimesh`)
+- :code:`docs` -- building this documentation
+
+For example:
+
+.. code-block:: bash
+
+   pip install "jax-sn[geometry,warp]"
+
+For development, clone the repository and install it in editable mode with :code:`pip install -e ".[test,geometry,warp]"`.
 
 See the example problems for some instructive examples.
 

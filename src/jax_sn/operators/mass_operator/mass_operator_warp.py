@@ -11,7 +11,7 @@ import warp as wp
 import jax.numpy as jnp
 import equinox as eqx
 
-from warp.jax_experimental import jax_callable
+from warp import jax_callable
 
 from jax_sn.solution_domain import PrecomputedGeometricData, FEMMatrices
 from .mass_operator_strategies import MassStrategy

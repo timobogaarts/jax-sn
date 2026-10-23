@@ -79,7 +79,7 @@ multi-angle fused sweep!)
 
 from abc import abstractmethod
 from typing import Any
-from typing_extensions import Self
+from typing import Self
 
 import jax
 import lineax as lx

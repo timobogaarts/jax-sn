@@ -5,8 +5,6 @@ from ..operators.mass_operator import LaxMass
 from ..operators.moment_operator import EinsumFluxMoment
 from ..operators.transport_operator import VmapAnglesInversion, VmapAnglesForward, BatchedSweep, VmapSweep, VmapPallasSweep, BatchedPallasSweep, VmapForward, BatchedForward
 from ..operators.scatter_operator import BroadcastedSingleGroupGather
-from ..operators.transport_operator.implementations.transport_operator_warp import WarpLevelAngles
-from ..operators.mass_operator import WarpMass
 
 
 def _chain(transport_strategy, transport_inversion_strategy, mass_strategy):
@@ -52,6 +50,9 @@ class DefaultMultiGroupStrategy:
         ``None`` unless the sweep is rebuilt under a trace (see
         :attr:`~jax_sn.operators.transport_operator.implementations.transport_operator_warp.WarpLevelSweep.maximum_number_of_levels`).
         '''
+        # Imported here: warp is an optional extra, so the module must import without it.
+        from ..operators.transport_operator.implementations.transport_operator_warp import WarpLevelAngles
+        from ..operators.mass_operator.mass_operator_warp import WarpMass
         chain = _chain(VmapAnglesForward(BatchedForward(batch_size)),
                        WarpLevelAngles(maximum_number_of_levels), WarpMass())
         return _scan(chain, checkpoint)

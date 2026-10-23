@@ -209,6 +209,15 @@ class BaseOperatorProperties:
     rtol_exact, atol_exact = 1e-12, 1e-12
     rtol, atol = 1e-12, 1e-12
     rtol_grad, atol_grad = 1e-12, 1e-12
+    cpu_tol_floor = 1e-9
+    '''Lower bound on every tolerance when running on CPU. XLA's multithreaded CPU reductions sum in an
+    order that depends on thread scheduling, so results move by ~1e-11 between runs (and between the
+    pivot and a variant) -- noise that 1e-12 cannot absorb. GPU runs keep the tighter class tolerances.'''
+
+    def _tol(self, rtol, atol):
+        if jax.default_backend() == "cpu":
+            rtol, atol = max(rtol, self.cpu_tol_floor), max(atol, self.cpu_tol_floor)
+        return dict(rtol=rtol, atol=atol)
 
     def apply(self, operator, x):
         '''The operator action tested by the property battery. Override to test ``op.inv`` instead of ``op.mv``.
@@ -246,31 +255,31 @@ class BaseOperatorProperties:
         x = _rand(operator.in_structure().shape,  0)
         y = _rand(operator.out_structure().shape, 1)
         
-        onp.testing.assert_allclose(onp.sum(self.apply(operator, x) * y), onp.sum(x * self.apply(operator.transpose(), y)), rtol=self.rtol_exact, atol=self.atol_exact)
+        onp.testing.assert_allclose(onp.sum(self.apply(operator, x) * y), onp.sum(x * self.apply(operator.transpose(), y)), **self._tol(self.rtol_exact, self.atol_exact))
 
     def test_transpose_idempotence(self, operator):
         x = _rand(operator.in_structure().shape, 2)
         
-        onp.testing.assert_allclose(self.apply(operator.transpose().transpose(), x), self.apply(operator, x), rtol=self.rtol_exact, atol=self.atol_exact)
+        onp.testing.assert_allclose(self.apply(operator.transpose().transpose(), x), self.apply(operator, x), **self._tol(self.rtol_exact, self.atol_exact))
 
     def test_forward_consistency(self, operator, reference_values):
         x = _rand(operator.in_structure().shape, 3)
         
-        onp.testing.assert_allclose(self.apply(operator, x), reference_values["forward"], rtol=self.rtol, atol=self.atol)
+        onp.testing.assert_allclose(self.apply(operator, x), reference_values["forward"], **self._tol(self.rtol, self.atol))
 
     def test_transpose_consistency(self, operator, reference_values):
         y = _rand(operator.out_structure().shape, 4)
         
-        onp.testing.assert_allclose(self.apply(operator.transpose(), y), reference_values["transpose"], rtol=self.rtol, atol=self.atol)
+        onp.testing.assert_allclose(self.apply(operator.transpose(), y), reference_values["transpose"], **self._tol(self.rtol, self.atol))
 
     def test_vjp_wrt_operator_consistency(self, operator, reference_values):        
         g_op  = _operator_vjp(operator, self.apply)
         g_ref = reference_values["vjp"]
         assert len(g_op) == len(g_ref)
         for a, b in zip(g_op, g_ref):
-            onp.testing.assert_allclose(a, b, rtol=self.rtol_grad, atol=self.atol_grad)
+            onp.testing.assert_allclose(a, b, **self._tol(self.rtol_grad, self.atol_grad))
 
     def test_jvp_wrt_operator_consistency(self, operator, reference_values):        
         jv = _operator_jvp(operator, self.apply)
-        onp.testing.assert_allclose(jv, reference_values["jvp"], rtol=self.rtol_grad, atol=self.atol_grad)
+        onp.testing.assert_allclose(jv, reference_values["jvp"], **self._tol(self.rtol_grad, self.atol_grad))
 

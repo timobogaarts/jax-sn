@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,18 +7,17 @@ name = "jax-sn"
 version = "0.1.0"
 description = "JAX-based Discrete Ordinates"
 readme = "README.md"
-requires-python = ">=3.9"
-license = {text = "MIT"}
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Timo Bogaarts" }]
 
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
@@ -29,27 +28,27 @@ dependencies = [
     "fenics-basix>=0.7.0",
     "equinox",
     "lineax",
-    "warp-lang>=1.16.0",  # jax_callable FFI targets registered for CPU, needed to run Warp notebook cells in hosted (GPU-less) CI
-    # typing_extensions.Self: typing.Self is 3.11+, requires-python is >=3.9.
-    "typing_extensions"
 ]
 
 [project.optional-dependencies]
+# Warp transport-sweep and mass kernels (WarpLevelSweep, WarpMass, ...). >=1.16 registers the
+# jax_callable FFI targets for CPU too, so the Warp notebook cells also run in hosted (GPU-less) CI.
+warp = ["warp-lang>=1.16.0"]
 # Mesh/BVH and Cartesian-setup helpers (mesh_tools, domain_generation).
 geometry = ["jax_sbgeom"]
 # Domain visualization (tools/plotly.py). Not imported eagerly by jax_sn.tools, so this is
 # only needed if you actually call jax_sn.tools.plotly.plot_domain.
 viz = ["plotly"]
-# Test suite (test_finite_elements pulls in sympy for the reference basis).
-test = ["pytest", "sympy"]
+# Test suite (sympy: reference basis in test_finite_elements; networkx/trimesh: graph and mesh checks).
+test = ["pytest", "sympy", "networkx", "trimesh"]
 # Documentation build (./build_docs.sh).
 docs = ["sphinx", "furo", "sphinx-autodoc-typehints", "myst-nb", "ipykernel", "matplotlib", "plotly"]
 # Repo dev tooling (pre-commit hooks, notebook output stripping).
 dev = ["pre-commit", "nbstripout"]
 
 [project.urls]
-"Homepage" = "https://github.com/timobogaarts/jax-sn"
-"Repository" = "https://github.com/timobogaarts/jax-sn"
+Documentation = "https://timobogaarts.github.io/jax-sn/"
+Source = "https://github.com/timobogaarts/jax-sn"
 
 [tool.setuptools.packages.find]
 where = ["src"]
