@@ -46,16 +46,28 @@ def pytest_configure(config):
     # test modules, so this is the safe place to set import-time JAX config
     # (same pattern as --jax-platform above).
     #
-    # 1. x64 globally: nearly every test file already calls
-    #    jax.config.update("jax_enable_x64", True); setting it here covers the few
-    #    that don't (e.g. test_transport_operator.py) and keeps the compilation
-    #    cache keyed on a single, consistent dtype configuration.
-    # 2. Persistent compilation cache: XLA compilation dominates test runtime, and
-    #    without a persistent cache every `pytest` run recompiles from cold. This
-    #    caches compiled executables across runs under <repo>/.jax_cache.
+    # x64 globally: nearly every test file already calls
+    # jax.config.update("jax_enable_x64", True); setting it here covers the few
+    # that don't (e.g. test_transport_operator.py) and keeps the compilation
+    # cache keyed on a single, consistent dtype configuration.
     os.environ.setdefault("JAX_ENABLE_X64", "True")
-    
 
+
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _release_compiled_executables():
+    '''Drop JAX's in-memory compilation caches after each test module.
+
+    On CPU every compiled executable is JIT-loaded into its own memory mappings, and JAX keeps
+    them all for the life of the process. A full run compiles enough of them to reach the
+    kernel's per-process mapping limit (``vm.max_map_count``, 65530 by default), after which
+    XLA aborts mid-compile -- a deterministic crash in whichever test happens to compile next,
+    with no error message. Modules rarely share compiled functions, so the cost is small.
+    '''
+    yield
+    import jax
+    jax.clear_caches()
 
 
 def pytest_runtest_setup(item):

@@ -26,7 +26,7 @@ Optional extras:
 - :code:`geometry` -- mesh location and Cartesian domain setup (:code:`jax-sbgeom`)
 - :code:`warp` -- NVIDIA Warp transport-sweep and mass kernels (:code:`warp-lang`)
 - :code:`viz` -- domain plotting (:code:`plotly`)
-- :code:`test` -- the test suite (:code:`pytest`, :code:`sympy`)
+- :code:`test` -- the test suite (:code:`pytest`, :code:`sympy`, :code:`networkx`, :code:`trimesh`)
 - :code:`docs` -- building this documentation
 
 For example:
