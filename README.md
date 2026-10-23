@@ -1,12 +1,20 @@
 # jax-sn
 
-JAX-based discrete ordinates
+JAX-based discrete ordinates for differentiable solution of neutron transport.
 
-Documentation at https://timobogaarts.github.io/jax-sn/ 
+Documentation at https://timobogaarts.github.io/jax-sn/
 
+## Quickstart
 
+Install with:
 
+```bash
+pip install jax-sn
+```
 
-## Statement on LLM use
+Optional extras (`geometry`, `warp`, `viz`, ...) and a GPU-enabled JAX install are described in the
+[documentation](https://timobogaarts.github.io/jax-sn/).
 
-LLMs were used to assist in writing documentation and refactoring. No numerical routines were directly written by an LLM, architecture decisions were fully made by the authors, and the authors take full responsibility of the content of this repository.
+## License
+
+MIT

@@ -27,9 +27,15 @@ from .implementations.transport_operator_pallas import (
 )
 
 
-from .implementations.transport_operator_warp import (
-    WarpSequentialSweep, WarpLevelSweep, WarpSequentialAngles, WarpLevelAngles,
-)
+# Warp is an optional extra (`pip install jax-sn[warp]`); without it these strategies are absent.
+try:
+    from .implementations.transport_operator_warp import (
+        WarpSequentialSweep, WarpLevelSweep, WarpSequentialAngles, WarpLevelAngles,
+    )
+except ImportError:
+    _WARP = []
+else:
+    _WARP = ['WarpSequentialSweep', 'WarpLevelSweep', 'WarpSequentialAngles', 'WarpLevelAngles']
 
 __all__ = [
     'SweepData',
@@ -58,8 +64,4 @@ __all__ = [
     'ScanAnglesForward',
     'VmapPallasSweep',
     'BatchedPallasSweep',
-    'WarpSequentialSweep',
-    'WarpLevelSweep',
-    'WarpSequentialAngles',
-    'WarpLevelAngles',
-]
+] + _WARP
