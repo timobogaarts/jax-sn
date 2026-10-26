@@ -2,7 +2,9 @@
 
 JAX-based discrete ordinates for differentiable solution of neutron transport.
 
-Documentation at https://timobogaarts.github.io/jax-sn/
+Documentation including comprehensive theory and implementation details at https://timobogaarts.github.io/jax-sn/.
+
+This model and several applications has also been described in detail in [Timo Bogaarts' PhD thesis](https://research.tue.nl/en/publications/deterministic-neutronics-for-stellarator-design/).
 
 ## Quickstart
 
