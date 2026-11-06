@@ -9,9 +9,12 @@ from functools import partial
 from jax_sn.tools.graph_tools import _compute_levels_parallel_scan, _compute_levels_parallel_while, compute_levels_iterative, compute_levels_iterative_jax
 import equinox as eqx
 
+INFLOW_EPSILON = -1e-12
+'''Same cutoff as the Warp kernel: a grazing face can round to inflow from both sides, a spurious two-element cycle.'''
+
 def _compute_inflow_bool(face_normals : jnp.ndarray, angle : jnp.ndarray) -> jnp.ndarray:
-    normal_dot_angle = jnp.sum(face_normals * angle[None, None, :], axis=-1) 
-    inflow          = normal_dot_angle < 0    
+    normal_dot_angle = jnp.sum(face_normals * angle[None, None, :], axis=-1)
+    inflow          = normal_dot_angle < INFLOW_EPSILON
     return inflow
 
 def compute_face_inflow(geometric_domain : GeometricDomain, angle : jnp.ndarray) -> jnp.ndarray:
